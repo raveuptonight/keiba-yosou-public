@@ -1,12 +1,22 @@
 #!/bin/bash
 # クイックデプロイスクリプト（コード更新時用）
+# Amazon Linux 2023 / Ubuntu 両対応
 
 set -e
 
 echo "===== 競馬予想システム クイックデプロイ ====="
 
 # プロジェクトディレクトリに移動
-cd /home/ubuntu/keiba-yosou
+# Amazon Linux 2023の場合
+if [ -d "/home/ec2-user/keiba-yosou" ]; then
+    cd /home/ec2-user/keiba-yosou
+# Ubuntuの場合
+elif [ -d "/home/ubuntu/keiba-yosou" ]; then
+    cd /home/ubuntu/keiba-yosou
+else
+    echo "Error: プロジェクトディレクトリが見つかりません"
+    exit 1
+fi
 
 # 最新コードを取得
 echo "[1/4] 最新コードを取得中..."
