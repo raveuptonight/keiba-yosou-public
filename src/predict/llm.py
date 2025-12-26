@@ -75,15 +75,17 @@ class GeminiClient(LLMClient):
     """Google Gemini APIクライアント"""
 
     def __init__(
-        self, api_key: Optional[str] = None, model: str = "gemini-2.0-flash-exp"
+        self, api_key: Optional[str] = None, model: Optional[str] = None
     ):
         """
         Args:
             api_key: Gemini APIキー（Noneの場合は環境変数GEMINI_API_KEYから取得）
-            model: 使用するモデル（デフォルト: gemini-2.0-flash-exp）
+            model: 使用するモデル（Noneの場合は環境変数GEMINI_MODELから取得、デフォルト: gemini-2.0-flash-exp）
         """
-        super().__init__(api_key, model)
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.model = model or os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
+
+        super().__init__(self.api_key, self.model)
 
         if not self.api_key:
             raise ValueError(
