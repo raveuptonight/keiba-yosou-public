@@ -1,0 +1,17 @@
+[Unit]
+Description=Keiba Yosou Discord Bot
+After=network.target keiba-api.service
+
+[Service]
+Type=simple
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/keiba-yosou
+Environment="PATH=/home/ec2-user/keiba-yosou/venv/bin"
+EnvironmentFile=/home/ec2-user/keiba-yosou/.env
+ExecStart=/home/ec2-user/keiba-yosou/venv/bin/python -m src.discord.bot
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
