@@ -52,14 +52,19 @@
 │                      データ層                            │
 ├─────────────────────────────────────────────────────────┤
 │                                                         │
-│  ┌──────────────────┐      ┌──────────────────┐       │
-│  │  PostgreSQL      │      │  SQLite          │       │
-│  │  (JRA-VAN Data)  │      │  (予想結果DB)     │       │
-│  │                  │      │                  │       │
-│  │ ・レースデータ    │      │ ・予想履歴        │       │
-│  │ ・馬データ        │      │ ・的中結果        │       │
-│  │ ・騎手データ      │      │ ・回収率統計      │       │
-│  └──────────────────┘      └──────────────────┘       │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │             PostgreSQL (統合管理)                 │  │
+│  │                                                  │  │
+│  │  スキーマ: jravan                                │  │
+│  │    ・レースデータ                                │  │
+│  │    ・馬データ                                    │  │
+│  │    ・騎手データ                                  │  │
+│  │                                                  │  │
+│  │  スキーマ: predictions                           │  │
+│  │    ・予想履歴                                    │  │
+│  │    ・的中結果                                    │  │
+│  │    ・回収率統計                                  │  │
+│  └──────────────────────────────────────────────────┘  │
 │                                                         │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -81,8 +86,8 @@
   - `src/db/connection.py`: DB接続
 
 ### データベース
-- **PostgreSQL**: JRA-VANデータ（既存）
-- **SQLite**: 予想結果・履歴（新規）
+- **PostgreSQL**: JRA-VANデータ + 予想結果・履歴（統合管理）
+  - スキーマ分離: `jravan`（JRA-VAN）、`predictions`（予想システム）
 
 ### その他
 - **APScheduler**: 定期実行（毎日の予想自動化）
@@ -135,69 +140,87 @@
 
 ---
 
-## 4. DB設計（予想結果DB - SQLite）
+## 4. DB設計（予想結果DB - PostgreSQL）
+
+### 4.0 スキーマ作成
+
+```sql
+-- 予想システム用スキーマ
+CREATE SCHEMA IF NOT EXISTS predictions;
+
+-- JRA-VANデータ用スキーマ（mykeibadbが自動作成）
+-- CREATE SCHEMA IF NOT EXISTS jravan;
+```
 
 ### 4.1 predictions テーブル
 
 ```sql
-CREATE TABLE predictions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    race_id TEXT NOT NULL,              -- レースID（JRA-VAN）
-    race_name TEXT NOT NULL,            -- レース名
+CREATE TABLE predictions.predictions (
+    id SERIAL PRIMARY KEY,
+    race_id VARCHAR(20) NOT NULL,       -- レースID（JRA-VAN）
+    race_name VARCHAR(100) NOT NULL,    -- レース名
     race_date DATE NOT NULL,            -- レース日
-    venue TEXT,                         -- 競馬場
+    venue VARCHAR(50),                  -- 競馬場
 
     -- 予想内容（JSON）
-    analysis_result TEXT,               -- フェーズ1分析結果（JSON）
-    prediction_result TEXT,             -- フェーズ2予想結果（JSON）
+    analysis_result JSONB,              -- フェーズ1分析結果（JSON）
+    prediction_result JSONB,            -- フェーズ2予想結果（JSON）
 
     -- 投資・期待値
     total_investment INTEGER,           -- 総投資額（円）
     expected_return INTEGER,            -- 期待回収額（円）
-    expected_roi REAL,                  -- 期待ROI
+    expected_roi NUMERIC(5,2),          -- 期待ROI
 
     -- 実行情報
-    llm_model TEXT,                     -- 使用LLMモデル
+    llm_model VARCHAR(50),              -- 使用LLMモデル
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    UNIQUE(race_id)
+    CONSTRAINT unique_race_id UNIQUE(race_id)
 );
+
+-- インデックス作成
+CREATE INDEX idx_predictions_race_date ON predictions.predictions(race_date);
+CREATE INDEX idx_predictions_venue ON predictions.predictions(venue);
 ```
 
 ### 4.2 results テーブル
 
 ```sql
-CREATE TABLE results (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+CREATE TABLE predictions.results (
+    id SERIAL PRIMARY KEY,
     prediction_id INTEGER NOT NULL,     -- predictionsテーブルの外部キー
 
     -- 実際の結果
-    actual_result TEXT,                 -- 実際のレース結果（JSON）
+    actual_result JSONB,                -- 実際のレース結果（JSON）
 
     -- 収支
     total_return INTEGER,               -- 実際の回収額（円）
     profit INTEGER,                     -- 収支（円）
-    actual_roi REAL,                    -- 実際のROI
+    actual_roi NUMERIC(5,2),            -- 実際のROI
 
     -- 精度
-    prediction_accuracy REAL,           -- 予想精度（0.0-1.0）
+    prediction_accuracy NUMERIC(3,2),   -- 予想精度（0.0-1.0）
 
     -- 反省内容
-    reflection_result TEXT,             -- フェーズ3反省結果（JSON）
+    reflection_result JSONB,            -- フェーズ3反省結果（JSON）
 
     -- 更新日時
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+    CONSTRAINT fk_prediction FOREIGN KEY (prediction_id)
+        REFERENCES predictions.predictions(id) ON DELETE CASCADE
 );
+
+-- インデックス作成
+CREATE INDEX idx_results_prediction_id ON predictions.results(prediction_id);
 ```
 
 ### 4.3 stats テーブル（統計情報）
 
 ```sql
-CREATE TABLE stats (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    period TEXT NOT NULL,               -- 集計期間（daily/weekly/monthly/all）
+CREATE TABLE predictions.stats (
+    id SERIAL PRIMARY KEY,
+    period VARCHAR(20) NOT NULL,        -- 集計期間（daily/weekly/monthly/all）
     start_date DATE,
     end_date DATE,
 
@@ -206,18 +229,24 @@ CREATE TABLE stats (
     total_investment INTEGER,           -- 総投資額
     total_return INTEGER,               -- 総回収額
     total_profit INTEGER,               -- 総収支
-    roi REAL,                           -- 回収率
+    roi NUMERIC(5,2),                   -- 回収率
 
     -- 的中率
     hit_count INTEGER,                  -- 的中数
-    hit_rate REAL,                      -- 的中率
+    hit_rate NUMERIC(3,2),              -- 的中率
 
     -- その他
-    best_roi REAL,                      -- 最高ROI
-    worst_roi REAL,                     -- 最低ROI
+    best_roi NUMERIC(5,2),              -- 最高ROI
+    worst_roi NUMERIC(5,2),             -- 最低ROI
 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT unique_period UNIQUE(period, start_date, end_date)
 );
+
+-- インデックス作成
+CREATE INDEX idx_stats_period ON predictions.stats(period);
+CREATE INDEX idx_stats_date_range ON predictions.stats(start_date, end_date);
 ```
 
 ---
@@ -529,6 +558,13 @@ keiba-yosou/
 ## 10. 環境変数（.env追加分）
 
 ```bash
+# 既存のPostgreSQL設定をそのまま使用
+# LOCAL_DB_HOST=localhost
+# LOCAL_DB_PORT=5432
+# LOCAL_DB_NAME=keiba_db  ← JRA-VANデータ + 予想結果を統合管理
+# LOCAL_DB_USER=postgres
+# LOCAL_DB_PASSWORD=your_password_here
+
 # Discord Bot
 DISCORD_BOT_TOKEN=your_discord_bot_token
 DISCORD_CHANNEL_ID=123456789
@@ -536,9 +572,6 @@ DISCORD_CHANNEL_ID=123456789
 # FastAPI
 API_HOST=0.0.0.0
 API_PORT=8000
-
-# 予想結果DB
-RESULTS_DB_PATH=data/predictions.db
 
 # その他
 ENABLE_DISCORD_NOTIFICATION=true
@@ -554,7 +587,13 @@ AUTO_PREDICT_ENABLED=false
 ✅ **UI**: Streamlitで直感的な操作
 ✅ **通知**: Discord Botで自動通知
 ✅ **API**: FastAPIで拡張性確保
-✅ **DB**: SQLiteで予想履歴を蓄積
+✅ **DB**: PostgreSQLで予想履歴とJRA-VANデータを統合管理
 ✅ **統計**: 回収率200%達成に向けた分析基盤
+
+**PostgreSQLのメリット:**
+- JRA-VANデータと予想結果を1つのDBで管理
+- スキーマ分離で論理的に整理
+- 強力なJOIN機能で高度な分析が可能
+- 同時アクセス・トランザクション対応
 
 データ到着後すぐに本格運用できる体制が整います！
