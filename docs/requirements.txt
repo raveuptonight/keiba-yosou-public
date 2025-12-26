@@ -9,8 +9,9 @@ sqlalchemy>=2.0.0          # ORM（オプション）
 # 環境変数
 python-dotenv>=1.0.0       # .env読み込み
 
-# Claude API
-anthropic>=0.40.0          # Anthropic公式SDK
+# LLM API
+google-genai>=0.3.0        # Google Gemini API（メイン、新パッケージ）
+anthropic>=0.40.0          # Anthropic Claude API（将来用）
 
 # データ処理
 pandas>=2.0.0              # データ分析

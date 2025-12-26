@@ -72,7 +72,7 @@ class LLMClient(ABC):
 
 
 class GeminiClient(LLMClient):
-    """Google Gemini APIクライアント"""
+    """Google Gemini APIクライアント（新google.genai SDK使用）"""
 
     def __init__(
         self, api_key: Optional[str] = None, model: Optional[str] = None
@@ -92,10 +92,9 @@ class GeminiClient(LLMClient):
                 "Gemini API key not found. Set GEMINI_API_KEY environment variable."
             )
 
-        import google.generativeai as genai
+        from google import genai
 
-        genai.configure(api_key=self.api_key)
-        self.client = genai.GenerativeModel(self.model)
+        self.client = genai.Client(api_key=self.api_key)
 
     def generate(
         self,
@@ -116,17 +115,19 @@ class GeminiClient(LLMClient):
         Returns:
             str: 生成されたテキスト
         """
-        generation_config = {
-            "temperature": temperature,
-        }
+        from google.genai import types
 
+        # 生成設定を作成
+        config_params = {"temperature": temperature}
         if max_tokens is not None:
-            generation_config["max_output_tokens"] = max_tokens
+            config_params["max_output_tokens"] = max_tokens
+        config_params.update(kwargs)
 
-        generation_config.update(kwargs)
+        generation_config = types.GenerateContentConfig(**config_params)
 
-        response = self.client.generate_content(
-            prompt, generation_config=generation_config
+        # コンテンツ生成
+        response = self.client.models.generate_content(
+            model=self.model, contents=prompt, config=generation_config
         )
 
         return response.text
@@ -150,26 +151,26 @@ class GeminiClient(LLMClient):
         Returns:
             str: 生成されたテキスト
         """
-        generation_config = {
-            "temperature": temperature,
-        }
+        from google.genai import types
 
+        # 生成設定を作成
+        config_params = {"temperature": temperature}
         if max_tokens is not None:
-            generation_config["max_output_tokens"] = max_tokens
+            config_params["max_output_tokens"] = max_tokens
+        config_params.update(kwargs)
 
-        generation_config.update(kwargs)
+        generation_config = types.GenerateContentConfig(**config_params)
 
-        # Geminiのチャット形式に変換
-        chat = self.client.start_chat(history=[])
-
-        # 最後のメッセージ以外を履歴として追加
-        for msg in messages[:-1]:
+        # メッセージを新SDKのフォーマットに変換
+        contents = []
+        for msg in messages:
             role = "user" if msg["role"] == "user" else "model"
-            chat.history.append({"role": role, "parts": [msg["content"]]})
+            contents.append(types.Content(role=role, parts=[types.Part(text=msg["content"])]))
 
-        # 最後のメッセージで生成
-        last_message = messages[-1]["content"]
-        response = chat.send_message(last_message, generation_config=generation_config)
+        # チャット生成
+        response = self.client.models.generate_content(
+            model=self.model, contents=contents, config=generation_config
+        )
 
         return response.text
 
