@@ -1,0 +1,142 @@
+{
+  "race_info": {
+    "race_id": "202412280506",
+    "race_name": "有馬記念",
+    "date": "2024-12-28",
+    "venue": "中山",
+    "course": "芝2500m",
+    "track_condition": "良",
+    "weather": "晴",
+    "grade": "GI",
+    "prize_money": "300,000,000円",
+    "num_horses": 16,
+    "post_time": "15:25"
+  },
+  "horses": [
+    {
+      "horse_number": 1,
+      "horse_name": "サンプルホース1",
+      "age": 5,
+      "sex": "牡",
+      "weight": 480,
+      "jockey": "C.ルメール",
+      "trainer": "藤沢和雄",
+      "odds": {
+        "win": 3.2,
+        "place": [1.5, 2.1]
+      },
+      "popularity": 2,
+      "barrier": 1,
+      "recent_results": [
+        {"date": "2024-11-24", "race": "ジャパンC", "finish": 2, "runners": 18, "distance": 2400, "track": "芝", "condition": "良"},
+        {"date": "2024-10-27", "race": "天皇賞秋", "finish": 1, "runners": 17, "distance": 2000, "track": "芝", "condition": "良"},
+        {"date": "2024-06-30", "race": "宝塚記念", "finish": 3, "runners": 16, "distance": 2200, "track": "芝", "condition": "良"}
+      ],
+      "pedigree": {
+        "sire": "ディープインパクト",
+        "dam_sire": "サンデーサイレンス"
+      },
+      "running_style": "先行"
+    },
+    {
+      "horse_number": 2,
+      "horse_name": "サンプルホース2",
+      "age": 4,
+      "sex": "牡",
+      "weight": 490,
+      "jockey": "武豊",
+      "trainer": "友道康夫",
+      "odds": {
+        "win": 5.8,
+        "place": [2.0, 3.5]
+      },
+      "popularity": 3,
+      "barrier": 2,
+      "recent_results": [
+        {"date": "2024-11-03", "race": "アルゼンチン共和国杯", "finish": 1, "runners": 14, "distance": 2500, "track": "芝", "condition": "稍重"},
+        {"date": "2024-09-29", "race": "オールカマー", "finish": 2, "runners": 16, "distance": 2200, "track": "芝", "condition": "良"},
+        {"date": "2024-05-26", "race": "目黒記念", "finish": 1, "runners": 15, "distance": 2500, "track": "芝", "condition": "良"}
+      ],
+      "pedigree": {
+        "sire": "キングカメハメハ",
+        "dam_sire": "ステイゴールド"
+      },
+      "running_style": "差し"
+    },
+    {
+      "horse_number": 3,
+      "horse_name": "サンプルホース3",
+      "age": 6,
+      "sex": "牡",
+      "weight": 502,
+      "jockey": "川田将雅",
+      "trainer": "矢作芳人",
+      "odds": {
+        "win": 2.1,
+        "place": [1.2, 1.8]
+      },
+      "popularity": 1,
+      "barrier": 8,
+      "recent_results": [
+        {"date": "2024-11-24", "race": "ジャパンC", "finish": 1, "runners": 18, "distance": 2400, "track": "芝", "condition": "良"},
+        {"date": "2024-10-06", "race": "凱旋門賞", "finish": 5, "runners": 20, "distance": 2400, "track": "芝", "condition": "重"},
+        {"date": "2024-05-05", "race": "天皇賞春", "finish": 1, "runners": 17, "distance": 3200, "track": "芝", "condition": "良"}
+      ],
+      "pedigree": {
+        "sire": "ハーツクライ",
+        "dam_sire": "ディープインパクト"
+      },
+      "running_style": "追込"
+    },
+    {
+      "horse_number": 4,
+      "horse_name": "サンプルホース4",
+      "age": 5,
+      "sex": "牡",
+      "weight": 472,
+      "jockey": "M.デムーロ",
+      "trainer": "木村哲也",
+      "odds": {
+        "win": 12.5,
+        "place": [3.5, 5.2]
+      },
+      "popularity": 5,
+      "barrier": 4,
+      "recent_results": [
+        {"date": "2024-11-10", "race": "エリザベス女王杯", "finish": 6, "runners": 18, "distance": 2200, "track": "芝", "condition": "良"},
+        {"date": "2024-09-15", "race": "セントライト記念", "finish": 2, "runners": 12, "distance": 2200, "track": "芝", "condition": "良"},
+        {"date": "2024-06-02", "race": "鳴尾記念", "finish": 1, "runners": 10, "distance": 2000, "track": "芝", "condition": "良"}
+      ],
+      "pedigree": {
+        "sire": "ロードカナロア",
+        "dam_sire": "キングカメハメハ"
+      },
+      "running_style": "先行"
+    },
+    {
+      "horse_number": 5,
+      "horse_name": "サンプルホース5",
+      "age": 3,
+      "sex": "牡",
+      "weight": 468,
+      "jockey": "横山和生",
+      "trainer": "堀宣行",
+      "odds": {
+        "win": 8.3,
+        "place": [2.8, 4.1]
+      },
+      "popularity": 4,
+      "barrier": 5,
+      "recent_results": [
+        {"date": "2024-11-24", "race": "ジャパンC", "finish": 4, "runners": 18, "distance": 2400, "track": "芝", "condition": "良"},
+        {"date": "2024-10-20", "race": "菊花賞", "finish": 2, "runners": 18, "distance": 3000, "track": "芝", "condition": "良"},
+        {"date": "2024-05-26", "race": "ダービー", "finish": 1, "runners": 18, "distance": 2400, "track": "芝", "condition": "良"}
+      ],
+      "pedigree": {
+        "sire": "ディープインパクト",
+        "dam_sire": "ハーツクライ"
+      },
+      "running_style": "差し"
+    }
+  ]
+}

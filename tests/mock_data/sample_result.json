@@ -1,0 +1,84 @@
+{
+  "race_id": "202412280506",
+  "race_name": "有馬記念",
+  "final_results": {
+    "finish_order": [
+      {
+        "rank": 1,
+        "horse_number": 2,
+        "horse_name": "サンプルホース2",
+        "time": "2:32.4",
+        "margin": "-"
+      },
+      {
+        "rank": 2,
+        "horse_number": 5,
+        "horse_name": "サンプルホース5",
+        "time": "2:32.6",
+        "margin": "1馬身"
+      },
+      {
+        "rank": 3,
+        "horse_number": 1,
+        "horse_name": "サンプルホース1",
+        "time": "2:32.8",
+        "margin": "1.5馬身"
+      },
+      {
+        "rank": 4,
+        "horse_number": 3,
+        "horse_name": "サンプルホース3",
+        "time": "2:33.0",
+        "margin": "1馬身"
+      },
+      {
+        "rank": 5,
+        "horse_number": 4,
+        "horse_name": "サンプルホース4",
+        "time": "2:33.5",
+        "margin": "3馬身"
+      }
+    ],
+    "pace": {
+      "first_600m": "36.8",
+      "last_600m": "35.2",
+      "pace_type": "ミドルペース"
+    },
+    "payouts": {
+      "win": {
+        "horse": 2,
+        "payout": 580
+      },
+      "place": [
+        {"horse": 2, "payout": 200},
+        {"horse": 5, "payout": 280},
+        {"horse": 1, "payout": 150}
+      ],
+      "quinella": {
+        "combination": [2, 5],
+        "payout": 3240
+      },
+      "exacta": {
+        "combination": [2, 5],
+        "payout": 5870
+      },
+      "wide": [
+        {"combination": [2, 5], "payout": 830},
+        {"combination": [2, 1], "payout": 420},
+        {"combination": [5, 1], "payout": 610}
+      ],
+      "trio": {
+        "combination": [2, 5, 1],
+        "payout": 2150
+      },
+      "trifecta": {
+        "combination": [2, 5, 1],
+        "payout": 18760
+      }
+    }
+  },
+  "comments": {
+    "race_comment": "2番サンプルホース2が直線で鋭く伸びて優勝。スローペースから最後の直線で差し切る形となった。",
+    "winning_horse_comment": "道中は中団から、直線で外を回して伸びた。距離適性がぴったり合った。"
+  }
+}
