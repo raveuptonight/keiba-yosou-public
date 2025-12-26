@@ -9,6 +9,10 @@ sqlalchemy>=2.0.0          # ORM（オプション）
 # 環境変数
 python-dotenv>=1.0.0       # .env読み込み
 
+# API
+fastapi>=0.115.0           # FastAPIフレームワーク
+uvicorn[standard]>=0.30.0  # ASGIサーバー
+
 # LLM API
 google-genai>=0.3.0        # Google Gemini API（メイン、新パッケージ）
 anthropic>=0.40.0          # Anthropic Claude API（将来用）
