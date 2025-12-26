@@ -20,21 +20,18 @@ EC2 (Amazon Linux 2023) で競馬予想システムを動かすための最短�
 ssh -i your-key.pem ec2-user@your-ec2-ip
 ```
 
-### 2. 必要なパッケージインストール
+### 2. 必要なパッケージを一括インストール
 
 ```bash
-# システム更新
-sudo dnf update -y
-
-# Python 3.11インストール
-sudo dnf install -y python3.11 python3.11-pip
-
-# tmuxインストール（推奨）
-sudo dnf install -y tmux
-
-# Gitインストール
-sudo dnf install -y git
+# 1行で全部インストール
+sudo dnf update -y && sudo dnf install -y git python3.11 python3.11-pip tmux
 ```
+
+**含まれるもの:**
+- `git`: リポジトリクローン用
+- `python3.11`: Python 3.11本体
+- `python3.11-pip`: パッケージマネージャー
+- `tmux`: セッション管理（SSH切断後もプロセス継続）
 
 ### 3. プロジェクトクローン & セットアップ
 
