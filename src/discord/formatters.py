@@ -48,11 +48,14 @@ def format_prediction_notification(
         weekday = weekday_names[race_date.weekday()]
         date_str = f"{race_date.strftime('%Y/%m/%d')} ({weekday})"
 
-        # 予想結果から本命・対抗・穴馬を取得
+        # 予想結果から本命・対抗・穴馬等を取得
         win_pred = prediction_result.get("win_prediction", {})
         honmei = win_pred.get("first", {})
         taikou = win_pred.get("second", {})
         ana = win_pred.get("third", {})
+        renka = win_pred.get("fourth", {})
+        chumoku = win_pred.get("fifth", {})
+        excluded = win_pred.get("excluded", [])
 
         # 推奨馬券を取得
         betting = prediction_result.get("betting_strategy", {})
@@ -66,7 +69,7 @@ def format_prediction_notification(
             "",
         ]
 
-        # 本命・対抗・穴馬
+        # 本命・対抗・穴馬・連下・注目馬
         if honmei:
             lines.append(
                 f"◎本命: {honmei.get('horse_number', '?')}番 {honmei.get('horse_name', '不明')}"
@@ -79,6 +82,24 @@ def format_prediction_notification(
             lines.append(
                 f"▲単穴: {ana.get('horse_number', '?')}番 {ana.get('horse_name', '不明')}"
             )
+        if renka:
+            lines.append(
+                f"△連下: {renka.get('horse_number', '?')}番 {renka.get('horse_name', '不明')}"
+            )
+        if chumoku:
+            lines.append(
+                f"☆注目: {chumoku.get('horse_number', '?')}番 {chumoku.get('horse_name', '不明')}"
+            )
+
+        # 消し馬
+        if excluded:
+            lines.append("")
+            excluded_list = []
+            for horse in excluded[:3]:  # 最大3頭まで表示
+                horse_num = horse.get('horse_number', '?')
+                horse_name = horse.get('horse_name', '不明')
+                excluded_list.append(f"{horse_num}番{horse_name}")
+            lines.append(f"✕消し馬: {', '.join(excluded_list)}")
 
         # 推奨馬券
         if tickets:
