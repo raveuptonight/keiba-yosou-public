@@ -2,109 +2,200 @@
 ハイブリッド予想パイプライン
 
 機械学習（XGBoost） + LLM（Gemini）による高精度予想システム
+
+Phase 0: 特徴量抽出 + ML予測
+Phase 1: LLMデータ分析（MLスコア考慮）
+Phase 2: LLM最終予想（ハイブリッド）
 """
 
 import json
+import logging
 import pandas as pd
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 from src.features.feature_pipeline import FeatureExtractor
 from src.models.xgboost_model import HorseRacingXGBoost
 from src.predict.llm import LLMClient
 from src.db.predictions_db import PredictionsDB
+from src.config import (
+    PROMPT_ML_TOP_HORSES_PHASE1,
+    PROMPT_ML_TOP_HORSES_PHASE2,
+    PROMPT_LEARNING_POINTS_LIMIT,
+    PROMPT_LEARNING_POINTS_PER_RACE,
+    PROMPT_LEARNING_POINTS_DAYS_BACK,
+    LLM_ANALYSIS_TEMPERATURE,
+    LLM_PREDICTION_TEMPERATURE,
+)
+from src.exceptions import (
+    PipelineError,
+    FeatureExtractionError,
+    PredictionError,
+    AnalysisError,
+    LLMError,
+    ModelPredictionError,
+    DatabaseError,
+    DataParseError,
+)
+
+# ロガー設定
+logger = logging.getLogger(__name__)
 
 
 class HybridPredictionPipeline:
-    """機械学習 + LLM ハイブリッド予想パイプライン"""
+    """
+    機械学習 + LLM ハイブリッド予想パイプライン
+
+    このクラスは3段階の予想プロセスを管理します：
+    1. Phase 0: 特徴量抽出 & ML予測
+    2. Phase 1: LLMデータ分析
+    3. Phase 2: LLM最終予想
+
+    Attributes:
+        feature_extractor: 特徴量抽出器
+        ml_model: XGBoostモデル
+        llm_client: LLMクライアント
+        predictions_db: 予想結果DBクライアント
+    """
 
     def __init__(self, model_path: Optional[str] = None):
         """
         Args:
             model_path: 学習済みモデルのパス（省略時はモックモード）
-        """
-        self.feature_extractor = FeatureExtractor()
-        self.ml_model = HorseRacingXGBoost()
-        self.llm_client = LLMClient()
-        self.predictions_db = PredictionsDB()
 
-        # モデル読み込み（存在する場合）
-        if model_path:
-            self.ml_model.load(model_path)
+        Raises:
+            ModelLoadError: モデル読み込みに失敗した場合
+        """
+        try:
+            self.feature_extractor = FeatureExtractor()
+            self.ml_model = HorseRacingXGBoost()
+            self.llm_client = LLMClient()
+            self.predictions_db = PredictionsDB()
+
+            # モデル読み込み（存在する場合）
+            if model_path:
+                logger.info(f"モデル読み込み: {model_path}")
+                self.ml_model.load(model_path)
+        except Exception as e:
+            logger.error(f"パイプライン初期化失敗: {e}")
+            raise PipelineError(f"パイプライン初期化失敗: {e}") from e
 
     def predict(
         self,
         race_id: str,
-        race_data: Dict,
+        race_data: Dict[str, Any],
         race_date: Optional[str] = None,
         phase: str = "all",
-        temperature: float = 0.3,
+        temperature: Optional[float] = None,
         save_to_db: bool = True
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         ハイブリッド予想実行
 
         Args:
             race_id: レースID
-            race_data: レースデータ（モック用）
+            race_data: レースデータ（race_name, date, venue, distance, track_condition, horses含む）
             race_date: レース日付（YYYY-MM-DD形式、省略時は今日）
-            phase: 実行フェーズ（analyze/predict/all）
-            temperature: LLM温度パラメータ
+            phase: 実行フェーズ（'analyze', 'predict', 'all'）
+            temperature: LLM温度パラメータ（省略時は設定値）
             save_to_db: DBに保存するか
 
         Returns:
-            dict: 予想結果（prediction_idを含む）
+            予想結果（以下のキーを含む）:
+                - race_id: レースID
+                - race_date: レース日付
+                - timestamp: 予想時刻
+                - ml_scores: ML予測結果
+                - analysis: Phase 1分析結果（phase='analyze'/'all'の場合）
+                - prediction: Phase 2予想結果（phase='predict'/'all'の場合）
+                - prediction_id: DB保存ID（save_to_db=Trueの場合）
+
+        Raises:
+            PipelineError: パイプライン実行に失敗した場合
+            FeatureExtractionError: 特徴量抽出に失敗した場合
+            ModelPredictionError: ML予測に失敗した場合
+            AnalysisError: LLM分析に失敗した場合
+            PredictionError: LLM予想に失敗した場合
         """
+        # デフォルト値設定
         if race_date is None:
             race_date = datetime.now().strftime('%Y-%m-%d')
 
-        result = {
+        result: Dict[str, Any] = {
             'race_id': race_id,
             'race_date': race_date,
             'timestamp': datetime.now().isoformat()
         }
 
-        # Phase 0: 特徴量生成 & ML予測
-        print("\n[Phase 0] 特徴量生成 & 機械学習予測")
-        ml_scores = self._run_ml_prediction(race_id, race_data)
-        result['ml_scores'] = ml_scores
+        try:
+            # Phase 0: 特徴量生成 & ML予測
+            logger.info(f"[Phase 0] 特徴量生成 & ML予測開始: {race_id}")
+            print("\n[Phase 0] 特徴量生成 & 機械学習予測")
+            ml_scores = self._run_ml_prediction(race_id, race_data)
+            result['ml_scores'] = ml_scores
+            logger.info(f"[Phase 0] 完了: {len(ml_scores)}頭の予測")
 
-        if phase == "analyze" or phase == "all":
-            # Phase 1: LLMデータ分析（MLスコア付き）
-            print("\n[Phase 1] データ分析（ML + LLM）")
-            analysis = self._run_phase1(race_data, ml_scores, temperature)
-            result['analysis'] = analysis
-
-        if phase == "predict" or phase == "all":
-            # Phase 2: LLM予想生成（ハイブリッド）
-            print("\n[Phase 2] 予想生成（ハイブリッド）")
-            prediction = self._run_phase2(
-                race_data,
-                ml_scores,
-                result.get('analysis', {}),
-                temperature
-            )
-            result['prediction'] = prediction
-
-        # データベースに保存（Phase 0-2完了時）
-        if save_to_db and phase == "all":
-            try:
-                prediction_id = self.predictions_db.save_prediction(
-                    race_id=race_id,
-                    race_date=race_date,
-                    ml_scores=ml_scores,
-                    analysis=result.get('analysis', {}),
-                    prediction=result.get('prediction', {}),
-                    model_version="v1.0"
+            # Phase 1: LLMデータ分析
+            if phase in ("analyze", "all"):
+                logger.info("[Phase 1] LLMデータ分析開始")
+                print("\n[Phase 1] データ分析（ML + LLM）")
+                analysis = self._run_phase1(
+                    race_data,
+                    ml_scores,
+                    temperature or LLM_ANALYSIS_TEMPERATURE
                 )
-                result['prediction_id'] = prediction_id
-                print(f"\n✅ 予想結果保存: prediction_id={prediction_id}")
-            except Exception as e:
-                print(f"\n⚠️  予想結果保存失敗: {e}")
+                result['analysis'] = analysis
+                logger.info("[Phase 1] 完了")
 
-        return result
+            # Phase 2: LLM最終予想
+            if phase in ("predict", "all"):
+                logger.info("[Phase 2] LLM最終予想開始")
+                print("\n[Phase 2] 予想生成（ハイブリッド）")
+                prediction = self._run_phase2(
+                    race_data,
+                    ml_scores,
+                    result.get('analysis', {}),
+                    temperature or LLM_PREDICTION_TEMPERATURE
+                )
+                result['prediction'] = prediction
+                logger.info("[Phase 2] 完了")
 
-    def _run_ml_prediction(self, race_id: str, race_data: Dict) -> List[Dict]:
+            # データベースに保存
+            if save_to_db and phase == "all":
+                try:
+                    prediction_id = self.predictions_db.save_prediction(
+                        race_id=race_id,
+                        race_date=race_date,
+                        ml_scores=ml_scores,
+                        analysis=result.get('analysis', {}),
+                        prediction=result.get('prediction', {}),
+                        model_version="v1.0"
+                    )
+                    result['prediction_id'] = prediction_id
+                    logger.info(f"予想結果保存成功: prediction_id={prediction_id}")
+                    print(f"\n✅ 予想結果保存: prediction_id={prediction_id}")
+                except DatabaseError as e:
+                    logger.error(f"予想結果保存失敗: {e}")
+                    print(f"\n⚠️  予想結果保存失敗: {e}")
+                    # DB保存失敗は致命的でないため、処理続行
+
+            logger.info(f"予想パイプライン完了: {race_id}")
+            return result
+
+        except (FeatureExtractionError, ModelPredictionError, AnalysisError, PredictionError) as e:
+            # 既知のエラーは再スロー
+            logger.error(f"予想パイプライン失敗: {e}")
+            raise
+        except Exception as e:
+            # 予期しないエラー
+            logger.exception(f"予想パイプライン予期しないエラー: {e}")
+            raise PipelineError(f"予想パイプライン失敗: {e}") from e
+
+    def _run_ml_prediction(
+        self,
+        race_id: str,
+        race_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
         """
         機械学習予測
 
@@ -113,46 +204,61 @@ class HybridPredictionPipeline:
             race_data: レースデータ
 
         Returns:
-            list: MLスコア結果
+            MLスコア結果（horse_number, horse_name, rank_score, win_probability, features含む）
+
+        Raises:
+            FeatureExtractionError: 特徴量抽出に失敗した場合
+            ModelPredictionError: ML予測に失敗した場合
         """
-        num_horses = len(race_data.get('horses', []))
+        try:
+            num_horses = len(race_data.get('horses', []))
+            if num_horses == 0:
+                raise FeatureExtractionError("出走馬が0頭です")
 
-        # 特徴量抽出
-        features_df = self.feature_extractor.extract_all_features(
-            race_id,
-            num_horses
-        )
+            # 特徴量抽出
+            logger.debug(f"特徴量抽出開始: {num_horses}頭")
+            features_df = self.feature_extractor.extract_all_features(
+                race_id,
+                num_horses
+            )
 
-        # 予測
-        rank_scores = self.ml_model.predict(features_df)
-        win_probs = self.ml_model.predict_win_probability(features_df)
+            # ML予測
+            logger.debug("ML予測開始")
+            rank_scores = self.ml_model.predict(features_df)
+            win_probs = self.ml_model.predict_win_probability(features_df)
 
-        # 結果をリストに変換
-        results = []
-        for i, horse in enumerate(race_data.get('horses', [])):
-            results.append({
-                'horse_number': horse.get('number', i + 1),
-                'horse_name': horse.get('name', f'Horse {i + 1}'),
-                'rank_score': float(rank_scores[i]),
-                'win_probability': float(win_probs[i]),
-                'features': features_df.iloc[i].to_dict()
-            })
+            # 結果をリストに変換
+            results: List[Dict[str, Any]] = []
+            for i, horse in enumerate(race_data.get('horses', [])):
+                results.append({
+                    'horse_number': horse.get('number', i + 1),
+                    'horse_name': horse.get('name', f'Horse {i + 1}'),
+                    'rank_score': float(rank_scores[i]),
+                    'win_probability': float(win_probs[i]),
+                    'features': features_df.iloc[i].to_dict()
+                })
 
-        # 着順スコアでソート
-        results.sort(key=lambda x: x['rank_score'])
+            # 着順スコアでソート
+            results.sort(key=lambda x: x['rank_score'])
 
-        # 順位を付与
-        for rank, item in enumerate(results, 1):
-            item['ml_predicted_rank'] = rank
+            # 順位を付与
+            for rank, item in enumerate(results, 1):
+                item['ml_predicted_rank'] = rank
 
-        return results
+            return results
+
+        except Exception as e:
+            logger.error(f"ML予測失敗: {e}")
+            if isinstance(e, (FeatureExtractionError, ModelPredictionError)):
+                raise
+            raise ModelPredictionError(f"ML予測失敗: {e}") from e
 
     def _run_phase1(
         self,
-        race_data: Dict,
-        ml_scores: List[Dict],
+        race_data: Dict[str, Any],
+        ml_scores: List[Dict[str, Any]],
         temperature: float
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Phase 1: データ分析（ML + LLM）
 
@@ -162,31 +268,44 @@ class HybridPredictionPipeline:
             temperature: LLM温度
 
         Returns:
-            dict: 分析結果
+            分析結果
+
+        Raises:
+            AnalysisError: 分析に失敗した場合
         """
-        # プロンプト生成
-        prompt = self._build_phase1_prompt(race_data, ml_scores)
-
-        # LLM実行
-        response = self.llm_client.generate(
-            prompt=prompt,
-            temperature=temperature
-        )
-
         try:
-            # JSON解析を試みる
-            return json.loads(response)
-        except json.JSONDecodeError:
-            # JSON解析失敗時はテキストとして返す
-            return {'raw_response': response}
+            # プロンプト生成
+            prompt = self._build_phase1_prompt(race_data, ml_scores)
+
+            # LLM実行
+            logger.debug("LLM分析開始")
+            response = self.llm_client.generate(
+                prompt=prompt,
+                temperature=temperature
+            )
+
+            # JSON解析
+            try:
+                return json.loads(response)
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON解析失敗、raw_responseとして返却: {e}")
+                # JSON解析失敗時はテキストとして返す
+                return {'raw_response': response}
+
+        except LLMError as e:
+            logger.error(f"LLM分析失敗: {e}")
+            raise AnalysisError(f"LLM分析失敗: {e}") from e
+        except Exception as e:
+            logger.error(f"Phase 1予期しないエラー: {e}")
+            raise AnalysisError(f"Phase 1失敗: {e}") from e
 
     def _run_phase2(
         self,
-        race_data: Dict,
-        ml_scores: List[Dict],
-        analysis: Dict,
+        race_data: Dict[str, Any],
+        ml_scores: List[Dict[str, Any]],
+        analysis: Dict[str, Any],
         temperature: float
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Phase 2: 予想生成（ハイブリッド）
 
@@ -197,66 +316,73 @@ class HybridPredictionPipeline:
             temperature: LLM温度
 
         Returns:
-            dict: 予想結果
-        """
-        # プロンプト生成
-        prompt = self._build_phase2_prompt(race_data, ml_scores, analysis)
+            予想結果
 
-        # LLM実行
-        response = self.llm_client.generate(
-            prompt=prompt,
-            temperature=temperature
+        Raises:
+            PredictionError: 予想生成に失敗した場合
+        """
+        try:
+            # プロンプト生成
+            prompt = self._build_phase2_prompt(race_data, ml_scores, analysis)
+
+            # LLM実行
+            logger.debug("LLM予想生成開始")
+            response = self.llm_client.generate(
+                prompt=prompt,
+                temperature=temperature
+            )
+
+            # JSON解析
+            try:
+                return json.loads(response)
+            except json.JSONDecodeError as e:
+                logger.warning(f"JSON解析失敗、raw_responseとして返却: {e}")
+                return {'raw_response': response}
+
+        except LLMError as e:
+            logger.error(f"LLM予想生成失敗: {e}")
+            raise PredictionError(f"LLM予想生成失敗: {e}") from e
+        except Exception as e:
+            logger.error(f"Phase 2予期しないエラー: {e}")
+            raise PredictionError(f"Phase 2失敗: {e}") from e
+
+    def _build_phase1_prompt(
+        self,
+        race_data: Dict[str, Any],
+        ml_scores: List[Dict[str, Any]]
+    ) -> str:
+        """
+        Phase 1プロンプト生成
+
+        Args:
+            race_data: レースデータ
+            ml_scores: MLスコア
+
+        Returns:
+            プロンプト文字列
+        """
+        # レース情報セクション
+        race_info = self._format_race_info(race_data)
+
+        # ML上位馬セクション
+        top_ml_horses = self._format_ml_top_horses(
+            ml_scores[:PROMPT_ML_TOP_HORSES_PHASE1]
         )
 
-        try:
-            return json.loads(response)
-        except json.JSONDecodeError:
-            return {'raw_response': response}
+        # 学習ポイントセクション
+        learning_points_section = self._get_learning_points_section()
 
-    def _build_phase1_prompt(self, race_data: Dict, ml_scores: List[Dict]) -> str:
-        """Phase 1プロンプト生成"""
-
-        # MLスコア上位3頭
-        top3_ml = ml_scores[:3]
-
+        # プロンプト組み立て
         prompt = f"""あなたは競馬予想の専門家です。機械学習の分析結果を元に、データ分析を行ってください。
 
-## レース情報
-- レース名: {race_data.get('race_name', '不明')}
-- 日付: {race_data.get('date', '不明')}
-- 競馬場: {race_data.get('venue', '不明')}
-- 距離: {race_data.get('distance', '不明')}m
-- 馬場状態: {race_data.get('track_condition', '良')}
+{race_info}
 
-## 機械学習による予想上位3頭
+## 機械学習による予想上位{PROMPT_ML_TOP_HORSES_PHASE1}頭
 
-"""
+{top_ml_horses}
 
-        for i, horse in enumerate(top3_ml, 1):
-            prompt += f"""### {i}位: {horse['horse_number']}番 {horse['horse_name']}
-- 予想着順スコア: {horse['rank_score']:.2f}位
-- 勝率予測: {horse['win_probability']:.1%}
-- スピード指数: {horse['features'].get('speed_index_avg', 0):.1f}
-- 上がり3F順位: {horse['features'].get('last3f_rank_avg', 0):.2f}位
-- 騎手勝率: {horse['features'].get('jockey_win_rate', 0):.1%}
+{learning_points_section}
 
-"""
-
-        # 過去の学習ポイントを追加
-        try:
-            learning_data = self.predictions_db.get_recent_learning_points(limit=5, days_back=30)
-            if learning_data:
-                prompt += "\n## 過去の予想から学んだポイント\n\n"
-                prompt += "直近の予想で学習した注意点を活かしてください：\n\n"
-                for ld in learning_data:
-                    for point in ld['learning_points'][:2]:  # 各レースから最大2ポイント
-                        prompt += f"- {point}\n"
-                prompt += "\n"
-        except Exception as e:
-            # DB接続失敗時は無視
-            pass
-
-        prompt += """
 ## 分析タスク
 
 機械学習の予想を踏まえ、以下の観点から分析してください：
@@ -274,47 +400,42 @@ JSON形式で簡潔に出力してください。
 
     def _build_phase2_prompt(
         self,
-        race_data: Dict,
-        ml_scores: List[Dict],
-        analysis: Dict
+        race_data: Dict[str, Any],
+        ml_scores: List[Dict[str, Any]],
+        analysis: Dict[str, Any]
     ) -> str:
-        """Phase 2プロンプト生成"""
+        """
+        Phase 2プロンプト生成
 
-        # MLスコア上位5頭
-        top5_ml = ml_scores[:5]
+        Args:
+            race_data: レースデータ
+            ml_scores: MLスコア
+            analysis: Phase1分析結果
+
+        Returns:
+            プロンプト文字列
+        """
+        # ML上位馬セクション（Phase2用）
+        top_ml_horses = self._format_ml_top_horses_phase2(
+            ml_scores[:PROMPT_ML_TOP_HORSES_PHASE2]
+        )
+
+        # 学習ポイントセクション（詳細版）
+        learning_points_section = self._get_learning_points_section_detailed()
 
         prompt = f"""Phase 1の分析を踏まえ、最終的な着順予想を行ってください。
 
 ## レース情報
 - レース名: {race_data.get('race_name', '不明')}
 
-## 機械学習による基準順位（上位5頭）
-"""
+## 機械学習による基準順位（上位{PROMPT_ML_TOP_HORSES_PHASE2}頭）
+{top_ml_horses}
 
-        for i, horse in enumerate(top5_ml, 1):
-            prompt += f"{i}位: {horse['horse_number']}番 {horse['horse_name']} (勝率: {horse['win_probability']:.1%})\n"
-
-        prompt += f"""
 ## Phase 1 分析結果
 {json.dumps(analysis, ensure_ascii=False, indent=2)}
-"""
 
-        # 過去の学習ポイントを追加
-        try:
-            learning_data = self.predictions_db.get_recent_learning_points(limit=5, days_back=30)
-            if learning_data:
-                prompt += "\n## 過去の予想から学んだ教訓\n\n"
-                for ld in learning_data:
-                    if ld['learning_points']:
-                        prompt += f"**{ld['race_id']}** (外れ値率: {ld['outlier_rate']:.1%}):\n"
-                        for point in ld['learning_points'][:3]:
-                            prompt += f"- {point}\n"
-                        prompt += "\n"
-        except Exception as e:
-            # DB接続失敗時は無視
-            pass
+{learning_points_section}
 
-        prompt += """
 ## 予想タスク
 
 機械学習の順位を**ベースライン**として、以下を考慮して調整してください：
@@ -344,9 +465,97 @@ JSON形式で簡潔に出力してください。
 
         return prompt
 
+    # ========================================
+    # プロンプト生成ヘルパーメソッド
+    # ========================================
+
+    def _format_race_info(self, race_data: Dict[str, Any]) -> str:
+        """レース情報セクションをフォーマット"""
+        return f"""## レース情報
+- レース名: {race_data.get('race_name', '不明')}
+- 日付: {race_data.get('date', '不明')}
+- 競馬場: {race_data.get('venue', '不明')}
+- 距離: {race_data.get('distance', '不明')}m
+- 馬場状態: {race_data.get('track_condition', '良')}"""
+
+    def _format_ml_top_horses(self, top_horses: List[Dict[str, Any]]) -> str:
+        """ML上位馬情報をフォーマット（Phase 1用）"""
+        formatted = []
+        for i, horse in enumerate(top_horses, 1):
+            formatted.append(f"""### {i}位: {horse['horse_number']}番 {horse['horse_name']}
+- 予想着順スコア: {horse['rank_score']:.2f}位
+- 勝率予測: {horse['win_probability']:.1%}
+- スピード指数: {horse['features'].get('speed_index_avg', 0):.1f}
+- 上がり3F順位: {horse['features'].get('last3f_rank_avg', 0):.2f}位
+- 騎手勝率: {horse['features'].get('jockey_win_rate', 0):.1%}
+""")
+        return "\n".join(formatted)
+
+    def _format_ml_top_horses_phase2(self, top_horses: List[Dict[str, Any]]) -> str:
+        """ML上位馬情報をフォーマット（Phase 2用）"""
+        formatted = []
+        for i, horse in enumerate(top_horses, 1):
+            formatted.append(
+                f"{i}位: {horse['horse_number']}番 {horse['horse_name']} "
+                f"(勝率: {horse['win_probability']:.1%})"
+            )
+        return "\n".join(formatted)
+
+    def _get_learning_points_section(self) -> str:
+        """学習ポイントセクション取得（簡易版）"""
+        try:
+            learning_data = self.predictions_db.get_recent_learning_points(
+                limit=PROMPT_LEARNING_POINTS_LIMIT,
+                days_back=PROMPT_LEARNING_POINTS_DAYS_BACK
+            )
+            if not learning_data:
+                return ""
+
+            section = "\n## 過去の予想から学んだポイント\n\n"
+            section += "直近の予想で学習した注意点を活かしてください：\n\n"
+
+            for ld in learning_data:
+                for point in ld['learning_points'][:PROMPT_LEARNING_POINTS_PER_RACE]:
+                    section += f"- {point}\n"
+
+            return section + "\n"
+        except DatabaseError as e:
+            logger.warning(f"学習ポイント取得失敗: {e}")
+            return ""
+
+    def _get_learning_points_section_detailed(self) -> str:
+        """学習ポイントセクション取得（詳細版）"""
+        try:
+            learning_data = self.predictions_db.get_recent_learning_points(
+                limit=PROMPT_LEARNING_POINTS_LIMIT,
+                days_back=PROMPT_LEARNING_POINTS_DAYS_BACK
+            )
+            if not learning_data:
+                return ""
+
+            section = "\n## 過去の予想から学んだ教訓\n\n"
+
+            for ld in learning_data:
+                if ld['learning_points']:
+                    section += f"**{ld['race_id']}** (外れ値率: {ld['outlier_rate']:.1%}):\n"
+                    for point in ld['learning_points'][:3]:
+                        section += f"- {point}\n"
+                    section += "\n"
+
+            return section
+        except DatabaseError as e:
+            logger.warning(f"学習ポイント取得失敗: {e}")
+            return ""
+
 
 # 使用例（テスト用）
 if __name__ == "__main__":
+    # ロギング設定
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+
     # モックデータ
     mock_race_data = {
         'race_name': 'テストレース',
@@ -362,12 +571,16 @@ if __name__ == "__main__":
     }
 
     # パイプライン実行
-    pipeline = HybridPredictionPipeline()
-    result = pipeline.predict(
-        race_id='TEST001',
-        race_data=mock_race_data,
-        phase='all'
-    )
+    try:
+        pipeline = HybridPredictionPipeline()
+        result = pipeline.predict(
+            race_id='TEST001',
+            race_data=mock_race_data,
+            phase='all',
+            save_to_db=False  # テストではDB保存しない
+        )
 
-    print("\n=== 予想結果 ===")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+        print("\n=== 予想結果 ===")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    except PipelineError as e:
+        logger.error(f"予想失敗: {e}")

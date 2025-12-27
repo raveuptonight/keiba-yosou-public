@@ -1,0 +1,118 @@
+"""
+システム全体の設定定数
+
+マジックナンバーやハードコード値を集約管理
+"""
+
+from typing import Final
+
+# =====================================
+# データベース設定
+# =====================================
+DB_DEFAULT_LEARNING_POINTS_LIMIT: Final[int] = 10
+DB_DEFAULT_DAYS_BACK: Final[int] = 30
+DB_DEFAULT_STATS_DAYS_BACK: Final[int] = 30
+DB_CONNECTION_POOL_MIN: Final[int] = 1
+DB_CONNECTION_POOL_MAX: Final[int] = 10
+
+# =====================================
+# 機械学習設定
+# =====================================
+# 外れ値判定
+ML_OUTLIER_THRESHOLD: Final[float] = 3.0  # 着順誤差3着以上を外れ値とする
+ML_OUTLIER_RATE_THRESHOLD: Final[float] = 0.3  # 外れ値率30%超で再学習推奨
+ML_FEATURE_VARIANCE_THRESHOLD: Final[float] = 0.2  # 特徴量の分散閾値
+
+# 再学習設定
+ML_MIN_RETRAIN_SAMPLES: Final[int] = 100  # 最小再学習サンプル数
+
+# XGBoostパラメータ
+XGBOOST_N_ESTIMATORS: Final[int] = 100
+XGBOOST_MAX_DEPTH: Final[int] = 6
+XGBOOST_LEARNING_RATE: Final[float] = 0.1
+XGBOOST_SUBSAMPLE: Final[float] = 0.8
+XGBOOST_COLSAMPLE_BYTREE: Final[float] = 0.8
+XGBOOST_MIN_CHILD_WEIGHT: Final[int] = 1
+XGBOOST_GAMMA: Final[float] = 0.0
+XGBOOST_REG_ALPHA: Final[float] = 0.0
+XGBOOST_REG_LAMBDA: Final[float] = 1.0
+XGBOOST_RANDOM_STATE: Final[int] = 42
+
+# =====================================
+# LLM設定
+# =====================================
+LLM_DEFAULT_TEMPERATURE: Final[float] = 0.3
+LLM_ANALYSIS_TEMPERATURE: Final[float] = 0.2  # Phase 1: データ分析
+LLM_PREDICTION_TEMPERATURE: Final[float] = 0.3  # Phase 2: 予想生成
+LLM_REFLECTION_TEMPERATURE: Final[float] = 0.2  # Phase 3: 失敗分析
+
+# トークン制限
+LLM_MAX_TOKENS: Final[int] = 8000
+
+# =====================================
+# プロンプト設定
+# =====================================
+# 学習ポイント取得設定
+PROMPT_LEARNING_POINTS_LIMIT: Final[int] = 5  # 最大5レース分の学習ポイント
+PROMPT_LEARNING_POINTS_PER_RACE: Final[int] = 2  # 各レースから最大2ポイント
+PROMPT_LEARNING_POINTS_DAYS_BACK: Final[int] = 30  # 直近30日分
+
+# ML予想表示設定
+PROMPT_ML_TOP_HORSES_PHASE1: Final[int] = 3  # Phase 1で表示する上位頭数
+PROMPT_ML_TOP_HORSES_PHASE2: Final[int] = 5  # Phase 2で表示する上位頭数
+
+# =====================================
+# API設定
+# =====================================
+API_DEFAULT_HOST: Final[str] = "0.0.0.0"
+API_DEFAULT_PORT: Final[int] = 8000
+API_BASE_URL_DEFAULT: Final[str] = "http://localhost:8000"
+
+# ページネーション
+API_DEFAULT_LIMIT: Final[int] = 10
+API_MAX_LIMIT: Final[int] = 100
+
+# タイムアウト
+API_REQUEST_TIMEOUT: Final[int] = 300  # 5分
+API_STATS_TIMEOUT: Final[int] = 10  # 10秒
+
+# =====================================
+# Discord Bot設定
+# =====================================
+DISCORD_REQUEST_TIMEOUT: Final[int] = 300  # 5分
+DISCORD_STATS_TIMEOUT: Final[int] = 10  # 10秒
+DISCORD_MAX_PREDICTIONS_DISPLAY: Final[int] = 5  # 予想表示最大件数
+DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # 統計表示最大件数
+
+# =====================================
+# CORS設定（セキュリティ）
+# =====================================
+CORS_ALLOW_ORIGINS_DEV: Final[list] = ["*"]  # 開発環境
+CORS_ALLOW_ORIGINS_PROD: Final[list] = [
+    "https://yourdomain.com",  # 本番環境のドメインに置き換える
+]
+
+# =====================================
+# ロギング設定
+# =====================================
+LOG_LEVEL: Final[str] = "INFO"
+LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# =====================================
+# ファイルパス
+# =====================================
+DATA_DIR: Final[str] = "data"
+LEARNING_DATA_DIR: Final[str] = "data/learning"
+MODEL_DIR: Final[str] = "models"
+MIGRATION_DIR: Final[str] = "src/db/migrations"
+
+# =====================================
+# 特徴量設定
+# =====================================
+FEATURE_SPEED_INDEX_MIN: Final[float] = 0.0
+FEATURE_SPEED_INDEX_MAX: Final[float] = 100.0
+FEATURE_JOCKEY_WIN_RATE_MIN: Final[float] = 0.0
+FEATURE_JOCKEY_WIN_RATE_MAX: Final[float] = 1.0
+
+# モック設定（開発用）
+FEATURE_MOCK_RANDOM_SEED: Final[int] = 42
