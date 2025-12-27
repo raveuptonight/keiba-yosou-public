@@ -5,12 +5,13 @@
 """
 
 import json
-from typing import Dict, List
+from typing import Dict, List, Optional
 from datetime import datetime
 
 from src.predict.llm import LLMClient
 from src.models.xgboost_model import HorseRacingXGBoost
 from src.models.incremental_learning import IncrementalLearner
+from src.db.predictions_db import PredictionsDB
 
 
 class ReflectionPipeline:
@@ -24,12 +25,15 @@ class ReflectionPipeline:
         self.llm_client = LLMClient()
         self.ml_model = ml_model
         self.incremental_learner = IncrementalLearner(ml_model)
+        self.predictions_db = PredictionsDB()
 
     def analyze_result(
         self,
         prediction_data: Dict,
         actual_result: Dict,
-        auto_retrain: bool = True
+        prediction_id: Optional[int] = None,
+        auto_retrain: bool = True,
+        save_to_db: bool = True
     ) -> Dict:
         """
         予想と結果を照合し、ML・LLM両方の失敗分析を実行
@@ -37,7 +41,9 @@ class ReflectionPipeline:
         Args:
             prediction_data: 予想時のデータ
             actual_result: 実際のレース結果
+            prediction_id: 予想ID（DBに保存済みの場合）
             auto_retrain: 自動再学習フラグ
+            save_to_db: DBに保存するか
 
         Returns:
             dict: 統合分析結果
@@ -60,6 +66,7 @@ class ReflectionPipeline:
         self._add_to_training_data(prediction_data, actual_result)
 
         # 自動再学習
+        retrain_result = None
         if auto_retrain:
             retrain_result = self.incremental_learner.retrain_model(min_samples=100)
             result['ml_retrain'] = retrain_result
@@ -73,8 +80,30 @@ class ReflectionPipeline:
         )
         result['llm_analysis'] = llm_analysis
 
+        # 学習ポイント抽出
+        learning_points = self._extract_learning_points(llm_analysis)
+        result['learning_points'] = learning_points
+
         # 統合レポート
         result['summary'] = self._create_summary(ml_analysis, llm_analysis)
+
+        # データベースに保存
+        if save_to_db:
+            try:
+                learning_id = self.predictions_db.save_learning_history(
+                    prediction_id=prediction_id,
+                    race_id=prediction_data.get('race_id'),
+                    actual_result=actual_result,
+                    ml_analysis=ml_analysis,
+                    llm_analysis=llm_analysis,
+                    learning_points=learning_points,
+                    ml_retrain_result=retrain_result,
+                    accuracy_metrics=result['summary']
+                )
+                result['learning_id'] = learning_id
+                print(f"\n✅ 学習履歴保存: learning_id={learning_id}")
+            except Exception as e:
+                print(f"\n⚠️  学習履歴保存失敗: {e}")
 
         return result
 
@@ -252,6 +281,46 @@ JSON形式で簡潔に出力してください。
             if horse_data['horse_number'] == horse_number:
                 return horse_data['rank_score']
         return 0.0
+
+    def _extract_learning_points(self, llm_analysis: Dict) -> List[str]:
+        """
+        LLM分析から学習ポイントを抽出
+
+        Args:
+            llm_analysis: LLM分析結果
+
+        Returns:
+            list: 学習ポイントリスト
+        """
+        learning_points = []
+
+        # LLM分析から学習ポイントを取得
+        if 'learning_points' in llm_analysis:
+            lp = llm_analysis['learning_points']
+            if isinstance(lp, list):
+                learning_points.extend(lp)
+            elif isinstance(lp, str):
+                learning_points.append(lp)
+
+        # 他のキーからも学習ポイントを抽出
+        if '見落とした要因' in llm_analysis:
+            factors = llm_analysis['見落とした要因']
+            if isinstance(factors, list):
+                learning_points.extend([f"見落とした要因: {f}" for f in factors])
+            elif isinstance(factors, str):
+                learning_points.append(f"見落とした要因: {factors}")
+
+        if '次回注意点' in llm_analysis:
+            notes = llm_analysis['次回注意点']
+            if isinstance(notes, list):
+                learning_points.extend([f"注意: {n}" for n in notes])
+            elif isinstance(notes, str):
+                learning_points.append(f"注意: {notes}")
+
+        # 重複削除
+        learning_points = list(set(learning_points))
+
+        return learning_points
 
     def _create_summary(self, ml_analysis: Dict, llm_analysis: Dict) -> Dict:
         """統合サマリー作成"""

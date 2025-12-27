@@ -12,6 +12,7 @@ from datetime import datetime
 from src.features.feature_pipeline import FeatureExtractor
 from src.models.xgboost_model import HorseRacingXGBoost
 from src.predict.llm import LLMClient
+from src.db.predictions_db import PredictionsDB
 
 
 class HybridPredictionPipeline:
@@ -25,6 +26,7 @@ class HybridPredictionPipeline:
         self.feature_extractor = FeatureExtractor()
         self.ml_model = HorseRacingXGBoost()
         self.llm_client = LLMClient()
+        self.predictions_db = PredictionsDB()
 
         # モデル読み込み（存在する場合）
         if model_path:
@@ -34,8 +36,10 @@ class HybridPredictionPipeline:
         self,
         race_id: str,
         race_data: Dict,
+        race_date: Optional[str] = None,
         phase: str = "all",
-        temperature: float = 0.3
+        temperature: float = 0.3,
+        save_to_db: bool = True
     ) -> Dict:
         """
         ハイブリッド予想実行
@@ -43,14 +47,20 @@ class HybridPredictionPipeline:
         Args:
             race_id: レースID
             race_data: レースデータ（モック用）
+            race_date: レース日付（YYYY-MM-DD形式、省略時は今日）
             phase: 実行フェーズ（analyze/predict/all）
             temperature: LLM温度パラメータ
+            save_to_db: DBに保存するか
 
         Returns:
-            dict: 予想結果
+            dict: 予想結果（prediction_idを含む）
         """
+        if race_date is None:
+            race_date = datetime.now().strftime('%Y-%m-%d')
+
         result = {
             'race_id': race_id,
+            'race_date': race_date,
             'timestamp': datetime.now().isoformat()
         }
 
@@ -75,6 +85,22 @@ class HybridPredictionPipeline:
                 temperature
             )
             result['prediction'] = prediction
+
+        # データベースに保存（Phase 0-2完了時）
+        if save_to_db and phase == "all":
+            try:
+                prediction_id = self.predictions_db.save_prediction(
+                    race_id=race_id,
+                    race_date=race_date,
+                    ml_scores=ml_scores,
+                    analysis=result.get('analysis', {}),
+                    prediction=result.get('prediction', {}),
+                    model_version="v1.0"
+                )
+                result['prediction_id'] = prediction_id
+                print(f"\n✅ 予想結果保存: prediction_id={prediction_id}")
+            except Exception as e:
+                print(f"\n⚠️  予想結果保存失敗: {e}")
 
         return result
 
@@ -216,6 +242,20 @@ class HybridPredictionPipeline:
 
 """
 
+        # 過去の学習ポイントを追加
+        try:
+            learning_data = self.predictions_db.get_recent_learning_points(limit=5, days_back=30)
+            if learning_data:
+                prompt += "\n## 過去の予想から学んだポイント\n\n"
+                prompt += "直近の予想で学習した注意点を活かしてください：\n\n"
+                for ld in learning_data:
+                    for point in ld['learning_points'][:2]:  # 各レースから最大2ポイント
+                        prompt += f"- {point}\n"
+                prompt += "\n"
+        except Exception as e:
+            # DB接続失敗時は無視
+            pass
+
         prompt += """
 ## 分析タスク
 
@@ -225,6 +265,7 @@ class HybridPredictionPipeline:
 2. **展開予想**: レースペースと各馬の脚質
 3. **穴馬候補**: MLが見落としている可能性のある馬
 4. **リスク要因**: 不安要素
+5. **過去の学習ポイントとの関連**: 上記の学習ポイントが本レースに適用できるか
 
 JSON形式で簡潔に出力してください。
 """
@@ -256,10 +297,32 @@ JSON形式で簡潔に出力してください。
         prompt += f"""
 ## Phase 1 分析結果
 {json.dumps(analysis, ensure_ascii=False, indent=2)}
+"""
 
+        # 過去の学習ポイントを追加
+        try:
+            learning_data = self.predictions_db.get_recent_learning_points(limit=5, days_back=30)
+            if learning_data:
+                prompt += "\n## 過去の予想から学んだ教訓\n\n"
+                for ld in learning_data:
+                    if ld['learning_points']:
+                        prompt += f"**{ld['race_id']}** (外れ値率: {ld['outlier_rate']:.1%}):\n"
+                        for point in ld['learning_points'][:3]:
+                            prompt += f"- {point}\n"
+                        prompt += "\n"
+        except Exception as e:
+            # DB接続失敗時は無視
+            pass
+
+        prompt += """
 ## 予想タスク
 
-機械学習の順位を**ベースライン**として、展開を考慮して調整してください。
+機械学習の順位を**ベースライン**として、以下を考慮して調整してください：
+
+1. Phase 1の分析結果（展開、穴馬、リスク要因）
+2. 過去の学習ポイント（同様のケースでの失敗パターン）
+
+**重要**: 過去の失敗から学び、同じミスを繰り返さないよう注意してください。
 
 出力形式（JSON）:
 {{
