@@ -28,6 +28,7 @@ from src.discord.formatters import (
     format_betting_recommendation,
 )
 from src.betting import TicketOptimizer
+from src.race_resolver import resolve_race_input
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class PredictionCommands(commands.Cog):
     async def predict_race(
         self,
         ctx: commands.Context,
-        race_id: str,
+        race_spec: str,
         temperature: float = 0.3
     ):
         """
@@ -61,15 +62,26 @@ class PredictionCommands(commands.Cog):
 
         Args:
             ctx: コマンドコンテキスト
-            race_id: レースID
+            race_spec: レース指定（京都2r または 202412280506形式）
             temperature: LLM温度パラメータ
 
         使用例:
-            !predict 202412280506
+            !predict 京都2r
+            !predict 中山11R
             !predict 202412280506 0.5
         """
-        logger.info(f"予想コマンド実行開始: race_id={race_id}, temperature={temperature}, user={ctx.author}")
-        await ctx.send(f"🔄 予想を実行中... (Race ID: {race_id})")
+        logger.info(f"予想コマンド実行開始: race_spec={race_spec}, temperature={temperature}, user={ctx.author}")
+
+        try:
+            # レース指定をレースIDに解決
+            race_id = resolve_race_input(race_spec, self.api_base_url)
+            logger.debug(f"レース解決: {race_spec} -> {race_id}")
+            await ctx.send(f"🔄 予想を実行中... ({race_spec})")
+
+        except ValueError as e:
+            logger.warning(f"レース解決失敗: {race_spec}, error={e}")
+            await ctx.send(f"❌ {str(e)}")
+            return
 
         try:
             # FastAPI経由で予想実行
@@ -272,7 +284,7 @@ class BettingCommands(commands.Cog):
     async def recommend_betting(
         self,
         ctx: commands.Context,
-        race_id: str,
+        race_spec: str,
         budget: int,
         ticket_type: str = None
     ):
@@ -281,15 +293,15 @@ class BettingCommands(commands.Cog):
 
         Args:
             ctx: コマンドコンテキスト
-            race_id: レースID
+            race_spec: レース指定（京都2r または 202412280506形式）
             budget: 予算（円）
             ticket_type: 馬券タイプ（省略時は選択メニュー表示）
 
         使用例:
-            !baken 202412280506 10000 3連複
-            !baken 202412280506 5000 馬連
+            !baken 京都2r 10000 3連複
+            !baken 中山11R 5000 馬連
         """
-        logger.info(f"馬券推奨コマンド実行: race_id={race_id}, budget={budget}, ticket_type={ticket_type}, user={ctx.author}")
+        logger.info(f"馬券推奨コマンド実行: race_spec={race_spec}, budget={budget}, ticket_type={ticket_type}, user={ctx.author}")
 
         # 予算バリデーション
         from src.config import BETTING_MIN_AMOUNT, BETTING_MAX_AMOUNT
@@ -302,13 +314,22 @@ class BettingCommands(commands.Cog):
             await ctx.send(f"❌ 予算が大きすぎます。最大{BETTING_MAX_AMOUNT:,}円までです。")
             return
 
+        # レース指定をレースIDに解決
+        try:
+            race_id = resolve_race_input(race_spec, self.api_base_url)
+            logger.debug(f"レース解決: {race_spec} -> {race_id}")
+        except ValueError as e:
+            logger.warning(f"レース解決失敗: {race_spec}, error={e}")
+            await ctx.send(f"❌ {str(e)}")
+            return
+
         # 馬券タイプが指定されていない場合は選択を促す
         if ticket_type is None:
             from src.config import BETTING_TICKET_TYPES
             ticket_types = "\n".join([f"  - {t}" for t in BETTING_TICKET_TYPES.keys()])
             await ctx.send(
                 f"馬券タイプを指定してください：\n{ticket_types}\n\n"
-                f"使用例: `!baken {race_id} {budget} 3連複`"
+                f"使用例: `!baken {race_spec} {budget} 3連複`"
             )
             return
 
@@ -321,7 +342,7 @@ class BettingCommands(commands.Cog):
             )
             return
 
-        await ctx.send(f"🎯 {race_id}の{ticket_type}買い目を計算中...")
+        await ctx.send(f"🎯 {race_spec}の{ticket_type}買い目を計算中...")
 
         try:
             # APIから予想結果を取得
@@ -332,13 +353,13 @@ class BettingCommands(commands.Cog):
             )
 
             if response.status_code != 200:
-                await ctx.send(f"❌ 予想データ取得失敗。先に `!predict {race_id}` で予想を実行してください。")
+                await ctx.send(f"❌ 予想データ取得失敗。先に `!predict {race_spec}` で予想を実行してください。")
                 return
 
             predictions = response.json().get("predictions", [])
 
             if not predictions:
-                await ctx.send(f"❌ レース {race_id} の予想が見つかりません。先に `!predict {race_id}` で予想を実行してください。")
+                await ctx.send(f"❌ レース {race_spec} の予想が見つかりません。先に `!predict {race_spec}` で予想を実行してください。")
                 return
 
             prediction = predictions[0]
@@ -358,7 +379,7 @@ class BettingCommands(commands.Cog):
             )
 
             await ctx.send(message)
-            logger.info(f"馬券推奨コマンド完了: race_id={race_id}, tickets={len(result.get('tickets', []))}")
+            logger.info(f"馬券推奨コマンド完了: race_spec={race_spec}, race_id={race_id}, tickets={len(result.get('tickets', []))}")
 
         except ValueError as e:
             logger.error(f"馬券推奨バリデーションエラー: {e}")
