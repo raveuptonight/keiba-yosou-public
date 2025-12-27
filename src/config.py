@@ -49,6 +49,18 @@ LLM_REFLECTION_TEMPERATURE: Final[float] = 0.2  # Phase 3: 失敗分析
 # トークン制限
 LLM_MAX_TOKENS: Final[int] = 8000
 
+# Gemini設定
+GEMINI_DEFAULT_MODEL: Final[str] = "gemini-2.0-flash-exp"
+GEMINI_API_TIMEOUT: Final[int] = 60  # 60秒
+
+# Claude設定
+CLAUDE_DEFAULT_MODEL: Final[str] = "claude-3-5-sonnet-20241022"
+CLAUDE_API_TIMEOUT: Final[int] = 60  # 60秒
+
+# リトライ設定
+LLM_MAX_RETRIES: Final[int] = 3
+LLM_RETRY_DELAY: Final[float] = 1.0  # 秒
+
 # =====================================
 # プロンプト設定
 # =====================================
