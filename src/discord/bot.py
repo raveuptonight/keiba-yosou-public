@@ -74,6 +74,15 @@ class KeibaBot(commands.Bot):
             logger.error(f"コマンドCogのロードに失敗: {e}")
             raise BotError(f"コマンドCogのロードに失敗: {e}") from e
 
+        # スケジューラーCogをロード
+        try:
+            logger.info("スケジューラーCogロード開始")
+            await self.load_extension("src.discord.scheduler")
+            logger.info("✅ スケジューラーCogロード完了")
+        except Exception as e:
+            logger.error(f"スケジューラーCogのロードに失敗: {e}")
+            raise BotError(f"スケジューラーCogのロードに失敗: {e}") from e
+
     async def on_ready(self):
         """
         Bot起動完了時の処理
