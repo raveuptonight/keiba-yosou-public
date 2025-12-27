@@ -119,6 +119,18 @@ MODEL_DIR: Final[str] = "models"
 MIGRATION_DIR: Final[str] = "src/db/migrations"
 
 # =====================================
+# データ取得期間設定
+# =====================================
+# 機械学習の訓練に使用するデータ期間（年）
+ML_TRAINING_YEARS_BACK: Final[int] = 10  # 直近10年分のデータを使用
+
+# レース予測時の参考データ期間（年）
+PREDICTION_REFERENCE_YEARS: Final[int] = 5  # 直近5年分を主に参照
+
+# 統計情報の集計期間（年）
+STATS_MAX_YEARS_BACK: Final[int] = 10  # 最大10年分の統計を集計
+
+# =====================================
 # 特徴量設定
 # =====================================
 FEATURE_SPEED_INDEX_MIN: Final[float] = 0.0
