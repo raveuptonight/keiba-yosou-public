@@ -311,6 +311,105 @@ def format_race_list(races: List[Dict[str, Any]]) -> str:
         return "📅 本日のレース一覧\n\n❌ フォーマットエラーが発生しました"
 
 
+def format_betting_recommendation(
+    race_name: str,
+    race_id: str,
+    ticket_type: str,
+    budget: int,
+    result: Dict[str, Any]
+) -> str:
+    """
+    馬券購入推奨をフォーマット
+
+    Args:
+        race_name: レース名
+        race_id: レースID
+        ticket_type: 馬券タイプ
+        budget: 予算（円）
+        result: 最適化結果
+
+    Returns:
+        フォーマット済みメッセージ
+    """
+    try:
+        tickets = result.get("tickets", [])
+        total_cost = result.get("total_cost", 0)
+        expected_return = result.get("expected_return", 0)
+        expected_roi = result.get("expected_roi", 0.0)
+        message_text = result.get("message", "")
+
+        lines = [
+            f"🎯 【馬券購入推奨】{race_name}",
+            "",
+            f"馬券タイプ: {ticket_type}",
+            f"予算: {budget:,}円",
+            "",
+        ]
+
+        # 買い目がない場合
+        if not tickets:
+            lines.append("❌ 買い目を生成できませんでした")
+            lines.append(f"理由: {message_text}")
+            return "\n".join(lines)
+
+        # 買い目一覧
+        lines.append(f"💰 推奨買い目（{len(tickets)}通り）")
+        lines.append("")
+
+        for i, ticket in enumerate(tickets, start=1):
+            numbers = ticket.get("numbers", [])
+            horse_names = ticket.get("horse_names", [])
+            amount = ticket.get("amount", 0)
+            expected_payout = ticket.get("expected_payout", 0)
+
+            # 馬番と馬名の表示
+            if horse_names and len(horse_names) == len(numbers):
+                # 馬番 馬名形式
+                horses_str = " - ".join([
+                    f"{num}番{name}" for num, name in zip(numbers, horse_names)
+                ])
+            else:
+                # 馬番のみ
+                horses_str = " - ".join(map(str, numbers))
+
+            lines.append(f"{i}. {horses_str}")
+            lines.append(f"   金額: {amount:,}円 / 期待払戻: {expected_payout:,}円")
+
+            # 最大10件まで表示（それ以上は省略）
+            if i >= 10 and i < len(tickets):
+                remaining = len(tickets) - 10
+                lines.append("")
+                lines.append(f"... 他{remaining}通り")
+                break
+
+        # 合計
+        lines.append("")
+        lines.append("📊 合計")
+        lines.append(f"総投資額: {total_cost:,}円")
+        lines.append(f"期待回収: {expected_return:,}円")
+        lines.append(f"期待ROI: {expected_roi:.1f}%")
+
+        # ROI評価
+        lines.append("")
+        if expected_roi >= 150:
+            lines.append("✅ 期待値が高い買い目です！")
+        elif expected_roi >= 100:
+            lines.append("⚠️ トントン程度の期待値です")
+        else:
+            lines.append("⚠️ 期待値が低めです。慎重に判断してください")
+
+        lines.append("")
+        lines.append(f"💡 {message_text}")
+
+        message = "\n".join(lines)
+        logger.debug(f"馬券推奨フォーマット完了: race_id={race_id}, tickets={len(tickets)}")
+        return message
+
+    except Exception as e:
+        logger.error(f"馬券推奨フォーマットエラー: {e}")
+        return f"🎯 【馬券購入推奨】{race_name}\n\n❌ フォーマットエラーが発生しました"
+
+
 def format_help_message() -> str:
     """
     ヘルプメッセージをフォーマット
@@ -322,8 +421,13 @@ def format_help_message() -> str:
         "🤖 競馬予想Bot - コマンド一覧",
         "",
         "**予想関連**",
-        "`!predict <race_id>` - 指定レースの予想実行",
+        "`!predict <race_id> [temperature]` - 指定レースの予想実行",
         "`!today` - 本日のレース一覧",
+        "",
+        "**馬券購入**",
+        "`!baken <race_id> <予算> <馬券タイプ>` - 馬券購入推奨",
+        "  例: `!baken 202412280506 10000 3連複`",
+        "  馬券タイプ: 単勝/複勝/馬連/ワイド/馬単/3連複/3連単",
         "",
         "**統計関連**",
         "`!stats [期間]` - 統計情報表示",

@@ -25,7 +25,9 @@ from src.discord.formatters import (
     format_stats_message,
     format_race_list,
     format_help_message,
+    format_betting_recommendation,
 )
+from src.betting import TicketOptimizer
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -249,6 +251,129 @@ class StatsCommands(commands.Cog):
         await ctx.send("📊 ROI推移グラフ機能は未実装です。\n`!stats` コマンドで統計情報を確認できます。")
 
 
+class BettingCommands(commands.Cog):
+    """
+    馬券購入推奨コマンド
+
+    !baken コマンドを提供します。
+    """
+
+    def __init__(self, bot: commands.Bot):
+        """
+        Args:
+            bot: Discordボットインスタンス
+        """
+        self.bot = bot
+        self.api_base_url = os.getenv("API_BASE_URL", API_BASE_URL_DEFAULT)
+        self.optimizer = TicketOptimizer()
+        logger.info(f"BettingCommands初期化: api_base_url={self.api_base_url}")
+
+    @commands.command(name="baken")
+    async def recommend_betting(
+        self,
+        ctx: commands.Context,
+        race_id: str,
+        budget: int,
+        ticket_type: str = None
+    ):
+        """
+        馬券購入推奨コマンド
+
+        Args:
+            ctx: コマンドコンテキスト
+            race_id: レースID
+            budget: 予算（円）
+            ticket_type: 馬券タイプ（省略時は選択メニュー表示）
+
+        使用例:
+            !baken 202412280506 10000 3連複
+            !baken 202412280506 5000 馬連
+        """
+        logger.info(f"馬券推奨コマンド実行: race_id={race_id}, budget={budget}, ticket_type={ticket_type}, user={ctx.author}")
+
+        # 予算バリデーション
+        from src.config import BETTING_MIN_AMOUNT, BETTING_MAX_AMOUNT
+
+        if budget < BETTING_MIN_AMOUNT:
+            await ctx.send(f"❌ 予算が少なすぎます。最小{BETTING_MIN_AMOUNT:,}円必要です。")
+            return
+
+        if budget > BETTING_MAX_AMOUNT:
+            await ctx.send(f"❌ 予算が大きすぎます。最大{BETTING_MAX_AMOUNT:,}円までです。")
+            return
+
+        # 馬券タイプが指定されていない場合は選択を促す
+        if ticket_type is None:
+            from src.config import BETTING_TICKET_TYPES
+            ticket_types = "\n".join([f"  - {t}" for t in BETTING_TICKET_TYPES.keys()])
+            await ctx.send(
+                f"馬券タイプを指定してください：\n{ticket_types}\n\n"
+                f"使用例: `!baken {race_id} {budget} 3連複`"
+            )
+            return
+
+        # 馬券タイプ検証
+        from src.config import BETTING_TICKET_TYPES
+        if ticket_type not in BETTING_TICKET_TYPES:
+            await ctx.send(
+                f"❌ 未対応の馬券タイプです: {ticket_type}\n\n"
+                f"対応タイプ: {', '.join(BETTING_TICKET_TYPES.keys())}"
+            )
+            return
+
+        await ctx.send(f"🎯 {race_id}の{ticket_type}買い目を計算中...")
+
+        try:
+            # APIから予想結果を取得
+            response = requests.get(
+                f"{self.api_base_url}/api/predictions/",
+                params={"race_id": race_id, "limit": 1},
+                timeout=10
+            )
+
+            if response.status_code != 200:
+                await ctx.send(f"❌ 予想データ取得失敗。先に `!predict {race_id}` で予想を実行してください。")
+                return
+
+            predictions = response.json().get("predictions", [])
+
+            if not predictions:
+                await ctx.send(f"❌ レース {race_id} の予想が見つかりません。先に `!predict {race_id}` で予想を実行してください。")
+                return
+
+            prediction = predictions[0]
+            prediction_result = prediction.get("prediction_result", {})
+
+            # 買い目最適化
+            logger.debug(f"買い目最適化開始: ticket_type={ticket_type}, budget={budget}")
+            result = self.optimizer.optimize(ticket_type, budget, prediction_result)
+
+            # 結果フォーマット
+            message = format_betting_recommendation(
+                race_name=prediction.get("race_name", "不明"),
+                race_id=race_id,
+                ticket_type=ticket_type,
+                budget=budget,
+                result=result
+            )
+
+            await ctx.send(message)
+            logger.info(f"馬券推奨コマンド完了: race_id={race_id}, tickets={len(result.get('tickets', []))}")
+
+        except ValueError as e:
+            logger.error(f"馬券推奨バリデーションエラー: {e}")
+            await ctx.send(f"❌ エラー: {str(e)}")
+        except requests.exceptions.Timeout as e:
+            logger.error(f"馬券推奨APIタイムアウト: {e}")
+            await ctx.send("❌ タイムアウトしました。")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"馬券推奨API接続エラー: {e}")
+            await ctx.send("❌ APIサーバーに接続できません。")
+        except Exception as e:
+            logger.exception(f"馬券推奨コマンド予期しないエラー: {e}")
+            await ctx.send(f"❌ エラーが発生しました: {str(e)}")
+
+
 class HelpCommands(commands.Cog):
     """
     ヘルプコマンド
@@ -293,6 +418,7 @@ async def setup(bot: commands.Bot):
     try:
         await bot.add_cog(PredictionCommands(bot))
         await bot.add_cog(StatsCommands(bot))
+        await bot.add_cog(BettingCommands(bot))
         await bot.add_cog(HelpCommands(bot))
         logger.info("全Cogの登録完了")
     except Exception as e:
