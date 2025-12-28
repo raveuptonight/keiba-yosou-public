@@ -393,10 +393,22 @@ ORDER BY wins DESC;
 
 ## 参考資料
 
-- [JV-Data仕様書（PDF）](https://jra-van.jp/dlb/sdv/sdk/JV-Data4901.pdf)
-- [JV-Data仕様書（Excel）](https://jra-van.jp/dlb/sdv/sdk/JV-Data4901.xlsx)
-- [JV-Linkインターフェース仕様書](https://jra-van.jp/dlb/sdv/sdk/JV-Link4901.pdf)
-- [JRA-VAN Data Lab.開発ガイド](https://jra-van.jp/dlb/sdv/sdk/DataLab422.pdf)
+### 📘 公式仕様書（必読）
+
+**JV-Data仕様書 Ver.4.9.0.1** - 全データ種別の詳細仕様
+- [PDF版](https://jra-van.jp/dlb/sdv/sdk/JV-Data4901.pdf) ⭐ **最も重要**
+- [Excel版](https://jra-van.jp/dlb/sdv/sdk/JV-Data4901.xlsx)
+
+この仕様書には以下が記載されています：
+- 全データ種別（RA, SE, HC, WC, O1-O6等）のレコードフォーマット
+- 各フィールドの位置、バイト数、データ型
+- コード値の定義（競馬場コード、馬場状態コード等）
+- データ更新タイミング
+
+### その他の公式資料
+
+- [JV-Linkインターフェース仕様書](https://jra-van.jp/dlb/sdv/sdk/JV-Link4901.pdf) - データ取得APIの仕様
+- [JRA-VAN Data Lab.開発ガイド](https://jra-van.jp/dlb/sdv/sdk/DataLab422.pdf) - 開発全般のガイド
 
 ## 調教データの予想への活用方法
 
