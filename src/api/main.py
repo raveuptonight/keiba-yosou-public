@@ -6,18 +6,54 @@ FastAPI メインアプリケーション
 """
 
 import os
+import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+from src.db.async_connection import init_db_pool, close_db_pool
+
 # .envファイルを読み込み
 load_dotenv()
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """アプリケーションライフサイクル管理"""
+    # 起動時
+    logger.info("Starting FastAPI application...")
+    try:
+        await init_db_pool()
+        logger.info("Database pool initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize database pool: {e}")
+        raise
+
+    yield
+
+    # シャットダウン時
+    logger.info("Shutting down FastAPI application...")
+    try:
+        await close_db_pool()
+        logger.info("Database pool closed")
+    except Exception as e:
+        logger.error(f"Failed to close database pool: {e}")
+
 
 # FastAPIアプリケーション作成
 app = FastAPI(
     title="競馬予想API",
     description="回収率200%を目指す競馬予想システムのREST API",
     version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS設定（開発用）
@@ -31,12 +67,13 @@ app.add_middleware(
 
 
 # ルーター登録
-from src.api.routes import predictions, stats
+from src.api.routes import health, races, horses, odds, predictions
 
-app.include_router(
-    predictions.router, prefix="/api/predictions", tags=["predictions"]
-)
-app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+app.include_router(health.router, tags=["health"])
+app.include_router(races.router, prefix="/api/v1", tags=["races"])
+app.include_router(horses.router, prefix="/api/v1", tags=["horses"])
+app.include_router(odds.router, prefix="/api/v1", tags=["odds"])
+app.include_router(predictions.router, prefix="/api/v1", tags=["predictions"])
 
 
 @app.get("/")
@@ -47,16 +84,6 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "status": "running",
-    }
-
-
-@app.get("/health")
-async def health_check():
-    """ヘルスチェック"""
-    return {
-        "status": "healthy",
-        "database": "not_connected",  # 後で実装
-        "llm": os.getenv("LLM_PROVIDER", "gemini"),
     }
 
 

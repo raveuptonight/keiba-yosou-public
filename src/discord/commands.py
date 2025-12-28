@@ -28,7 +28,7 @@ from src.discord.formatters import (
     format_betting_recommendation,
 )
 from src.betting import TicketOptimizer
-from src.race_resolver import resolve_race_input
+from src.services.race_resolver import resolve_race_input
 
 # ロガー設定
 logger = logging.getLogger(__name__)

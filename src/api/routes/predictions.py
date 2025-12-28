@@ -1,235 +1,186 @@
 """
-予想関連のAPIルーティング
+予想生成エンドポイント
 """
 
 import logging
-from datetime import datetime, date
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query, Path, status
 
-from src.config import (
-    API_DEFAULT_LIMIT,
-    API_MAX_LIMIT,
-)
 from src.api.schemas.prediction import (
-    PredictionCreate,
+    PredictionRequest,
     PredictionResponse,
-    PredictionListResponse,
-    ResultCreate,
-    ResultResponse,
+    PredictionHistoryResponse,
+    PredictionHistoryItem,
 )
+from src.api.exceptions import (
+    RaceNotFoundException,
+    PredictionNotFoundException,
+    RateLimitExceededException,
+    DatabaseErrorException,
+)
+from src.services import prediction_service
+from src.services.rate_limiter import claude_rate_limiter
 
-# ロガー設定
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-# モックデータ（DB接続前の開発用）
-MOCK_PREDICTIONS = [
-    {
-        "id": 1,
-        "race_id": "202412280506",
-        "race_name": "有馬記念",
-        "race_date": date(2024, 12, 28),
-        "venue": "中山",
-        "analysis_result": {"race_summary": "GⅠレース、2500m芝"},
-        "prediction_result": {
-            "win_prediction": {
-                "first": {"horse_number": 3, "horse_name": "サンプルホース3"}
-            }
-        },
-        "total_investment": 1000,
-        "expected_return": 2000,
-        "expected_roi": 2.0,
-        "llm_model": "gemini-2.5-flash",
-        "created_at": datetime.now(),
-    }
-]
-
-
-@router.post("/", response_model=PredictionResponse, status_code=201)
-async def create_prediction(prediction: PredictionCreate):
+@router.post(
+    "/predictions/generate",
+    response_model=PredictionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="予想生成",
+    description="LLMによる競馬予想を生成します。レート制限: 5リクエスト/分"
+)
+async def generate_prediction(
+    request: PredictionRequest
+) -> PredictionResponse:
     """
-    予想を実行
+    予想を生成
+
+    LLMを使用してレース予想を生成します。
+    データ集約、LLM推論、DB保存を実行します。
 
     Args:
-        prediction: 予想リクエスト
+        request: 予想生成リクエスト
 
     Returns:
-        予想結果
+        PredictionResponse: 予想結果
 
-    - **race_id**: レースID
-    - **temperature**: LLMのtemperature設定
-    - **phase**: 実行フェーズ (analyze/predict/all)
+    Raises:
+        RaceNotFoundException: レースが見つからない
+        RateLimitExceededException: レート制限超過
+        DatabaseErrorException: DB接続エラー
     """
-    logger.info(f"予想実行リクエスト: race_id={prediction.race_id}, temperature={prediction.temperature}, phase={prediction.phase}")
+    logger.info(
+        f"POST /predictions/generate: race_id={request.race_id}, "
+        f"is_final={request.is_final}, total_investment={request.total_investment}"
+    )
+
+    # レート制限チェック
+    if not claude_rate_limiter.is_allowed():
+        logger.warning("Rate limit exceeded")
+        raise RateLimitExceededException()
 
     try:
-        # TODO: 実際のパイプライン実行
-        # from src.pipeline import HorsePredictionPipeline
-        # pipeline = HorsePredictionPipeline()
-        # result = pipeline.run_full_pipeline(race_data)
+        response = await prediction_service.generate_prediction(request)
+        logger.info(f"Prediction generated successfully: {response.prediction_id}")
+        return response
 
-        # モックレスポンス
-        new_prediction = {
-            "id": len(MOCK_PREDICTIONS) + 1,
-            "race_id": prediction.race_id,
-            "race_name": "モックレース",
-            "race_date": date.today(),
-            "venue": "東京",
-            "analysis_result": {"status": "analyzed"},
-            "prediction_result": {"status": "predicted"},
-            "total_investment": 1000,
-            "expected_return": 2000,
-            "expected_roi": 2.0,
-            "llm_model": "gemini-2.5-flash",
-            "created_at": datetime.now(),
-        }
-
-        MOCK_PREDICTIONS.append(new_prediction)
-        logger.info(f"✅ 予想実行完了: prediction_id={new_prediction['id']}")
-        return new_prediction
-
+    except ValueError as e:
+        # レースが見つからない
+        logger.warning(f"Race not found: {e}")
+        raise RaceNotFoundException(request.race_id)
     except Exception as e:
-        logger.error(f"予想実行エラー: {e}")
-        raise HTTPException(status_code=500, detail=f"予想実行失敗: {str(e)}")
+        logger.error(f"Failed to generate prediction: {e}")
+        raise DatabaseErrorException(str(e))
 
 
-@router.get("/", response_model=PredictionListResponse)
-async def get_predictions(
-    limit: int = Query(API_DEFAULT_LIMIT, ge=1, le=API_MAX_LIMIT),
-    offset: int = Query(0, ge=0),
-    race_date: Optional[date] = None,
-):
+@router.get(
+    "/predictions/{prediction_id}",
+    response_model=PredictionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="予想取得",
+    description="保存済み予想結果を取得します。"
+)
+async def get_prediction(
+    prediction_id: str = Path(
+        ...,
+        description="予想ID（UUID）"
+    )
+) -> PredictionResponse:
     """
-    予想一覧を取得
-
-    Args:
-        limit: 取得件数
-        offset: オフセット
-        race_date: レース日でフィルター（オプション）
-
-    Returns:
-        予想一覧
-
-    - **limit**: 取得件数
-    - **offset**: オフセット
-    - **race_date**: レース日でフィルター（オプション）
-    """
-    logger.info(f"予想一覧取得リクエスト: limit={limit}, offset={offset}, race_date={race_date}")
-
-    try:
-        # TODO: DBから取得
-        # from src.db.results import get_results_db
-        # db = get_results_db()
-        # predictions = db.get_recent_predictions(limit=limit)
-
-        # モックデータ
-        filtered = MOCK_PREDICTIONS
-        if race_date:
-            filtered = [p for p in filtered if p["race_date"] == race_date]
-
-        total = len(filtered)
-        paginated = filtered[offset : offset + limit]
-
-        logger.debug(f"予想一覧取得成功: total={total}, returned={len(paginated)}")
-
-        return {
-            "predictions": paginated,
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-        }
-
-    except Exception as e:
-        logger.error(f"予想一覧取得エラー: {e}")
-        raise HTTPException(status_code=500, detail=f"予想一覧取得失敗: {str(e)}")
-
-
-@router.get("/{prediction_id}", response_model=PredictionResponse)
-async def get_prediction(prediction_id: int):
-    """
-    予想詳細を取得
+    保存済み予想を取得
 
     Args:
         prediction_id: 予想ID
 
     Returns:
-        予想詳細
+        PredictionResponse: 予想結果
 
     Raises:
-        HTTPException: 予想が見つからない場合
-
-    - **prediction_id**: 予想ID
+        PredictionNotFoundException: 予想が見つからない
+        DatabaseErrorException: DB接続エラー
     """
-    logger.info(f"予想詳細取得リクエスト: prediction_id={prediction_id}")
+    logger.info(f"GET /predictions/{prediction_id}")
 
     try:
-        # TODO: DBから取得
-        # from src.db.results import get_results_db
-        # db = get_results_db()
-        # prediction = db.get_prediction_by_id(prediction_id)
+        response = await prediction_service.get_prediction_by_id(prediction_id)
 
-        # モックデータ
-        for p in MOCK_PREDICTIONS:
-            if p["id"] == prediction_id:
-                logger.debug(f"予想詳細取得成功: prediction_id={prediction_id}")
-                return p
+        if not response:
+            logger.warning(f"Prediction not found: {prediction_id}")
+            raise PredictionNotFoundException(prediction_id)
 
-        logger.warning(f"予想が見つかりません: prediction_id={prediction_id}")
-        raise HTTPException(status_code=404, detail="Prediction not found")
+        logger.info(f"Prediction retrieved: {prediction_id}")
+        return response
 
-    except HTTPException:
-        # 既知のエラーは再スロー
+    except PredictionNotFoundException:
         raise
     except Exception as e:
-        logger.error(f"予想詳細取得エラー: {e}")
-        raise HTTPException(status_code=500, detail=f"予想詳細取得失敗: {str(e)}")
+        logger.error(f"Failed to get prediction: {e}")
+        raise DatabaseErrorException(str(e))
 
 
-@router.post("/{prediction_id}/result", response_model=ResultResponse)
-async def create_result(prediction_id: int, result: ResultCreate):
+@router.get(
+    "/predictions/race/{race_id}",
+    response_model=PredictionHistoryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="レース予想履歴取得",
+    description="特定レースの予想履歴を取得します。"
+)
+async def get_race_predictions(
+    race_id: str = Path(
+        ...,
+        min_length=16,
+        max_length=16,
+        description="レースID（16桁）"
+    ),
+    is_final: Optional[bool] = Query(
+        None,
+        description="最終予想のみ取得（true/false）"
+    )
+) -> PredictionHistoryResponse:
     """
-    レース結果を登録して反省を実行
+    レースの予想履歴を取得
 
     Args:
-        prediction_id: 予想ID
-        result: レース結果
+        race_id: レースID（16桁）
+        is_final: 最終予想フラグでフィルタ（オプション）
 
     Returns:
-        反省結果
+        PredictionHistoryResponse: 予想履歴
 
     Raises:
-        HTTPException: 予想が見つからない場合
-
-    - **prediction_id**: 予想ID
-    - **actual_result**: 実際のレース結果
+        DatabaseErrorException: DB接続エラー
     """
-    logger.info(f"結果登録リクエスト: prediction_id={prediction_id}")
+    logger.info(f"GET /predictions/race/{race_id}?is_final={is_final}")
 
     try:
-        # TODO: 実際のパイプライン実行
-        # from src.pipeline import HorsePredictionPipeline
-        # pipeline = HorsePredictionPipeline()
-        # reflection = pipeline.reflect(...)
+        predictions_data = await prediction_service.get_race_predictions(
+            race_id,
+            is_final=is_final
+        )
 
-        # モックレスポンス
-        result_response = {
-            "id": 1,
-            "prediction_id": prediction_id,
-            "actual_result": result.actual_result,
-            "total_return": 1500,
-            "profit": 500,
-            "actual_roi": 1.5,
-            "prediction_accuracy": 0.75,
-            "reflection_result": {"status": "reflected"},
-            "updated_at": datetime.now(),
-        }
+        # レスポンス形式に変換
+        predictions = [
+            PredictionHistoryItem(
+                prediction_id=p["prediction_id"],
+                predicted_at=p["predicted_at"],
+                is_final=p["is_final"],
+                expected_roi=p["expected_roi"]
+            )
+            for p in predictions_data
+        ]
 
-        logger.info(f"✅ 結果登録完了: prediction_id={prediction_id}")
-        return result_response
+        response = PredictionHistoryResponse(
+            race_id=race_id,
+            predictions=predictions
+        )
+
+        logger.info(f"Found {len(predictions)} predictions for race {race_id}")
+        return response
 
     except Exception as e:
-        logger.error(f"結果登録エラー: {e}")
-        raise HTTPException(status_code=500, detail=f"結果登録失敗: {str(e)}")
+        logger.error(f"Failed to get race predictions: {e}")
+        raise DatabaseErrorException(str(e))

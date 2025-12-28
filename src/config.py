@@ -4,7 +4,21 @@
 マジックナンバーやハードコード値を集約管理
 """
 
+import os
 from typing import Final
+
+# =====================================
+# データベース接続設定
+# =====================================
+DB_HOST: Final[str] = os.getenv("DB_HOST", "localhost")
+DB_PORT: Final[int] = int(os.getenv("DB_PORT", "5432"))
+DB_NAME: Final[str] = os.getenv("DB_NAME", "keiba_db")
+DB_USER: Final[str] = os.getenv("DB_USER", "postgres")
+DB_PASSWORD: Final[str] = os.getenv("DB_PASSWORD", "")
+
+# 接続プール設定
+DB_POOL_MIN_SIZE: Final[int] = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
+DB_POOL_MAX_SIZE: Final[int] = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
 
 # =====================================
 # データベース設定

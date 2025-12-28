@@ -3,7 +3,8 @@
 # ===========================================
 
 # DB接続
-psycopg2-binary>=2.9.9     # PostgreSQL接続
+psycopg2-binary>=2.9.9     # PostgreSQL接続（同期）
+asyncpg>=0.29.0            # PostgreSQL接続（非同期、FastAPI用）
 sqlalchemy>=2.0.0          # ORM（オプション）
 
 # 環境変数
@@ -12,6 +13,8 @@ python-dotenv>=1.0.0       # .env読み込み
 # API
 fastapi>=0.115.0           # FastAPIフレームワーク
 uvicorn[standard]>=0.30.0  # ASGIサーバー
+pydantic>=2.0.0            # データバリデーション
+httpx>=0.27.0              # 非同期HTTPクライアント
 
 # Discord Bot
 discord.py>=2.3.2          # Discord Bot API

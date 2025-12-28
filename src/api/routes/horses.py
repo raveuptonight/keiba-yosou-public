@@ -1,0 +1,191 @@
+"""
+馬情報エンドポイント
+"""
+
+import logging
+from datetime import date
+from fastapi import APIRouter, Query, Path, status
+
+from src.api.schemas.horse import HorseDetail, Trainer, Pedigree, RecentRace
+from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
+from src.db.async_connection import get_connection
+from src.db.queries.horse_queries import get_horse_detail
+from src.db.table_names import (
+    COL_KETTONUM,
+    COL_BAMEI,
+    COL_SEX,
+    COL_KEIROCODE,
+    COL_CHOKYOSI_NAME,
+    COL_RACE_ID,
+    COL_RACE_NAME,
+    COL_KAISAI_YEAR,
+    COL_KAISAI_MONTHDAY,
+    COL_JYOCD,
+    COL_KYORI,
+    COL_KAKUTEI_CHAKUJUN,
+    COL_TIME,
+    COL_KISYU_NAME,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+
+
+def _get_venue_name(venue_code: str) -> str:
+    """競馬場コードから名称を取得"""
+    venue_map = {
+        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
+        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
+        "09": "阪神", "10": "小倉"
+    }
+    return venue_map.get(venue_code, "不明")
+
+
+def _get_sex_name(sex_code: str) -> str:
+    """性別コードから名称を取得"""
+    sex_map = {"1": "牡", "2": "牝", "3": "騙"}
+    return sex_map.get(sex_code, "不明")
+
+
+def _get_color_name(color_code: str) -> str:
+    """毛色コードから名称を取得"""
+    color_map = {
+        "1": "鹿毛", "2": "栗毛", "3": "栃栗毛", "4": "黒鹿毛",
+        "5": "青鹿毛", "6": "青毛", "7": "芦毛", "8": "白毛", "9": "栗毛"
+    }
+    return color_map.get(color_code, "不明")
+
+
+def _get_affiliation(tozai_code: str) -> str:
+    """所属コードから名称を取得"""
+    affiliation_map = {"1": "美浦", "2": "栗東"}
+    return affiliation_map.get(tozai_code, "不明")
+
+
+@router.get(
+    "/horses/{kettonum}",
+    response_model=HorseDetail,
+    status_code=status.HTTP_200_OK,
+    summary="馬詳細情報取得",
+    description="馬の詳細情報、過去成績、血統情報を取得します。"
+)
+async def get_horse(
+    kettonum: str = Path(
+        ...,
+        min_length=10,
+        max_length=10,
+        description="血統登録番号（10桁）"
+    ),
+    history_limit: int = Query(
+        10,
+        ge=1,
+        le=50,
+        description="過去成績取得件数（デフォルト: 10）"
+    )
+) -> HorseDetail:
+    """
+    馬の詳細情報を取得
+
+    Args:
+        kettonum: 血統登録番号（10桁）
+        history_limit: 過去成績取得件数
+
+    Returns:
+        HorseDetail: 馬の詳細情報
+
+    Raises:
+        HorseNotFoundException: 馬が見つからない
+        DatabaseErrorException: DB接続エラー
+    """
+    logger.info(f"GET /horses/{kettonum} (history_limit={history_limit})")
+
+    try:
+        async with get_connection() as conn:
+            detail = await get_horse_detail(conn, kettonum, history_limit)
+
+            if not detail:
+                logger.warning(f"Horse not found: {kettonum}")
+                raise HorseNotFoundException(kettonum)
+
+            horse_info = detail["horse_info"]
+            recent_races_data = detail.get("recent_races", [])
+            pedigree_data = detail.get("pedigree", {})
+
+            # 調教師情報
+            trainer = Trainer(
+                code=horse_info.get(COL_CHOKYOSICODE, "不明"),
+                name=horse_info.get(COL_CHOKYOSI_NAME, "不明"),
+                affiliation=_get_affiliation(horse_info.get("tozai_code", "1"))
+            )
+
+            # 血統情報
+            pedigree = Pedigree(
+                sire=pedigree_data.get("chichi_name", "不明"),
+                dam=pedigree_data.get("haha_name", "不明"),
+                sire_sire=pedigree_data.get("chichi_chichi_name", "不明"),
+                sire_dam=pedigree_data.get("chichi_haha_name", "不明"),
+                dam_sire=pedigree_data.get("haha_chichi_name", "不明"),
+                dam_dam=pedigree_data.get("haha_haha_name", "不明")
+            )
+
+            # 過去成績
+            recent_races = []
+            for race in recent_races_data:
+                # 日付フォーマット
+                race_year = race[COL_KAISAI_YEAR]
+                race_monthday = race[COL_KAISAI_MONTHDAY]
+                race_date = date(int(race_year), int(race_monthday[:2]), int(race_monthday[2:]))
+
+                recent_races.append(RecentRace(
+                    race_id=race[COL_RACE_ID],
+                    race_name=race[COL_RACE_NAME],
+                    race_date=race_date,
+                    venue=_get_venue_name(race[COL_JYOCD]),
+                    distance=race[COL_KYORI],
+                    track_condition=race.get("baba_jotai", "不明"),
+                    finish_position=race[COL_KAKUTEI_CHAKUJUN],
+                    time=race.get(COL_TIME, "不明"),
+                    jockey=race.get(COL_KISYU_NAME, "不明"),
+                    weight=float(race.get("futan", 0)),
+                    horse_weight=race.get("bataiju"),
+                    odds=float(race["tansyo_odds"]) / 10.0 if race.get("tansyo_odds") else None,
+                    prize_money=race.get("syogkin", 0)
+                ))
+
+            # 勝利数と勝率を計算
+            total_races = len(recent_races_data)
+            wins = sum(1 for race in recent_races_data if race[COL_KAKUTEI_CHAKUJUN] == 1)
+            win_rate = wins / total_races if total_races > 0 else 0.0
+
+            # 通算獲得賞金
+            total_prize_money = horse_info.get("total_honcho_sochu_kei_sochu", 0)
+
+            response = HorseDetail(
+                kettonum=kettonum,
+                horse_name=horse_info[COL_BAMEI],
+                birth_date=horse_info.get("birth_date", date(2000, 1, 1)),
+                sex=_get_sex_name(horse_info.get(COL_SEX, "1")),
+                coat_color=_get_color_name(horse_info.get(COL_KEIROCODE, "1")),
+                sire=pedigree_data.get("chichi_name", "不明"),
+                dam=pedigree_data.get("haha_name", "不明"),
+                breeder=horse_info.get("breeder_code", "不明"),
+                owner=horse_info.get("owner_code", "不明"),
+                trainer=trainer,
+                total_races=total_races,
+                wins=wins,
+                win_rate=win_rate,
+                prize_money=total_prize_money,
+                running_style=None,  # TODO: 脚質判定ロジックを追加
+                pedigree=pedigree,
+                recent_races=recent_races
+            )
+
+            logger.info(f"Horse detail retrieved: {horse_info[COL_BAMEI]} ({total_races} races)")
+            return response
+
+    except HorseNotFoundException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get horse detail: {e}")
+        raise DatabaseErrorException(str(e))
