@@ -100,7 +100,13 @@ src/
 │
 ├── discord/                 # Discord Bot
 │   ├── bot.py               # Botメイン
-│   ├── commands.py          # コマンド（!predict, !today等）
+│   ├── commands/            # コマンド（分割構成）
+│   │   ├── __init__.py      # Cog一括登録
+│   │   ├── prediction.py    # 予想関連（!predict, !today）
+│   │   ├── stats.py         # 統計関連（!stats, !roi）
+│   │   ├── betting.py       # 馬券推奨（!baken）
+│   │   └── help.py          # ヘルプ（!help）
+│   ├── decorators.py        # エラーハンドリングデコレーター
 │   ├── scheduler.py         # 自動予想スケジューラー
 │   └── formatters.py        # メッセージフォーマット
 │
@@ -171,9 +177,15 @@ src/
 **目的**: Discord上での予想結果通知と対話
 
 **主要機能**:
-- コマンド処理（`!predict`, `!today`, `!stats`）
+- コマンド処理（`!predict`, `!today`, `!stats`, `!baken`, `!help`）
 - 自動予想スケジューラー（朝9時、レース1時間前）
 - 予想結果のフォーマット表示
+
+**アーキテクチャ**:
+- `bot.py`: メインエントリーポイント、Cog管理
+- `commands/`: コマンドCogを機能別に分割（保守性向上）
+- `decorators.py`: エラーハンドリング共通化
+- `formatters.py`: Discord メッセージフォーマット
 
 ---
 
@@ -242,6 +254,10 @@ results/            # 実行結果
 
 ## 更新履歴
 
+- **2024-12-28**: Discord Commands リファクタリング
+  - `src/discord/commands.py` → `src/discord/commands/` ディレクトリに分割
+  - 4つのCog: prediction, stats, betting, help
+  - エラーハンドリング共通化（`decorators.py`）
 - **2024-12-28**: ディレクトリ構造整理
   - `src/race_resolver.py` → `src/services/race_resolver.py`
   - `src/pipeline.py` → `src/predict/pipeline.py`

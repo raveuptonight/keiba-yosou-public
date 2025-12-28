@@ -65,7 +65,7 @@ class KeibaBot(commands.Bot):
         Raises:
             BotError: コマンドCogのロードに失敗した場合
         """
-        # コマンドCogをロード
+        # コマンドCogをロード（分割された4つのCog: prediction, stats, betting, help）
         try:
             logger.info("コマンドCogロード開始")
             await self.load_extension("src.discord.commands")
