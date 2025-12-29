@@ -1,7 +1,7 @@
 """
 競馬予想Discord Bot
 
-予想完了通知、レース結果報告、コマンド実行などを行う
+予想完了通知、レース結果報告、スラッシュコマンド実行などを行う
 """
 
 import os
@@ -28,7 +28,8 @@ class KeibaBot(commands.Bot):
     """
     競馬予想Bot
 
-    Discord通知、コマンド実行、予想完了通知などを行います。
+    Discord通知、スラッシュコマンド実行、予想完了通知などを行います。
+    コマンド結果はコマンド実行者のみに表示（ephemeral）されます。
     """
 
     def __init__(self):
@@ -40,23 +41,27 @@ class KeibaBot(commands.Bot):
         """
         # Intentsの設定
         intents = discord.Intents.default()
-        intents.message_content = True  # メッセージ内容を読み取るために必要
+        intents.message_content = True
 
         # Botの初期化
         super().__init__(
-            command_prefix="!",  # コマンドプレフィックス
+            command_prefix="!",  # 従来コマンド用（後方互換性）
             intents=intents,
-            help_command=None,  # デフォルトのhelpコマンドを無効化（カスタムhelpを使用）
+            help_command=None,
         )
 
-        # 通知チャンネルID
-        channel_id_str = os.getenv("DISCORD_CHANNEL_ID", "0")
+        # 通知チャンネルID（Bot自動通知用）
+        channel_id_str = os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID", "0")
         try:
             self.notification_channel_id = int(channel_id_str)
             logger.info(f"KeibaBot初期化: notification_channel_id={self.notification_channel_id}")
         except ValueError as e:
-            logger.error(f"DISCORD_CHANNEL_ID が不正な値です: {channel_id_str}")
-            raise BotError(f"DISCORD_CHANNEL_ID が不正な値です: {channel_id_str}") from e
+            logger.error(f"DISCORD_NOTIFICATION_CHANNEL_ID が不正な値です: {channel_id_str}")
+            raise BotError(f"DISCORD_NOTIFICATION_CHANNEL_ID が不正な値です: {channel_id_str}") from e
+
+        # ギルドID（スラッシュコマンド即時反映用、オプション）
+        guild_id_str = os.getenv("DISCORD_GUILD_ID")
+        self.guild_id = int(guild_id_str) if guild_id_str else None
 
     async def setup_hook(self):
         """
@@ -65,104 +70,93 @@ class KeibaBot(commands.Bot):
         Raises:
             BotError: コマンドCogのロードに失敗した場合
         """
-        # コマンドCogをロード（分割された4つのCog: prediction, stats, betting, help）
+        # スラッシュコマンドCogをロード
         try:
-            logger.info("コマンドCogロード開始")
-            await self.load_extension("src.discord.commands")
-            logger.info("✅ コマンドCogロード完了")
+            logger.info("スラッシュコマンドCogロード開始")
+            await self.load_extension("src.discord.slash_commands")
+            logger.info("スラッシュコマンドCogロード完了")
         except Exception as e:
-            logger.error(f"コマンドCogのロードに失敗: {e}")
-            raise BotError(f"コマンドCogのロードに失敗: {e}") from e
+            logger.error(f"スラッシュコマンドCogのロードに失敗: {e}")
+            raise BotError(f"スラッシュコマンドCogのロードに失敗: {e}") from e
 
         # スケジューラーCogをロード
         try:
             logger.info("スケジューラーCogロード開始")
             await self.load_extension("src.discord.scheduler")
-            logger.info("✅ スケジューラーCogロード完了")
+            logger.info("スケジューラーCogロード完了")
         except Exception as e:
             logger.error(f"スケジューラーCogのロードに失敗: {e}")
             raise BotError(f"スケジューラーCogのロードに失敗: {e}") from e
+
+        # スラッシュコマンドを同期
+        if self.guild_id:
+            # 特定ギルドに即時反映（開発用）
+            guild = discord.Object(id=self.guild_id)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            logger.info(f"スラッシュコマンド同期完了（ギルド: {self.guild_id}）")
+        else:
+            # グローバル同期（反映に最大1時間）
+            await self.tree.sync()
+            logger.info("スラッシュコマンド同期完了（グローバル）")
 
     async def on_ready(self):
         """
         Bot起動完了時の処理
         """
-        logger.info(f"✅ Botログイン成功: {self.user.name} (ID: {self.user.id})")
+        logger.info(f"Botログイン成功: {self.user.name} (ID: {self.user.id})")
         logger.info(f"接続サーバー数: {len(self.guilds)}")
 
         try:
             # ステータス設定
             await self.change_presence(
-                activity=discord.Game(name="競馬予想 | !help でヘルプ")
+                activity=discord.Game(name="競馬予想 | /help でヘルプ")
             )
-            logger.debug("ステータス設定完了")
 
             # 通知チャンネルに起動メッセージを送信
             if self.notification_channel_id:
                 channel = self.get_channel(self.notification_channel_id)
                 if channel:
-                    await channel.send("🤖 競馬予想Botが起動しました！\n`!help` でコマンド一覧を確認できます。")
+                    await channel.send(
+                        "🤖 競馬予想Botが起動しました！\n"
+                        "スラッシュコマンド `/help` でコマンド一覧を確認できます。\n"
+                        "※コマンド結果はあなただけに表示されます。"
+                    )
                     logger.info(f"起動メッセージ送信完了: channel_id={self.notification_channel_id}")
                 else:
                     logger.warning(f"通知チャンネルが見つかりません: channel_id={self.notification_channel_id}")
-            else:
-                logger.warning("通知チャンネルIDが設定されていません（通知無効）")
 
         except Exception as e:
             logger.error(f"on_ready処理でエラー発生: {e}")
 
-    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+    async def send_notification(self, message: str, embed: discord.Embed = None):
         """
-        コマンドエラーハンドリング
-
-        Args:
-            ctx: コマンドコンテキスト
-            error: コマンドエラー
-        """
-        if isinstance(error, commands.CommandNotFound):
-            logger.warning(f"存在しないコマンド実行: user={ctx.author}, message={ctx.message.content}")
-            await ctx.send(
-                "❌ そのコマンドは存在しません。`!help` でコマンド一覧を確認してください。"
-            )
-        elif isinstance(error, commands.MissingRequiredArgument):
-            logger.warning(f"引数不足: user={ctx.author}, param={error.param.name}")
-            await ctx.send(f"❌ 引数が不足しています: {error.param.name}")
-        elif isinstance(error, commands.BadArgument):
-            logger.warning(f"引数型エラー: user={ctx.author}, error={error}")
-            await ctx.send(f"❌ 引数の型が正しくありません: {error}")
-        else:
-            logger.error(f"コマンドエラー: user={ctx.author}, error={error}", exc_info=True)
-            await ctx.send(f"❌ エラーが発生しました: {error}")
-
-    async def send_notification(self, message: str, channel_id: Optional[int] = None):
-        """
-        指定チャンネルに通知を送信
+        通知チャンネルにメッセージを送信（Bot自動通知用）
 
         Args:
             message: 送信メッセージ
-            channel_id: チャンネルID（省略時はデフォルト通知チャンネル）
+            embed: 埋め込みメッセージ（オプション）
 
         Raises:
             BotError: 通知送信に失敗した場合
         """
-        target_channel_id = channel_id or self.notification_channel_id
-        if not target_channel_id:
+        if not self.notification_channel_id:
             logger.warning("通知チャンネルIDが設定されていません")
             return
 
         try:
-            channel = self.get_channel(target_channel_id)
+            channel = self.get_channel(self.notification_channel_id)
             if channel:
-                await channel.send(message)
-                logger.info(f"✅ 通知送信完了: channel_id={target_channel_id}, message_len={len(message)}")
+                if embed:
+                    await channel.send(content=message, embed=embed)
+                else:
+                    await channel.send(message)
+                logger.info(f"通知送信完了: channel_id={self.notification_channel_id}")
             else:
-                logger.error(f"チャンネルが見つかりません: channel_id={target_channel_id}")
-                raise BotError(f"チャンネルが見つかりません: ID={target_channel_id}")
+                logger.error(f"チャンネルが見つかりません: channel_id={self.notification_channel_id}")
+                raise BotError(f"チャンネルが見つかりません: ID={self.notification_channel_id}")
         except discord.errors.HTTPException as e:
             logger.error(f"Discord API通知送信エラー: {e}")
-            raise BotError(f"通知送信失敗: {e}") from e
-        except Exception as e:
-            logger.error(f"通知送信予期しないエラー: {e}")
             raise BotError(f"通知送信失敗: {e}") from e
 
 
@@ -181,16 +175,15 @@ def run_bot():
         raise MissingEnvironmentVariableError("DISCORD_BOT_TOKEN")
 
     # チャンネルID確認
-    channel_id = os.getenv("DISCORD_CHANNEL_ID")
+    channel_id = os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID")
     if not channel_id:
-        logger.warning("DISCORD_CHANNEL_ID が設定されていません。通知機能が無効です。")
+        logger.warning("DISCORD_NOTIFICATION_CHANNEL_ID が設定されていません。通知機能が無効です。")
 
     # Bot起動
     try:
         logger.info("Bot起動開始")
         bot = KeibaBot()
-        bot.run(token, log_handler=None)  # log_handlerはNoneに設定（独自ロギング使用）
-        logger.info("Bot起動完了")
+        bot.run(token, log_handler=None)
     except discord.errors.LoginFailure as e:
         logger.error(f"Discord Bot トークンが無効です: {e}")
         raise BotError("Discord Bot トークンが無効です") from e
@@ -200,7 +193,6 @@ def run_bot():
 
 
 if __name__ == "__main__":
-    # ロギング設定（直接実行時）
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"

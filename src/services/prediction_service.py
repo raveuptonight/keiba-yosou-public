@@ -10,13 +10,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import asyncpg
 
-from src.db.async_connection import get_connection
-from src.db.queries import (
-    get_race_prediction_data,
-    get_race_info,
-    check_race_exists,
-)
-from src.services.claude_client import predict_race
+import os
 from src.services.rate_limiter import claude_rate_limiter
 from src.api.schemas.prediction import (
     PredictionResponse,
@@ -54,6 +48,51 @@ VENUE_CODE_MAP = {
 }
 
 
+def _is_mock_mode() -> bool:
+    """モックモードかどうかを判定"""
+    return os.getenv("DB_MODE", "local") == "mock"
+
+
+def _generate_mock_prediction(race_id: str, total_investment: int, is_final: bool) -> PredictionResponse:
+    """モック予想を生成"""
+    logger.info(f"[MOCK] Generating mock prediction for race_id={race_id}")
+
+    # モックの予想結果
+    win_prediction = WinPrediction(
+        first=HorseRanking(horse_number=1, horse_name="モックホース1", expected_odds=3.5, confidence=0.8),
+        second=HorseRanking(horse_number=5, horse_name="モックホース5", expected_odds=8.2, confidence=0.6),
+        third=HorseRanking(horse_number=3, horse_name="モックホース3", expected_odds=12.0, confidence=0.5),
+    )
+
+    betting_strategy = BettingStrategy(
+        recommended_tickets=[
+            RecommendedTicket(ticket_type="3連複", numbers=[1, 3, 5], amount=1000, expected_payout=5000),
+            RecommendedTicket(ticket_type="馬連", numbers=[1, 5], amount=2000, expected_payout=4000),
+        ]
+    )
+
+    prediction_result = PredictionResult(
+        win_prediction=win_prediction,
+        betting_strategy=betting_strategy
+    )
+
+    return PredictionResponse(
+        prediction_id=str(uuid.uuid4()),
+        race_id=race_id,
+        race_name="モックレース",
+        race_date=datetime.now().strftime("%Y-%m-%d"),
+        venue="東京",
+        race_number="11",
+        race_time="15:40",
+        prediction_result=prediction_result,
+        total_investment=total_investment,
+        expected_return=9000,
+        expected_roi=0.9,
+        predicted_at=datetime.now(),
+        is_final=is_final,
+    )
+
+
 async def generate_prediction(
     race_id: str,
     is_final: bool = False,
@@ -78,6 +117,10 @@ async def generate_prediction(
         f"is_final={is_final}, investment={total_investment}"
     )
 
+    # モックモードの場合
+    if _is_mock_mode():
+        return _generate_mock_prediction(race_id, total_investment, is_final)
+
     # 1. レート制限チェック
     if not claude_rate_limiter.is_allowed():
         retry_after = claude_rate_limiter.get_retry_after()
@@ -87,6 +130,14 @@ async def generate_prediction(
         )
 
     try:
+        # 遅延インポート（モック時は不要）
+        from src.db.async_connection import get_connection
+        from src.db.queries import (
+            get_race_prediction_data,
+            check_race_exists,
+        )
+        from src.services.gemini_client import generate_race_prediction
+
         # 2. データ取得
         async with get_connection() as conn:
             # レースの存在チェック
@@ -103,13 +154,11 @@ async def generate_prediction(
                     f"レースデータが不足しています: race_id={race_id}"
                 )
 
-        # 3. LLM予想実行
-        logger.debug("Calling Claude API for prediction")
+        # 3. LLM予想実行（Gemini使用）
+        logger.debug("Calling Gemini API for prediction")
         try:
-            llm_result = await predict_race(
+            llm_result = await generate_race_prediction(
                 race_data=race_data,
-                total_investment=total_investment,
-                is_final=is_final
             )
         except (LLMAPIError, LLMResponseError, LLMTimeoutError) as e:
             logger.error(f"LLM prediction failed: {e}")
@@ -157,7 +206,15 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
     """
     logger.debug(f"Saving prediction: race_id={prediction_data.race_id}")
 
+    # モックモードの場合はUUIDを生成して返すだけ
+    if _is_mock_mode():
+        prediction_id = str(uuid.uuid4())
+        logger.info(f"[MOCK] Prediction saved: prediction_id={prediction_id}")
+        return prediction_id
+
     try:
+        from src.db.async_connection import get_connection
+
         async with get_connection() as conn:
             # predictions テーブルに保存
             sql = """
@@ -225,7 +282,15 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
     """
     logger.debug(f"Fetching prediction: prediction_id={prediction_id}")
 
+    # モックモードの場合
+    if _is_mock_mode():
+        logger.info(f"[MOCK] Prediction not found (mock mode): prediction_id={prediction_id}")
+        return None
+
     try:
+        from src.db.async_connection import get_connection
+        from src.db.queries import get_race_info
+
         async with get_connection() as conn:
             sql = """
                 SELECT
@@ -316,7 +381,14 @@ async def get_predictions_by_race(
     """
     logger.debug(f"Fetching predictions by race: race_id={race_id}, is_final={is_final}")
 
+    # モックモードの場合
+    if _is_mock_mode():
+        logger.info(f"[MOCK] No predictions (mock mode): race_id={race_id}")
+        return []
+
     try:
+        from src.db.async_connection import get_connection
+
         async with get_connection() as conn:
             if is_final is None:
                 sql = """

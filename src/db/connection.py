@@ -1,7 +1,7 @@
 """
 データベース接続モジュール
 
-PostgreSQL（ローカル or Neon）への接続を管理する。
+PostgreSQL（ローカル or Neon or モック）への接続を管理する。
 """
 
 import os
@@ -29,11 +29,48 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class MockConnection:
+    """
+    モック接続クラス（DB未接続時のダミー）
+    """
+    def cursor(self):
+        return MockCursor()
+
+    def close(self):
+        pass
+
+    def commit(self):
+        pass
+
+    def rollback(self):
+        pass
+
+
+class MockCursor:
+    """
+    モックカーソルクラス
+    """
+    def execute(self, query, params=None):
+        logger.debug(f"[MOCK] Execute: {query[:100]}...")
+
+    def fetchone(self):
+        return None
+
+    def fetchall(self):
+        return []
+
+    def fetchmany(self, size=None):
+        return []
+
+    def close(self):
+        pass
+
+
 class DatabaseConnection:
     """
     PostgreSQL接続を管理するクラス
 
-    ローカルPostgreSQLまたはNeonへの接続を管理します。
+    ローカルPostgreSQL、Neon、またはモックへの接続を管理します。
     """
 
     def __init__(self):
@@ -47,17 +84,25 @@ class DatabaseConnection:
         self.db_mode = os.getenv("DB_MODE", "local")
         self._connection_pool: Optional[pool.SimpleConnectionPool] = None
 
+        logger.info(f"DatabaseConnection インスタンス作成: mode={self.db_mode}")
+
+        if self.db_mode == "mock":
+            # モックモード（DB未接続時）
+            logger.info("DB接続設定（モック）: 実際のDB接続は行いません")
+            return
+
         if self.db_mode == "local":
-            self.host = os.getenv("LOCAL_DB_HOST", "localhost")
-            self.port = os.getenv("LOCAL_DB_PORT", "5432")
-            self.database = os.getenv("LOCAL_DB_NAME", "keiba_db")
-            self.user = os.getenv("LOCAL_DB_USER", "postgres")
-            self.password = os.getenv("LOCAL_DB_PASSWORD")
+            # Docker環境用: DB_* を優先、なければ LOCAL_DB_* にフォールバック
+            self.host = os.getenv("DB_HOST") or os.getenv("LOCAL_DB_HOST", "localhost")
+            self.port = os.getenv("DB_PORT") or os.getenv("LOCAL_DB_PORT", "5432")
+            self.database = os.getenv("DB_NAME") or os.getenv("LOCAL_DB_NAME", "keiba_db")
+            self.user = os.getenv("DB_USER") or os.getenv("LOCAL_DB_USER", "postgres")
+            self.password = os.getenv("DB_PASSWORD") or os.getenv("LOCAL_DB_PASSWORD")
 
             # ローカルモードではパスワードが必須
             if not self.password:
-                logger.error("LOCAL_DB_PASSWORD が設定されていません")
-                raise MissingEnvironmentVariableError("LOCAL_DB_PASSWORD")
+                logger.error("DB_PASSWORD が設定されていません")
+                raise MissingEnvironmentVariableError("DB_PASSWORD")
 
             logger.info(f"DB接続設定（ローカル）: host={self.host}, port={self.port}, database={self.database}")
 
@@ -73,18 +118,22 @@ class DatabaseConnection:
 
         else:
             logger.error(f"不正なDB_MODE: {self.db_mode}")
-            raise ValueError(f"Invalid DB_MODE: {self.db_mode}. Use 'local' or 'neon'.")
+            raise ValueError(f"Invalid DB_MODE: {self.db_mode}. Use 'local', 'neon', or 'mock'.")
 
     def get_connection(self) -> Psycopg2Connection:
         """
         データベース接続を取得
 
         Returns:
-            データベース接続オブジェクト
+            データベース接続オブジェクト（モック時はMockConnection）
 
         Raises:
             DatabaseConnectionError: データベース接続に失敗した場合
         """
+        if self.db_mode == "mock":
+            logger.debug("モック接続を返却")
+            return MockConnection()
+
         try:
             if self.db_mode == "local":
                 logger.debug(f"DB接続開始（ローカル）: {self.host}:{self.port}/{self.database}")
@@ -132,6 +181,10 @@ class DatabaseConnection:
         Raises:
             DatabaseConnectionError: コネクションプール作成に失敗した場合
         """
+        if self.db_mode == "mock":
+            logger.warning("モックモードではコネクションプールは使用できません")
+            return None
+
         if self._connection_pool is None:
             try:
                 if self.db_mode == "local":
@@ -218,31 +271,37 @@ def test_connection() -> bool:
     try:
         logger.info("DB接続テスト開始")
         db = get_db()
+
+        if db.db_mode == "mock":
+            logger.info("モックモード: 接続テストをスキップ")
+            print("ℹ️ モックモード: 実際のDB接続は行いません")
+            return True
+
         conn = db.get_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
         version = cursor.fetchone()
 
         if version:
-            logger.info(f"✅ DB接続テスト成功: {version[0]}")
-            print(f"✅ 接続成功: {version[0]}")
+            logger.info(f"DB接続テスト成功: {version[0]}")
+            print(f"DB接続成功: {version[0]}")
             return True
         else:
             logger.error("DB接続テスト失敗: バージョン取得できず")
-            print("❌ 接続失敗: バージョン情報を取得できませんでした")
+            print("接続失敗: バージョン情報を取得できませんでした")
             return False
 
     except DatabaseConnectionError as e:
         logger.error(f"DB接続テスト失敗（接続エラー）: {e}")
-        print(f"❌ 接続失敗: {e}")
+        print(f"接続失敗: {e}")
         return False
     except MissingEnvironmentVariableError as e:
         logger.error(f"DB接続テスト失敗（環境変数エラー）: {e}")
-        print(f"❌ 接続失敗: {e}")
+        print(f"接続失敗: {e}")
         return False
     except Exception as e:
         logger.error(f"DB接続テスト失敗（予期しないエラー）: {e}")
-        print(f"❌ 接続失敗: {e}")
+        print(f"接続失敗: {e}")
         return False
     finally:
         # リソースクリーンアップ

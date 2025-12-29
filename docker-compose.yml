@@ -1,10 +1,12 @@
 version: '3.8'
 
 services:
-  # スケジューラ（定期実行管理）
+  # スケジューラ（定期実行管理）- DB_MODE=local の時のみ使用
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: keiba-scheduler
+    profiles:
+      - ml  # DB_MODE=local の時のみ起動: docker compose --profile ml up
     depends_on:
       - api
     command: daemon --docker
@@ -23,16 +25,21 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - DB_NAME=keiba_db
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - LLM_PROVIDER=${LLM_PROVIDER}
     volumes:
+      - ./src:/app/src:ro        # ソースコード（読み取り専用）
+      - ./prompts:/app/prompts:ro
       - ./models:/app/models
       - ./logs:/app/logs
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -50,17 +57,20 @@ services:
     container_name: keiba-discord-bot
     command: python -m src.discord.bot
     environment:
+      - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - DB_NAME=keiba_db
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
-      - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID}
+      - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID}
       - API_BASE_URL=http://api:8000
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL}
+      - LLM_PROVIDER=${LLM_PROVIDER}
     volumes:
+      - ./src:/app/src:ro        # ソースコード（読み取り専用）
       - ./models:/app/models
       - ./logs:/app/logs
     depends_on:
@@ -76,7 +86,10 @@ services:
       context: .
       dockerfile: Dockerfile.ml
     container_name: keiba-ml-trainer
+    profiles:
+      - ml  # DB_MODE=local の時のみ起動: docker compose --profile ml up
     environment:
+      - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
       - DB_NAME=keiba_db
