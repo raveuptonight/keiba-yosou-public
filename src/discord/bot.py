@@ -59,6 +59,15 @@ class KeibaBot(commands.Bot):
             logger.error(f"DISCORD_NOTIFICATION_CHANNEL_ID が不正な値です: {channel_id_str}")
             raise BotError(f"DISCORD_NOTIFICATION_CHANNEL_ID が不正な値です: {channel_id_str}") from e
 
+        # コマンド用チャンネルID
+        command_channel_id_str = os.getenv("DISCORD_COMMAND_CHANNEL_ID", "0")
+        try:
+            self.command_channel_id = int(command_channel_id_str)
+            logger.info(f"KeibaBot初期化: command_channel_id={self.command_channel_id}")
+        except ValueError:
+            self.command_channel_id = 0
+            logger.warning(f"DISCORD_COMMAND_CHANNEL_ID が不正な値です: {command_channel_id_str}")
+
         # ギルドID（スラッシュコマンド即時反映用、オプション）
         guild_id_str = os.getenv("DISCORD_GUILD_ID")
         self.guild_id = int(guild_id_str) if guild_id_str else None
@@ -119,12 +128,24 @@ class KeibaBot(commands.Bot):
                 if channel:
                     await channel.send(
                         "🤖 競馬予想Botが起動しました！\n"
+                        "このチャンネルには出馬表や予想結果が自動通知されます。"
+                    )
+                    logger.info(f"通知チャンネルに起動メッセージ送信完了: channel_id={self.notification_channel_id}")
+                else:
+                    logger.warning(f"通知チャンネルが見つかりません: channel_id={self.notification_channel_id}")
+
+            # コマンド用チャンネルに起動メッセージを送信
+            if self.command_channel_id:
+                channel = self.get_channel(self.command_channel_id)
+                if channel:
+                    await channel.send(
+                        "🤖 競馬予想Botが起動しました！\n"
                         "スラッシュコマンド `/help` でコマンド一覧を確認できます。\n"
                         "※コマンド結果はあなただけに表示されます。"
                     )
-                    logger.info(f"起動メッセージ送信完了: channel_id={self.notification_channel_id}")
+                    logger.info(f"コマンドチャンネルに起動メッセージ送信完了: channel_id={self.command_channel_id}")
                 else:
-                    logger.warning(f"通知チャンネルが見つかりません: channel_id={self.notification_channel_id}")
+                    logger.warning(f"コマンドチャンネルが見つかりません: channel_id={self.command_channel_id}")
 
         except Exception as e:
             logger.error(f"on_ready処理でエラー発生: {e}")
