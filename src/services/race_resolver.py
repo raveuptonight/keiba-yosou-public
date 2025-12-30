@@ -264,43 +264,55 @@ def parse_date_input(date_input: str) -> Optional[date]:
 def search_races_by_name(
     race_name: str,
     api_base_url: str = API_BASE_URL_DEFAULT,
-    days_range: int = 60
+    days_range: int = 30
 ) -> List[Dict[str, Any]]:
     """
-    レース名で検索（過去30日〜未来30日）
+    レース名で検索（データベースから直接・高速）
 
     Args:
         race_name: レース名（部分一致）
         api_base_url: API base URL
-        days_range: 検索範囲（前後日数）
+        days_range: 検索範囲（前後日数、デフォルト30）
 
     Returns:
         マッチしたレースのリスト
     """
-    found_races = []
-    today = date.today()
+    try:
+        # 新しいAPI エンドポイントを使用（1回のリクエストで全検索）
+        response = requests.get(
+            f"{api_base_url}/api/races/search/name",
+            params={
+                "query": race_name,
+                "days_before": days_range,
+                "days_after": days_range,
+                "limit": 50
+            },
+            timeout=10
+        )
 
-    # 未来を優先検索
-    for days_ahead in range(0, days_range + 1):
-        search_date = today + timedelta(days=days_ahead)
-        races = _get_races_from_api(api_base_url, search_date)
+        if response.status_code == 200:
+            data = response.json()
+            races = data.get("races", [])
 
-        for race in races:
-            if race_name in race.get("race_name", ""):
-                race["race_date"] = search_date.isoformat()
-                found_races.append(race)
+            # race_date フィールドを追加（互換性のため）
+            for race in races:
+                # race_idから日付を抽出（YYYYMMDDで始まる16桁）
+                race_id = race.get("race_id", "")
+                if len(race_id) >= 8:
+                    year = race_id[:4]
+                    month = race_id[4:6]
+                    day = race_id[6:8]
+                    race["race_date"] = f"{year}-{month}-{day}"
 
-    # 過去も検索
-    for days_ago in range(1, days_range + 1):
-        search_date = today - timedelta(days=days_ago)
-        races = _get_races_from_api(api_base_url, search_date)
+            logger.info(f"Found {len(races)} races matching '{race_name}' (API search)")
+            return races
 
-        for race in races:
-            if race_name in race.get("race_name", ""):
-                race["race_date"] = search_date.isoformat()
-                found_races.append(race)
+        logger.warning(f"API search failed with status {response.status_code}")
+        return []
 
-    return found_races
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to search races by name: {e}")
+        return []
 
 
 def _get_races_from_api(api_base_url: str, target_date: date) -> List[Dict[str, Any]]:

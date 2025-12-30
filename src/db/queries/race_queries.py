@@ -393,7 +393,7 @@ async def get_horse_head_to_head(
             WHERE {COL_KETTONUM} = ANY($1)
               AND {COL_DATA_KUBUN} = $2
               AND kakutei_chakujun IS NOT NULL
-              AND kakutei_chakujun > 0
+              AND kakutei_chakujun::integer > 0
         ),
         race_counts AS (
             SELECT {COL_RACE_ID}, COUNT(DISTINCT {COL_KETTONUM}) as horse_count
@@ -459,4 +459,94 @@ async def get_horse_head_to_head(
 
     except Exception as e:
         logger.error(f"Failed to get head-to-head data: {e}")
+        raise
+
+
+async def search_races_by_name_db(
+    conn: Connection,
+    race_name_query: str,
+    days_before: int = 30,
+    days_after: int = 30,
+    limit: int = 20
+) -> List[Dict[str, Any]]:
+    """
+    レース名で検索（データベースから直接）
+
+    Args:
+        conn: データベース接続
+        race_name_query: レース名検索クエリ（部分一致）
+        days_before: 過去何日前まで検索するか
+        days_after: 未来何日先まで検索するか
+        limit: 最大取得件数
+
+    Returns:
+        マッチしたレースのリスト
+    """
+    today = date.today()
+    start_date = today - __import__('datetime').timedelta(days=days_before)
+    end_date = today + __import__('datetime').timedelta(days=days_after)
+
+    start_year = str(start_date.year)
+    start_monthday = start_date.strftime('%m%d')
+    end_year = str(end_date.year)
+    end_monthday = end_date.strftime('%m%d')
+
+    sql = f"""
+        SELECT
+            {COL_RACE_ID},
+            {COL_RACE_NAME},
+            {COL_KAISAI_YEAR},
+            {COL_KAISAI_MONTHDAY},
+            {COL_JYOCD},
+            {COL_RACE_NUM},
+            {COL_GRADE_CD},
+            {COL_KYORI},
+            {COL_TRACK_CD}
+        FROM {TABLE_RACE}
+        WHERE {COL_RACE_NAME} LIKE $1
+          AND (
+              ({COL_KAISAI_YEAR} > $2 OR ({COL_KAISAI_YEAR} = $2 AND {COL_KAISAI_MONTHDAY} >= $3))
+              AND
+              ({COL_KAISAI_YEAR} < $4 OR ({COL_KAISAI_YEAR} = $4 AND {COL_KAISAI_MONTHDAY} <= $5))
+          )
+          AND {COL_DATA_KUBUN} = $6
+        ORDER BY {COL_KAISAI_YEAR} DESC, {COL_KAISAI_MONTHDAY} DESC, {COL_RACE_NUM} DESC
+        LIMIT $7
+    """
+
+    try:
+        search_pattern = f"%{race_name_query}%"
+        rows = await conn.fetch(
+            sql,
+            search_pattern,
+            start_year,
+            start_monthday,
+            end_year,
+            end_monthday,
+            DATA_KUBUN_KAKUTEI,
+            limit
+        )
+
+        results = []
+        for row in rows:
+            year = row[COL_KAISAI_YEAR]
+            monthday = row[COL_KAISAI_MONTHDAY]
+            race_date = f"{year}-{monthday[:2]}-{monthday[2:]}"
+
+            results.append({
+                "race_id": row[COL_RACE_ID],
+                "race_name": row[COL_RACE_NAME],
+                "race_date": race_date,
+                "venue_code": row[COL_JYOCD],
+                "race_number": row[COL_RACE_NUM],
+                "grade_code": row[COL_GRADE_CD],
+                "distance": row[COL_KYORI],
+                "track_code": row[COL_TRACK_CD]
+            })
+
+        logger.info(f"Found {len(results)} races matching '{race_name_query}'")
+        return results
+
+    except Exception as e:
+        logger.error(f"Failed to search races by name: {e}")
         raise

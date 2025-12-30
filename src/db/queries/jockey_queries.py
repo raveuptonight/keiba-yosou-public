@@ -115,17 +115,17 @@ async def get_jockey_stats(
         stats_sql = f"""
             SELECT
                 COUNT(*) as total_races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} <= 2 THEN 1 ELSE 0 END) as top2,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} <= 3 THEN 1 ELSE 0 END) as top3,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 2 THEN 1 ELSE 0 END) as top2,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 3 THEN 1 ELSE 0 END) as top3,
 
                 -- 芝成績
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' THEN 1 END) as turf_races,
-                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as turf_wins,
+                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as turf_wins,
 
                 -- ダート成績
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' THEN 1 END) as dirt_races,
-                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as dirt_wins
+                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as dirt_wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_KISYUCODE} = $1
@@ -139,13 +139,13 @@ async def get_jockey_stats(
         distance_sql = f"""
             SELECT
                 CASE
-                    WHEN r.{COL_KYORI} <= 1400 THEN 'sprint'
-                    WHEN r.{COL_KYORI} <= 1800 THEN 'mile'
-                    WHEN r.{COL_KYORI} <= 2200 THEN 'middle'
+                    WHEN r.{COL_KYORI}::integer <= 1400 THEN 'sprint'
+                    WHEN r.{COL_KYORI}::integer <= 1800 THEN 'mile'
+                    WHEN r.{COL_KYORI}::integer <= 2200 THEN 'middle'
                     ELSE 'long'
                 END as distance_category,
                 COUNT(*) as races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_KISYUCODE} = $1
@@ -161,7 +161,7 @@ async def get_jockey_stats(
             SELECT
                 r.{COL_JYOCD} as venue_code,
                 COUNT(*) as races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_KISYUCODE} = $1
@@ -268,17 +268,17 @@ async def get_trainer_stats(
         stats_sql = f"""
             SELECT
                 COUNT(*) as total_races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} <= 2 THEN 1 ELSE 0 END) as top2,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} <= 3 THEN 1 ELSE 0 END) as top3,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 2 THEN 1 ELSE 0 END) as top2,
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 3 THEN 1 ELSE 0 END) as top3,
 
                 -- 芝成績
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' THEN 1 END) as turf_races,
-                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as turf_wins,
+                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as turf_wins,
 
                 -- ダート成績
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' THEN 1 END) as dirt_races,
-                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as dirt_wins
+                SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as dirt_wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_CHOKYOSICODE} = $1
@@ -292,13 +292,13 @@ async def get_trainer_stats(
         distance_sql = f"""
             SELECT
                 CASE
-                    WHEN r.{COL_KYORI} <= 1400 THEN 'sprint'
-                    WHEN r.{COL_KYORI} <= 1800 THEN 'mile'
-                    WHEN r.{COL_KYORI} <= 2200 THEN 'middle'
+                    WHEN r.{COL_KYORI}::integer <= 1400 THEN 'sprint'
+                    WHEN r.{COL_KYORI}::integer <= 1800 THEN 'mile'
+                    WHEN r.{COL_KYORI}::integer <= 2200 THEN 'middle'
                     ELSE 'long'
                 END as distance_category,
                 COUNT(*) as races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_CHOKYOSICODE} = $1
@@ -314,7 +314,7 @@ async def get_trainer_stats(
             SELECT
                 r.{COL_JYOCD} as venue_code,
                 COUNT(*) as races,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_CHOKYOSICODE} = $1
@@ -332,7 +332,7 @@ async def get_trainer_stats(
                 se.{COL_KISYUCODE} as kishu_code,
                 se.kishumei as jockey_name,
                 COUNT(*) as rides,
-                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = 1 THEN 1 ELSE 0 END) as wins
+                SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as wins
             FROM {TABLE_UMA_RACE} se
             INNER JOIN {TABLE_RACE} r ON se.{COL_RACE_ID} = r.{COL_RACE_ID} AND r.{COL_DATA_KUBUN} = $2
             WHERE se.{COL_CHOKYOSICODE} = $1

@@ -156,7 +156,7 @@ async def get_horses_recent_races(
         FROM ranked_races rr
         LEFT JOIN {TABLE_UMA_RACE} winner
             ON rr.{COL_RACE_ID} = winner.{COL_RACE_ID}
-            AND winner.{COL_KAKUTEI_CHAKUJUN} = 1
+            AND winner.{COL_KAKUTEI_CHAKUJUN} = '1'
             AND winner.{COL_DATA_KUBUN} = $2
         WHERE rr.rn <= $4
         ORDER BY rr.{COL_KETTONUM}, rr.rn

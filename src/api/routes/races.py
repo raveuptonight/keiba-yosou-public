@@ -28,6 +28,7 @@ from src.db.queries.race_queries import (
     get_race_detail,
     get_race_entry_count,
     get_horse_head_to_head,
+    search_races_by_name_db,
 )
 from src.db.queries.payoff_queries import get_race_results, get_race_payoffs, get_race_lap_times
 from src.db.table_names import (
@@ -463,4 +464,89 @@ async def get_race(
         raise
     except Exception as e:
         logger.error(f"Failed to get race detail: {e}")
+        raise DatabaseErrorException(str(e))
+
+
+@router.get(
+    "/races/search/name",
+    response_model=RaceListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="レース名検索",
+    description="レース名で検索します（部分一致、過去30日〜未来30日）。"
+)
+async def search_races_by_name(
+    query: str = Query(
+        ...,
+        min_length=1,
+        description="レース名検索クエリ（部分一致）"
+    ),
+    days_before: int = Query(
+        30,
+        ge=0,
+        le=90,
+        description="過去何日前まで検索するか（0〜90日）"
+    ),
+    days_after: int = Query(
+        30,
+        ge=0,
+        le=90,
+        description="未来何日先まで検索するか（0〜90日）"
+    ),
+    limit: int = Query(
+        20,
+        ge=1,
+        le=100,
+        description="最大取得件数（1〜100）"
+    )
+) -> RaceListResponse:
+    """
+    レース名で検索
+
+    Args:
+        query: レース名検索クエリ（部分一致）
+        days_before: 過去何日前まで検索するか
+        days_after: 未来何日先まで検索するか
+        limit: 最大取得件数
+
+    Returns:
+        RaceListResponse: マッチしたレース一覧
+
+    Raises:
+        DatabaseErrorException: DB接続エラー
+    """
+    logger.info(f"GET /races/search/name: query={query}, days_before={days_before}, days_after={days_after}")
+
+    try:
+        async with get_connection() as conn:
+            races_data = await search_races_by_name_db(
+                conn,
+                query,
+                days_before=days_before,
+                days_after=days_after,
+                limit=limit
+            )
+
+            races = []
+            for race in races_data:
+                races.append(RaceBase(
+                    race_id=race["race_id"],
+                    race_name=race["race_name"],
+                    race_number=f"{race.get('race_number', '?')}R",
+                    race_time=None,
+                    venue=_get_venue_name(race["venue_code"]),
+                    venue_code=race["venue_code"],
+                    grade=race.get("grade_code"),
+                    distance=race["distance"],
+                    track_code=race["track_code"]
+                ))
+
+            logger.info(f"Found {len(races)} races matching '{query}'")
+            return RaceListResponse(
+                date=None,  # 複数日付にまたがる可能性があるためNone
+                races=races,
+                count=len(races)
+            )
+
+    except Exception as e:
+        logger.error(f"Failed to search races by name: {e}")
         raise DatabaseErrorException(str(e))

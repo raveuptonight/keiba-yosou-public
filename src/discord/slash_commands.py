@@ -872,7 +872,7 @@ class SlashCommands(commands.Cog):
                         message = message[:1900] + "\n... (省略)"
                     await interaction.followup.send(message, ephemeral=True)
                 else:
-                    await interaction.followup.send("今後のレースはありません", ephemeral=True)
+                    await interaction.followup.send("今後のレースは未登録です。", ephemeral=True)
             else:
                 await interaction.followup.send(
                     f"レース一覧取得エラー (Status: {response.status_code})",
