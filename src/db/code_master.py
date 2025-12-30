@@ -27,7 +27,17 @@ async def load_code_master(conn: Connection, table_name: str) -> Dict[str, str]:
         コード -> 名称 のマッピング辞書
     """
     try:
-        query = f"SELECT code, meisho FROM {table_name}"
+        # テーブルごとに異なるカラム名を使用
+        if table_name == 'keibajo_code':
+            # 競馬場コードは jomei カラムを使用
+            query = f"SELECT code, jomei AS meisho FROM {table_name}"
+        elif table_name == 'tozai_shozoku_code':
+            # 東西所属コードは meisho2 カラムを使用（美浦/栗東）
+            query = f"SELECT code, meisho2 AS meisho FROM {table_name}"
+        else:
+            # その他のテーブルは meisho カラムを使用
+            query = f"SELECT code, meisho FROM {table_name}"
+
         rows = await conn.fetch(query)
 
         mapping = {}
