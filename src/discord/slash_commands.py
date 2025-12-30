@@ -529,12 +529,37 @@ class HorseDetailButtonView(View):
         """調教データを表示"""
         await interaction.response.defer(ephemeral=True)
 
-        # TODO: 調教データAPIが実装されたら取得
-        msg = (
-            f"**{self.horse_data.get('horse_name', '不明')} - 調教データ**\n\n"
-            f"調教データ機能は現在準備中です。\n"
-            f"近日中に坂路・ウッドチップの調教タイムを表示予定です。"
+        kettonum = self.horse_data.get("kettonum")
+        if not kettonum:
+            await interaction.followup.send("血統登録番号が取得できませんでした", ephemeral=True)
+            return
+
+        # 調教データを取得
+        response = requests.get(
+            f"{self.api_base_url}/api/horses/{kettonum}/training?days_back=30",
+            timeout=10
         )
+
+        if response.status_code != 200:
+            await interaction.followup.send(
+                f"調教データ取得エラー (Status: {response.status_code})",
+                ephemeral=True
+            )
+            return
+
+        training_list = response.json()
+
+        if not training_list:
+            msg = f"**{self.horse_data.get('horse_name', '不明')} - 調教データ**\n\n調教データがありません"
+        else:
+            msg = f"**{self.horse_data.get('horse_name', '不明')} - 調教データ**\n\n"
+            for t in training_list[:10]:  # 最新10件
+                t_type = t.get("training_type", "不明")
+                t_date = t.get("training_date", "")
+                formatted_date = f"{t_date[:4]}/{t_date[4:6]}/{t_date[6:8]}" if len(t_date) == 8 else t_date
+                time_4f = t.get("time_4f", "-")
+                time_3f = t.get("time_3f", "-")
+                msg += f"**{formatted_date}** [{t_type}] 4F: {time_4f} / 3F: {time_3f}\n"
 
         await interaction.followup.send(msg, ephemeral=True)
 
