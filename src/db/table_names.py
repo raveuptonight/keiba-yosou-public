@@ -99,8 +99,13 @@ COL_TENKO_CD: Final[str] = "tenko_code"  # 天候コード
 COL_SHIBA_BABA_CD: Final[str] = "shiba_babajotai_code"  # 芝馬場状態コード
 COL_DIRT_BABA_CD: Final[str] = "dirt_babajotai_code"  # ダート馬場状態コード
 COL_HASSO_JIKOKU: Final[str] = "hasso_jikoku"  # 発走時刻
-COL_KYOSO_JOKEN_CD: Final[str] = "kyoso_joken_code"  # 競走条件コード
 COL_KYOSO_SHUBETSU_CD: Final[str] = "kyoso_shubetsu_code"  # 競走種別コード
+
+# 年齢別競走条件コード（実際のDBカラム）
+COL_KYOSO_JOKEN_2SAI: Final[str] = "kyoso_joken_code_2sai"
+COL_KYOSO_JOKEN_3SAI: Final[str] = "kyoso_joken_code_3sai"
+COL_KYOSO_JOKEN_4SAI: Final[str] = "kyoso_joken_code_4sai"
+COL_KYOSO_JOKEN_5SAI_IJO: Final[str] = "kyoso_joken_code_5sai_ijo"
 
 # 馬情報
 COL_BAMEI: Final[str] = "bamei"  # 馬名

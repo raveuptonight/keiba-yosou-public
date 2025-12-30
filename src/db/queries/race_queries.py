@@ -43,13 +43,32 @@ from src.db.table_names import (
     COL_CHOKYOSICODE,
     COL_KISYU_NAME,
     COL_CHOKYOSI_NAME,
-    COL_KYOSO_JOKEN_CD,
     COL_KYOSO_SHUBETSU_CD,
+    COL_KYOSO_JOKEN_2SAI,
+    COL_KYOSO_JOKEN_3SAI,
+    COL_KYOSO_JOKEN_4SAI,
+    COL_KYOSO_JOKEN_5SAI_IJO,
     DATA_KUBUN_KAKUTEI,
 )
 from src.config import ML_TRAINING_YEARS_BACK
 
 logger = logging.getLogger(__name__)
+
+# 年齢別競走条件コードから統合した値を取得するSQL式
+def get_kyoso_joken_code_expr() -> str:
+    """
+    年齢別の競走条件コードカラムから、最初の非'000'値を取得するSQL式
+
+    Returns:
+        COALESCE式の文字列（AS kyoso_joken_code付き）
+    """
+    return f"""COALESCE(
+        NULLIF({COL_KYOSO_JOKEN_2SAI}, '000'),
+        NULLIF({COL_KYOSO_JOKEN_3SAI}, '000'),
+        NULLIF({COL_KYOSO_JOKEN_4SAI}, '000'),
+        NULLIF({COL_KYOSO_JOKEN_5SAI_IJO}, '000'),
+        '000'
+    ) as kyoso_joken_code"""
 
 
 async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, Any]]:
@@ -83,7 +102,7 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY},
             {COL_HASSO_JIKOKU},
-            {COL_KYOSO_JOKEN_CD},
+            {get_kyoso_joken_code_expr()},
             {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_ID} = $1
@@ -179,7 +198,7 @@ async def get_races_by_date(
             {COL_TENKO_CD},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY},
-            {COL_KYOSO_JOKEN_CD},
+            {get_kyoso_joken_code_expr()},
             {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_KAISAI_YEAR} = $1
@@ -295,7 +314,7 @@ async def get_upcoming_races(
             {COL_HASSO_JIKOKU},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY},
-            {COL_KYOSO_JOKEN_CD},
+            {get_kyoso_joken_code_expr()},
             {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_KAISAI_YEAR} = $1
@@ -512,7 +531,7 @@ async def search_races_by_name_db(
             {COL_GRADE_CD},
             {COL_KYORI},
             {COL_TRACK_CD},
-            {COL_KYOSO_JOKEN_CD},
+            {get_kyoso_joken_code_expr()},
             {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_NAME} LIKE $1
@@ -578,7 +597,7 @@ async def search_races_by_name_db(
                 "grade_code": row[COL_GRADE_CD],
                 "distance": row[COL_KYORI],
                 "track_code": row[COL_TRACK_CD],
-                "kyoso_joken_code": row.get(COL_KYOSO_JOKEN_CD),
+                "kyoso_joken_code": row.get("kyoso_joken_code"),
                 "kyoso_shubetsu_code": row.get(COL_KYOSO_SHUBETSU_CD)
             })
 

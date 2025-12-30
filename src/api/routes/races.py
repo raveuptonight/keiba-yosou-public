@@ -54,7 +54,6 @@ from src.db.table_names import (
     COL_KISYU_NAME,
     COL_CHOKYOSICODE,
     COL_CHOKYOSI_NAME,
-    COL_KYOSO_JOKEN_CD,
     COL_KYOSO_SHUBETSU_CD,
 )
 
@@ -157,7 +156,7 @@ async def get_today_races(
                     race_name=_get_race_name_with_fallback(
                         race[COL_RACE_NAME],
                         race.get(COL_GRADE_CD),
-                        race.get(COL_KYOSO_JOKEN_CD),
+                        race.get("kyoso_joken_code"),
                         race.get(COL_KYOSO_SHUBETSU_CD)
                     ),
                     race_number=f"{race[COL_RACE_NUM]}R" if race.get(COL_RACE_NUM) else "不明",
@@ -226,7 +225,7 @@ async def get_upcoming_races_list(
                     race_name=_get_race_name_with_fallback(
                         race[COL_RACE_NAME],
                         race.get(COL_GRADE_CD),
-                        race.get(COL_KYOSO_JOKEN_CD),
+                        race.get("kyoso_joken_code"),
                         race.get(COL_KYOSO_SHUBETSU_CD)
                     ),
                     race_number=f"{race.get(COL_RACE_NUM, '?')}R",
@@ -306,7 +305,7 @@ async def get_races_for_date(
                     race_name=_get_race_name_with_fallback(
                         race[COL_RACE_NAME],
                         race.get(COL_GRADE_CD),
-                        race.get(COL_KYOSO_JOKEN_CD),
+                        race.get("kyoso_joken_code"),
                         race.get(COL_KYOSO_SHUBETSU_CD)
                     ),
                     race_number=f"{race.get(COL_RACE_NUM, '?')}R",
@@ -487,7 +486,7 @@ async def get_race(
                 race_name=_get_race_name_with_fallback(
                     race[COL_RACE_NAME],
                     race.get(COL_GRADE_CD),
-                    race.get(COL_KYOSO_JOKEN_CD),
+                    race.get("kyoso_joken_code"),
                     race.get(COL_KYOSO_SHUBETSU_CD)
                 ),
                 race_number=f"{race.get(COL_RACE_NUM, '?')}R",
