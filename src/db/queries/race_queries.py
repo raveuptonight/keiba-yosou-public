@@ -27,6 +27,11 @@ from src.db.table_names import (
     COL_GRADE_CD,
     COL_TRACK_CD,
     COL_KYORI,
+    COL_RACE_NUM,
+    COL_TENKO_CD,
+    COL_SHIBA_BABA_CD,
+    COL_DIRT_BABA_CD,
+    COL_HASSO_JIKOKU,
     COL_BAMEI,
     COL_KISYUCODE,
     COL_CHOKYOSICODE,
@@ -58,17 +63,18 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
             {COL_JYOCD},
             {COL_TRACK_CD},
             {COL_KYORI},
-            honsyokin_1,
-            honsyokin_2,
-            honsyokin_3,
-            honsyokin_4,
-            honsyokin_5,
-            baba_jotai,
-            tenkocode,
-            race_num,
+            honshokin1,
+            honshokin2,
+            honshokin3,
+            honshokin4,
+            honshokin5,
+            {COL_SHIBA_BABA_CD},
+            {COL_DIRT_BABA_CD},
+            {COL_TENKO_CD},
+            {COL_RACE_NUM},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY},
-            hasso_jikoku
+            {COL_HASSO_JIKOKU}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
@@ -161,10 +167,11 @@ async def get_races_by_date(
             {COL_JYOCD},
             {COL_TRACK_CD},
             {COL_KYORI},
-            race_num,
-            hasso_jikoku,
-            baba_jotai,
-            tenkocode,
+            {COL_RACE_NUM},
+            {COL_HASSO_JIKOKU},
+            {COL_SHIBA_BABA_CD},
+            {COL_DIRT_BABA_CD},
+            {COL_TENKO_CD},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY}
         FROM {TABLE_RACE}
@@ -188,7 +195,7 @@ async def get_races_by_date(
         params.append(grade_filter)
         param_idx += 1
 
-    sql += " ORDER BY race_num"
+    sql += f" ORDER BY {COL_RACE_NUM}"
 
     try:
         rows = await conn.fetch(sql, *params)
@@ -277,8 +284,8 @@ async def get_upcoming_races(
             {COL_JYOCD},
             {COL_TRACK_CD},
             {COL_KYORI},
-            race_num,
-            hasso_jikoku,
+            {COL_RACE_NUM},
+            {COL_HASSO_JIKOKU},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY}
         FROM {TABLE_RACE}
@@ -295,7 +302,7 @@ async def get_upcoming_races(
         sql += f" AND {COL_GRADE_CD} = $5"
         params.append(grade_filter)
 
-    sql += f" ORDER BY {COL_KAISAI_MONTHDAY}, race_num"
+    sql += f" ORDER BY {COL_KAISAI_MONTHDAY}, {COL_RACE_NUM}"
 
     try:
         rows = await conn.fetch(sql, *params)

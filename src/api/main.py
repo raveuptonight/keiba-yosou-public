@@ -67,13 +67,23 @@ app.add_middleware(
 
 
 # ルーター登録
-from src.api.routes import health, races, horses, odds, predictions
+from src.api.routes import health, races, horses, odds, predictions, jockeys
 
 app.include_router(health.router, tags=["health"])
-app.include_router(races.router, prefix="/api/v1", tags=["races"])
-app.include_router(horses.router, prefix="/api/v1", tags=["horses"])
-app.include_router(odds.router, prefix="/api/v1", tags=["odds"])
-app.include_router(predictions.router, prefix="/api/v1", tags=["predictions"])
+
+# /api/v1 プレフィックス (バージョニング用)
+app.include_router(races.router, prefix="/api/v1", tags=["races-v1"])
+app.include_router(horses.router, prefix="/api/v1", tags=["horses-v1"])
+app.include_router(jockeys.router, prefix="/api/v1", tags=["jockeys-v1"])
+app.include_router(odds.router, prefix="/api/v1", tags=["odds-v1"])
+app.include_router(predictions.router, prefix="/api/v1", tags=["predictions-v1"])
+
+# /api プレフィックス (後方互換性 & Discord Bot用)
+app.include_router(races.router, prefix="/api", tags=["races"])
+app.include_router(horses.router, prefix="/api", tags=["horses"])
+app.include_router(jockeys.router, prefix="/api", tags=["jockeys"])
+app.include_router(odds.router, prefix="/api", tags=["odds"])
+app.include_router(predictions.router, prefix="/api", tags=["predictions"])
 
 
 @app.get("/")

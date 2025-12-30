@@ -69,58 +69,66 @@ TABLE_BANUSHI: Final[str] = "banushi_master"  # 馬主マスタ
 TABLE_SEISANSHA: Final[str] = "seisansha_master2"  # 生産者マスタ
 
 # =============================================================================
-# カラム名定義（頻出フィールド）
+# カラム名定義（mykeibadb実カラム名）
 # =============================================================================
 
 # 主キー・外部キー
-COL_RACE_ID: Final[str] = "race_id"
-COL_KETTONUM: Final[str] = "kettonum"  # 血統登録番号
+COL_RACE_ID: Final[str] = "race_code"  # レースコード（16桁）
+COL_KETTONUM: Final[str] = "ketto_toroku_bango"  # 血統登録番号
 COL_UMABAN: Final[str] = "umaban"  # 馬番
 
 # レース構成要素
-COL_KAISAI_YEAR: Final[str] = "kaisai_year"  # 開催年
-COL_KAISAI_MONTHDAY: Final[str] = "kaisai_monthday"  # 開催月日（MMDD）
-COL_JYOCD: Final[str] = "jyocd"  # 競馬場コード
+COL_KAISAI_YEAR: Final[str] = "kaisai_nen"  # 開催年
+COL_KAISAI_MONTHDAY: Final[str] = "kaisai_gappi"  # 開催月日（MMDD）
+COL_JYOCD: Final[str] = "keibajo_code"  # 競馬場コード
 COL_KAISAI_KAI: Final[str] = "kaisai_kai"  # 開催回
 COL_KAISAI_NICHIME: Final[str] = "kaisai_nichime"  # 開催日目
-COL_RACE_NUM: Final[str] = "race_num"  # レース番号
+COL_RACE_NUM: Final[str] = "race_bango"  # レース番号
 
 # データ種別
 COL_DATA_KUBUN: Final[str] = "data_kubun"  # データ区分（7=確定）
 
 # レース情報
-COL_RACE_NAME: Final[str] = "race_name"  # レース名
-COL_GRADE_CD: Final[str] = "grade_cd"  # グレードコード
-COL_TRACK_CD: Final[str] = "track_cd"  # トラックコード
+COL_RACE_NAME: Final[str] = "kyosomei_hondai"  # レース名（本題）
+COL_RACE_NAME_SHORT: Final[str] = "kyosomei_ryakusho_10"  # レース名（略称10文字）
+COL_GRADE_CD: Final[str] = "grade_code"  # グレードコード
+COL_TRACK_CD: Final[str] = "track_code"  # トラックコード
 COL_KYORI: Final[str] = "kyori"  # 距離
+COL_RACE_NUM: Final[str] = "race_bango"  # レース番号
+COL_TENKO_CD: Final[str] = "tenko_code"  # 天候コード
+COL_SHIBA_BABA_CD: Final[str] = "shiba_babajotai_code"  # 芝馬場状態コード
+COL_DIRT_BABA_CD: Final[str] = "dirt_babajotai_code"  # ダート馬場状態コード
+COL_HASSO_JIKOKU: Final[str] = "hasso_jikoku"  # 発走時刻
 
 # 馬情報
 COL_BAMEI: Final[str] = "bamei"  # 馬名
-COL_SEX: Final[str] = "sex"  # 性別
-COL_KEIROCODE: Final[str] = "keirocode"  # 毛色コード
+COL_SEX: Final[str] = "seibetsu_code"  # 性別コード
+COL_KEIROCODE: Final[str] = "moshoku_code"  # 毛色コード
 
 # 成績
 COL_KAKUTEI_CHAKUJUN: Final[str] = "kakutei_chakujun"  # 確定着順
 COL_着順: Final[str] = "kakutei_chakujun"  # 確定着順（エイリアス）
-COL_TIME: Final[str] = "time"  # タイム
+COL_TIME: Final[str] = "soha_time"  # 走破タイム
 COL_BATAIJU: Final[str] = "bataiju"  # 馬体重
-COL_KINRYO: Final[str] = "kinryo"  # 斤量
+COL_KINRYO: Final[str] = "futan_juryo"  # 斤量（負担重量）
 COL_RACE_DATE: Final[str] = "race_date"  # レース日
 
 # 騎手・調教師
-COL_KISYUCODE: Final[str] = "kisyucode"  # 騎手コード
-COL_CHOKYOSICODE: Final[str] = "chokyosicode"  # 調教師コード
-COL_KISYU_NAME: Final[str] = "kisyu_name"  # 騎手名
-COL_TRAINER_NAME: Final[str] = "chokyosi_name"  # 調教師名（エイリアス）
-COL_CHOKYOSI_NAME: Final[str] = "chokyosi_name"  # 調教師名
+COL_KISYUCODE: Final[str] = "kishu_code"  # 騎手コード
+COL_CHOKYOSICODE: Final[str] = "chokyoshi_code"  # 調教師コード
+COL_KISYU_NAME: Final[str] = "kishumei"  # 騎手名
+COL_KISYU_NAME_SHORT: Final[str] = "kishumei_ryakusho"  # 騎手名（略称）
+COL_TRAINER_NAME: Final[str] = "chokyoshimei"  # 調教師名（エイリアス）
+COL_CHOKYOSI_NAME: Final[str] = "chokyoshimei"  # 調教師名
+COL_CHOKYOSI_NAME_SHORT: Final[str] = "chokyoshimei_ryakusho"  # 調教師名（略称）
 
 # 血統
 COL_SANDAI_KETTO: Final[str] = "sandai_ketto"  # 3代血統配列
-COL_HANSYOKU_NUM: Final[str] = "hansyoku_num"  # 繁殖登録番号
-COL_HANSYOKUBA_NAME: Final[str] = "hansyokuba_name"  # 繁殖馬名
+COL_HANSYOKU_NUM: Final[str] = "hanshoku_toroku_bango"  # 繁殖登録番号
+COL_HANSYOKUBA_NAME: Final[str] = "hanshokubamei"  # 繁殖馬名
 
 # 調教
-COL_CHOKYO_DATE: Final[str] = "chokyo_date"  # 調教日
+COL_CHOKYO_DATE: Final[str] = "chokyo_nengappi"  # 調教日
 COL_TIME_4F: Final[str] = "time_4f"  # 4ハロンタイム
 COL_TIME_3F: Final[str] = "time_3f"  # 3ハロンタイム
 

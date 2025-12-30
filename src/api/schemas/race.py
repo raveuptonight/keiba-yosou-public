@@ -23,6 +23,7 @@ class RaceBase(BaseModel):
     )
     distance: int = Field(..., gt=0, description="距離（メートル）")
     track_code: str = Field(..., description="馬場種別コード（10=芝, 20=ダート）")
+    race_date: Optional[str] = Field(None, description="開催日（YYYY-MM-DD）")
 
 
 class RaceEntry(BaseModel):

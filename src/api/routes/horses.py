@@ -6,15 +6,17 @@ import logging
 from datetime import date
 from fastapi import APIRouter, Query, Path, status
 
-from src.api.schemas.horse import HorseDetail, Trainer, Pedigree, RecentRace
+from typing import Optional, List
+from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace
 from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
-from src.db.queries.horse_queries import get_horse_detail
+from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name
 from src.db.table_names import (
     COL_KETTONUM,
     COL_BAMEI,
     COL_SEX,
     COL_KEIROCODE,
+    COL_CHOKYOSICODE,
     COL_CHOKYOSI_NAME,
     COL_RACE_ID,
     COL_RACE_NAME,
@@ -30,6 +32,74 @@ from src.db.table_names import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+@router.get(
+    "/horses/search",
+    response_model=List[HorseSearchResult],
+    status_code=status.HTTP_200_OK,
+    summary="馬名検索",
+    description="馬名で馬を検索します（部分一致）。"
+)
+async def search_horses(
+    name: str = Query(
+        ...,
+        min_length=1,
+        description="検索する馬名（部分一致）"
+    ),
+    limit: int = Query(
+        10,
+        ge=1,
+        le=50,
+        description="取得件数上限（デフォルト: 10）"
+    )
+) -> List[HorseSearchResult]:
+    """
+    馬名で馬を検索
+
+    Args:
+        name: 検索する馬名
+        limit: 取得件数上限
+
+    Returns:
+        List[HorseSearchResult]: 検索結果リスト
+    """
+    logger.info(f"GET /horses/search: name={name}, limit={limit}")
+
+    try:
+        async with get_connection() as conn:
+            results = await search_horses_by_name(conn, name, limit)
+
+            horses = []
+            for row in results:
+                sex_map = {"1": "牡", "2": "牝", "3": "セ"}
+
+                # 生年月日を変換（'YYYYMMDD' -> date）
+                birth_date_str = row.get("birth_date")
+                birth_date_val = None
+                if birth_date_str and len(str(birth_date_str)) >= 8:
+                    try:
+                        bd_str = str(birth_date_str)[:8]
+                        birth_date_val = date(int(bd_str[:4]), int(bd_str[4:6]), int(bd_str[6:8]))
+                    except (ValueError, IndexError):
+                        birth_date_val = None
+
+                horses.append(HorseSearchResult(
+                    kettonum=row["kettonum"],
+                    name=row["name"].strip() if row["name"] else "",
+                    sex=sex_map.get(row.get("sex", ""), ""),
+                    birth_date=birth_date_val,
+                    runs=row.get("runs", 0),
+                    wins=row.get("wins", 0),
+                    prize=0  # TODO: 賞金情報取得
+                ))
+
+            logger.info(f"Found {len(horses)} horses matching '{name}'")
+            return horses
+
+    except Exception as e:
+        logger.error(f"Failed to search horses: {e}")
+        raise DatabaseErrorException(str(e))
 
 
 def _get_venue_name(venue_code: str) -> str:

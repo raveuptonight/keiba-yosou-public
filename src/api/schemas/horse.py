@@ -60,6 +60,20 @@ class RecentRace(BaseModel):
     )
 
 
+class HorseSearchResult(BaseModel):
+    """馬検索結果"""
+
+    kettonum: str = Field(
+        ..., min_length=10, max_length=10, description="血統登録番号"
+    )
+    name: str = Field(..., description="馬名")
+    sex: Optional[str] = Field(None, description="性別コード")
+    birth_date: Optional[date] = Field(None, description="生年月日")
+    runs: int = Field(0, ge=0, description="出走数")
+    wins: int = Field(0, ge=0, description="勝利数")
+    prize: int = Field(0, ge=0, description="獲得賞金（円）")
+
+
 class HorseDetail(BaseModel):
     """馬の詳細情報"""
 

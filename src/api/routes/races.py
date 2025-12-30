@@ -13,6 +13,8 @@ from src.api.exceptions import RaceNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
 from src.db.queries.race_queries import (
     get_races_today,
+    get_races_by_date,
+    get_upcoming_races,
     get_race_detail,
     get_race_entry_count,
 )
@@ -23,6 +25,11 @@ from src.db.table_names import (
     COL_JYOCD,
     COL_TRACK_CD,
     COL_KYORI,
+    COL_RACE_NUM,
+    COL_HASSO_JIKOKU,
+    COL_TENKO_CD,
+    COL_SHIBA_BABA_CD,
+    COL_DIRT_BABA_CD,
     COL_KAISAI_YEAR,
     COL_KAISAI_MONTHDAY,
     COL_KETTONUM,
@@ -102,8 +109,8 @@ async def get_today_races(
                 races.append(RaceBase(
                     race_id=race[COL_RACE_ID],
                     race_name=race[COL_RACE_NAME],
-                    race_number=f"{race['race_num']}R" if race.get('race_num') else "不明",
-                    race_time=race.get('hasso_jikoku', '不明'),
+                    race_number=f"{race[COL_RACE_NUM]}R" if race.get(COL_RACE_NUM) else "不明",
+                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
                     venue_code=race[COL_JYOCD],
                     grade=race.get(COL_GRADE_CD),
@@ -123,6 +130,145 @@ async def get_today_races(
 
     except Exception as e:
         logger.error(f"Failed to get today's races: {e}")
+        raise DatabaseErrorException(str(e))
+
+
+@router.get(
+    "/races/upcoming",
+    response_model=RaceListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="今後のレース一覧取得",
+    description="今後開催予定のレース一覧を取得します。"
+)
+async def get_upcoming_races_list(
+    days: int = Query(
+        7,
+        ge=1,
+        le=30,
+        description="何日先まで取得するか（1-30日）"
+    ),
+    grade: Optional[str] = Query(
+        None,
+        description="グレードフィルタ（A=G1, B=G2, C=G3）"
+    )
+) -> RaceListResponse:
+    """
+    今後のレース一覧を取得
+
+    Args:
+        days: 何日先まで取得するか（デフォルト7日）
+        grade: グレードフィルタ（オプション）
+
+    Returns:
+        RaceListResponse: レース一覧
+    """
+    logger.info(f"GET /races/upcoming: days={days}, grade={grade}")
+
+    try:
+        async with get_connection() as conn:
+            races_data = await get_upcoming_races(conn, days_ahead=days, grade_filter=grade)
+
+            races = []
+            for race in races_data:
+                races.append(RaceBase(
+                    race_id=race[COL_RACE_ID],
+                    race_name=race[COL_RACE_NAME],
+                    race_number=f"{race.get(COL_RACE_NUM, '?')}R",
+                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
+                    venue=_get_venue_name(race[COL_JYOCD]),
+                    venue_code=race[COL_JYOCD],
+                    grade=race.get(COL_GRADE_CD),
+                    distance=race[COL_KYORI],
+                    track_code=race[COL_TRACK_CD],
+                    race_date=f"{race[COL_KAISAI_YEAR]}-{race[COL_KAISAI_MONTHDAY][:2]}-{race[COL_KAISAI_MONTHDAY][2:]}"
+                ))
+
+            response = RaceListResponse(
+                date=date.today().strftime("%Y-%m-%d"),
+                races=races,
+                total=len(races)
+            )
+
+            logger.info(f"Found {len(races)} upcoming races")
+            return response
+
+    except Exception as e:
+        logger.error(f"Failed to get upcoming races: {e}")
+        raise DatabaseErrorException(str(e))
+
+
+@router.get(
+    "/races/date/{target_date}",
+    response_model=RaceListResponse,
+    status_code=status.HTTP_200_OK,
+    summary="指定日のレース一覧取得",
+    description="指定した日付のレース一覧を取得します。"
+)
+async def get_races_for_date(
+    target_date: str = Path(
+        ...,
+        description="対象日（YYYY-MM-DD形式）"
+    ),
+    venue: Optional[str] = Query(
+        None,
+        description="競馬場コード（01=札幌, 02=函館, etc.）"
+    ),
+    grade: Optional[str] = Query(
+        None,
+        description="グレードフィルタ（A=G1, B=G2, C=G3）"
+    )
+) -> RaceListResponse:
+    """
+    指定日のレース一覧を取得
+
+    Args:
+        target_date: 対象日（YYYY-MM-DD形式）
+        venue: 競馬場コード（オプション）
+        grade: グレードフィルタ（オプション）
+
+    Returns:
+        RaceListResponse: レース一覧
+    """
+    logger.info(f"GET /races/date/{target_date}: venue={venue}, grade={grade}")
+
+    try:
+        from datetime import datetime
+        parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise DatabaseErrorException(f"Invalid date format: {target_date}. Use YYYY-MM-DD")
+
+    try:
+        async with get_connection() as conn:
+            races_data = await get_races_by_date(
+                conn, parsed_date, venue_code=venue, grade_filter=grade
+            )
+
+            races = []
+            for race in races_data:
+                races.append(RaceBase(
+                    race_id=race[COL_RACE_ID],
+                    race_name=race[COL_RACE_NAME],
+                    race_number=f"{race.get(COL_RACE_NUM, '?')}R",
+                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
+                    venue=_get_venue_name(race[COL_JYOCD]),
+                    venue_code=race[COL_JYOCD],
+                    grade=race.get(COL_GRADE_CD),
+                    distance=race[COL_KYORI],
+                    track_code=race[COL_TRACK_CD],
+                    race_date=target_date
+                ))
+
+            response = RaceListResponse(
+                date=target_date,
+                races=races,
+                total=len(races)
+            )
+
+            logger.info(f"Found {len(races)} races for {target_date}")
+            return response
+
+    except Exception as e:
+        logger.error(f"Failed to get races for date {target_date}: {e}")
         raise DatabaseErrorException(str(e))
 
 
@@ -185,25 +331,28 @@ async def get_race(
 
             # 賞金情報
             prize_money = PrizeMoneyResponse(
-                first=race.get("honsyokin_1", 0),
-                second=race.get("honsyokin_2", 0),
-                third=race.get("honsyokin_3", 0),
-                fourth=race.get("honsyokin_4", 0),
-                fifth=race.get("honsyokin_5", 0)
+                first=race.get("honshokin1", 0),
+                second=race.get("honshokin2", 0),
+                third=race.get("honshokin3", 0),
+                fourth=race.get("honshokin4", 0),
+                fifth=race.get("honshokin5", 0)
             )
+
+            # 馬場状態（芝またはダート）
+            track_condition = race.get(COL_SHIBA_BABA_CD) or race.get(COL_DIRT_BABA_CD)
 
             response = RaceDetail(
                 race_id=race[COL_RACE_ID],
                 race_name=race[COL_RACE_NAME],
-                race_number=f"{race.get('race_num', '?')}R",
-                race_time=race.get('hasso_jikoku', '不明'),
+                race_number=f"{race.get(COL_RACE_NUM, '?')}R",
+                race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                 venue=_get_venue_name(race[COL_JYOCD]),
                 venue_code=race[COL_JYOCD],
                 grade=race.get(COL_GRADE_CD),
                 distance=race[COL_KYORI],
                 track_code=race[COL_TRACK_CD],
-                track_condition=race.get('baba_jotai'),
-                weather=race.get('tenkocode'),
+                track_condition=track_condition,
+                weather=race.get(COL_TENKO_CD),
                 prize_money=prize_money,
                 entries=entries
             )

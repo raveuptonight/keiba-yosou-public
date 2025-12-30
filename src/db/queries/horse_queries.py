@@ -445,3 +445,67 @@ async def check_horse_exists(conn: Connection, kettonum: str) -> bool:
     except Exception as e:
         logger.error(f"Failed to check horse exists: kettonum={kettonum}, error={e}")
         raise
+
+
+async def search_horses_by_name(
+    conn: Connection,
+    name: str,
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    馬名で馬を検索
+
+    Args:
+        conn: データベース接続
+        name: 馬名（部分一致）
+        limit: 取得件数上限
+
+    Returns:
+        馬情報のリスト
+    """
+    # kyosoba_master2の実カラム名を直接使用
+    sql = f"""
+        SELECT
+            u.ketto_toroku_bango,
+            u.bamei,
+            u.seibetsu_code,
+            u.seinengappi,
+            (
+                SELECT COUNT(*)
+                FROM {TABLE_UMA_RACE} ur
+                WHERE ur.ketto_toroku_bango = u.ketto_toroku_bango
+                  AND ur.data_kubun = '7'
+            ) as race_count,
+            (
+                SELECT COUNT(*)
+                FROM {TABLE_UMA_RACE} ur
+                WHERE ur.ketto_toroku_bango = u.ketto_toroku_bango
+                  AND ur.data_kubun = '7'
+                  AND ur.kakutei_chakujun = '01'
+            ) as win_count
+        FROM {TABLE_UMA} u
+        WHERE u.bamei LIKE $1
+        ORDER BY u.seinengappi DESC NULLS LAST
+        LIMIT $2
+    """
+
+    try:
+        # 部分一致検索のパターン
+        search_pattern = f"%{name}%"
+        rows = await conn.fetch(sql, search_pattern, limit)
+
+        result = []
+        for row in rows:
+            result.append({
+                "kettonum": row["ketto_toroku_bango"].strip() if row["ketto_toroku_bango"] else "",
+                "name": row["bamei"].strip() if row["bamei"] else "",
+                "sex": row["seibetsu_code"].strip() if row["seibetsu_code"] else "",
+                "birth_date": row["seinengappi"],
+                "runs": row["race_count"] or 0,
+                "wins": row["win_count"] or 0,
+            })
+
+        return result
+    except Exception as e:
+        logger.error(f"Failed to search horses by name: name={name}, error={e}")
+        raise
