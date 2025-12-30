@@ -21,7 +21,7 @@ import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.features.feature_pipeline import FeatureExtractor
+from src.features.real_feature_extractor import RealFeatureExtractor
 from src.models.xgboost_model import HorseRacingXGBoost
 from src.db.connection import get_db
 
@@ -66,10 +66,13 @@ def get_db_state() -> dict:
         # 総レース数と最新レースを取得
         cursor.execute("""
             SELECT
-                COUNT(DISTINCT race_id) as total_races,
-                MAX(race_id) as latest_race_id
-            FROM uma_race
+                COUNT(DISTINCT race_code) as total_races,
+                MAX(race_code) as latest_race_id
+            FROM umagoto_race_joho
             WHERE kakutei_chakujun IS NOT NULL
+              AND kakutei_chakujun != ''
+              AND kakutei_chakujun ~ '^[0-9]+$'
+              AND data_kubun = '7'
         """)
 
         row = cursor.fetchone()
@@ -195,13 +198,16 @@ def fetch_training_data(limit: int = None) -> pd.DataFrame:
         # 過去レース結果を取得（確定データのみ）
         query = """
             SELECT
-                race_id,
+                race_code as race_id,
                 umaban,
-                kakutei_chakujun as finish_position
-            FROM uma_race
+                CAST(kakutei_chakujun AS INTEGER) as finish_position
+            FROM umagoto_race_joho
             WHERE kakutei_chakujun IS NOT NULL
-                AND kakutei_chakujun > 0
-            ORDER BY race_id DESC
+                AND kakutei_chakujun != ''
+                AND kakutei_chakujun ~ '^[0-9]+$'
+                AND CAST(kakutei_chakujun AS INTEGER) > 0
+                AND data_kubun = '7'
+            ORDER BY race_code DESC
         """
 
         if limit:
@@ -211,6 +217,8 @@ def fetch_training_data(limit: int = None) -> pd.DataFrame:
         rows = cursor.fetchall()
 
         df = pd.DataFrame(rows, columns=['race_id', 'umaban', 'finish_position'])
+        # umabanも整数に変換
+        df['umaban'] = df['umaban'].str.strip().astype(int)
         logger.info(f"取得レコード数: {len(df)}")
 
         return df
@@ -236,36 +244,55 @@ def extract_features_for_training(race_data: pd.DataFrame) -> tuple:
     """
     logger.info("特徴量抽出開始...")
 
-    extractor = FeatureExtractor()
+    db = get_db()
+    conn = db.get_connection()
 
-    all_features = []
-    all_labels = []
+    if not conn:
+        logger.error("DB接続失敗")
+        return pd.DataFrame(), pd.Series()
 
-    # レースごとに処理
-    race_ids = race_data['race_id'].unique()
-    total = len(race_ids)
+    try:
+        extractor = RealFeatureExtractor(conn)
 
-    for i, race_id in enumerate(race_ids):
-        if i % 1000 == 0:
-            logger.info(f"進捗: {i}/{total} ({i/total*100:.1f}%)")
+        all_features = []
+        all_labels = []
 
-        race_horses = race_data[race_data['race_id'] == race_id]
+        # レースごとに処理
+        race_ids = race_data['race_id'].unique()
+        total = len(race_ids)
 
-        for _, row in race_horses.iterrows():
+        for i, race_id in enumerate(race_ids):
+            if i % 100 == 0:
+                logger.info(f"進捗: {i}/{total} ({i/total*100:.1f}%)")
+
+            race_horses = race_data[race_data['race_id'] == race_id]
+
             try:
-                features = extractor.extract_features(race_id, row['umaban'])
-                all_features.append(features)
-                all_labels.append(row['finish_position'])
+                # レース全馬の特徴量を一括抽出
+                race_features = extractor.extract_features_for_race(race_id, data_kubun="7")
+
+                # 各馬の特徴量をラベルとマッチング
+                for features in race_features:
+                    umaban = features.get('umaban', 0)
+                    horse_result = race_horses[race_horses['umaban'] == umaban]
+
+                    if not horse_result.empty:
+                        all_features.append(features)
+                        all_labels.append(horse_result.iloc[0]['finish_position'])
+
             except Exception as e:
-                logger.warning(f"特徴量抽出失敗: race_id={race_id}, umaban={row['umaban']}, error={e}")
+                logger.warning(f"特徴量抽出失敗: race_id={race_id}, error={e}")
                 continue
 
-    X = pd.DataFrame(all_features)
-    y = pd.Series(all_labels)
+        X = pd.DataFrame(all_features)
+        y = pd.Series(all_labels)
 
-    logger.info(f"特徴量抽出完了: samples={len(X)}, features={len(X.columns)}")
+        logger.info(f"特徴量抽出完了: samples={len(X)}, features={len(X.columns)}")
 
-    return X, y
+        return X, y
+
+    finally:
+        conn.close()
 
 
 def train_model(X: pd.DataFrame, y: pd.Series) -> HorseRacingXGBoost:

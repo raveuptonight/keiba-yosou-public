@@ -9,12 +9,14 @@ from typing import Optional, List, Dict, Any
 from asyncpg import Connection
 
 from src.db.table_names import (
-    TABLE_ODDS_TANFUKU,
+    TABLE_ODDS_TANSHO,
+    TABLE_ODDS_FUKUSHO,
     TABLE_ODDS_WAKUREN,
     TABLE_ODDS_UMAREN,
     TABLE_ODDS_WIDE,
     TABLE_ODDS_UMATAN,
-    TABLE_ODDS_SANREN,
+    TABLE_ODDS_SANRENPUKU,
+    TABLE_ODDS_SANRENTAN,
     COL_RACE_ID,
     COL_UMABAN,
     COL_DATA_KUBUN,
@@ -51,7 +53,7 @@ async def get_odds_win_place(
             fukusyo_odds_max,
             tansyo_ninki,
             fukusyo_ninki
-        FROM {TABLE_ODDS_TANFUKU}
+        FROM {TABLE_ODDS_TANSHO}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
         ORDER BY {COL_UMABAN}
@@ -268,7 +270,7 @@ async def get_odds_trio(
             umaban_3,
             sanrenpuku_odds,
             sanrenpuku_ninki
-        FROM {TABLE_ODDS_SANREN}
+        FROM {TABLE_ODDS_SANRENPUKU}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
           AND sanrenpuku_odds IS NOT NULL
@@ -322,7 +324,7 @@ async def get_odds_trifecta(
             umaban_3,
             sanrentan_odds,
             sanrentan_ninki
-        FROM {TABLE_ODDS_SANREN}
+        FROM {TABLE_ODDS_SANRENTAN}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
           AND sanrentan_odds IS NOT NULL

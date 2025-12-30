@@ -14,10 +14,10 @@ from src.db.table_names import (
     TABLE_UMA_RACE,
     TABLE_RACE,
     TABLE_SANKU,
-    TABLE_HANSYOKU_MEIGARA,
+    TABLE_HANSYOKU,
     TABLE_HANRO_CHOKYO,
     TABLE_WOOD_CHOKYO,
-    TABLE_SHUTUBA_CHAKUDO,
+    TABLE_SHUTUBA_KYORI,
     TABLE_KISYU,
     TABLE_CHOKYOSI,
     COL_KETTONUM,
@@ -218,17 +218,17 @@ async def get_horses_pedigree(
             hn_mf.{COL_HANSYOKUBA_NAME} AS haha_chichi_name,
             hn_mm.{COL_HANSYOKUBA_NAME} AS haha_haha_name
         FROM {TABLE_SANKU} sk
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_f
+        LEFT JOIN {TABLE_HANSYOKU} hn_f
             ON sk.{COL_SANDAI_KETTO}[1] = hn_f.{COL_HANSYOKU_NUM}
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_m
+        LEFT JOIN {TABLE_HANSYOKU} hn_m
             ON sk.{COL_SANDAI_KETTO}[2] = hn_m.{COL_HANSYOKU_NUM}
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_ff
+        LEFT JOIN {TABLE_HANSYOKU} hn_ff
             ON sk.{COL_SANDAI_KETTO}[3] = hn_ff.{COL_HANSYOKU_NUM}
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_fm
+        LEFT JOIN {TABLE_HANSYOKU} hn_fm
             ON sk.{COL_SANDAI_KETTO}[4] = hn_fm.{COL_HANSYOKU_NUM}
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_mf
+        LEFT JOIN {TABLE_HANSYOKU} hn_mf
             ON sk.{COL_SANDAI_KETTO}[5] = hn_mf.{COL_HANSYOKU_NUM}
-        LEFT JOIN {TABLE_HANSYOKU_MEIGARA} hn_mm
+        LEFT JOIN {TABLE_HANSYOKU} hn_mm
             ON sk.{COL_SANDAI_KETTO}[6] = hn_mm.{COL_HANSYOKU_NUM}
         WHERE sk.{COL_KETTONUM} = ANY($1)
     """
@@ -360,7 +360,7 @@ async def get_horses_statistics(
             ck.kisyu_chakudo,
             ck.{COL_KAISAI_YEAR},
             ck.{COL_KAISAI_MONTHDAY}
-        FROM {TABLE_SHUTUBA_CHAKUDO} ck
+        FROM {TABLE_SHUTUBA_KYORI} ck
         WHERE ck.{COL_RACE_ID} = $1
           AND ck.{COL_KETTONUM} = ANY($2)
     """

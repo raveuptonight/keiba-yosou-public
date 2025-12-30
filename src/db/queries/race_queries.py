@@ -15,7 +15,7 @@ from src.db.table_names import (
     TABLE_UMA,
     TABLE_KISYU,
     TABLE_CHOKYOSI,
-    TABLE_ODDS_TANFUKU,
+    TABLE_ODDS_TANSHO,
     COL_RACE_ID,
     COL_KETTONUM,
     COL_UMABAN,
@@ -114,7 +114,7 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
         INNER JOIN {TABLE_UMA} um ON se.{COL_KETTONUM} = um.{COL_KETTONUM}
         LEFT JOIN {TABLE_KISYU} ks ON se.{COL_KISYUCODE} = ks.{COL_KISYUCODE}
         LEFT JOIN {TABLE_CHOKYOSI} ch ON se.{COL_CHOKYOSICODE} = ch.{COL_CHOKYOSICODE}
-        LEFT JOIN {TABLE_ODDS_TANFUKU} o1
+        LEFT JOIN {TABLE_ODDS_TANSHO} o1
             ON se.{COL_RACE_ID} = o1.{COL_RACE_ID}
             AND se.{COL_UMABAN} = o1.{COL_UMABAN}
             AND o1.{COL_DATA_KUBUN} = '3'

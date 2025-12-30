@@ -6,6 +6,10 @@
 
 import os
 from typing import Final
+from dotenv import load_dotenv
+
+# .envファイルを読み込み
+load_dotenv()
 
 # =====================================
 # データベース接続設定
