@@ -81,7 +81,13 @@ async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, 
             heichi_fukashokin_ruikei,
             shogai_fukashokin_ruikei,
             heichi_shutokushokin_ruikei,
-            shogai_shutokushokin_ruikei
+            shogai_shutokushokin_ruikei,
+            sogo_1chaku,
+            sogo_2chaku,
+            sogo_3chaku,
+            sogo_4chaku,
+            sogo_5chaku,
+            sogo_chakugai
         FROM {TABLE_UMA}
         WHERE {COL_KETTONUM} = $1
     """
@@ -152,12 +158,15 @@ async def get_horses_recent_races(
         )
         SELECT
             rr.*,
-            winner.{COL_BAMEI} as winner_name
+            winner.{COL_BAMEI} as winner_name,
+            ks.{COL_KISYU_NAME}
         FROM ranked_races rr
         LEFT JOIN {TABLE_UMA_RACE} winner
             ON rr.{COL_RACE_ID} = winner.{COL_RACE_ID}
             AND winner.{COL_KAKUTEI_CHAKUJUN} = '1'
             AND winner.{COL_DATA_KUBUN} = $2
+        LEFT JOIN {TABLE_KISYU} ks
+            ON rr.{COL_KISYUCODE} = ks.{COL_KISYUCODE}
         WHERE rr.rn <= $4
         ORDER BY rr.{COL_KETTONUM}, rr.rn
     """

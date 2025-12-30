@@ -240,9 +240,16 @@ async def get_horse(
                     training=training_obj
                 ))
 
-            # 勝利数と勝率を計算
-            total_races = len(recent_races_data)
-            wins = sum(1 for race in recent_races_data if race[COL_KAKUTEI_CHAKUJUN] == 1)
+            # 通算成績を計算（総合成績から）
+            sogo_1 = int(horse_info.get("sogo_1chaku", "0") or "0")
+            sogo_2 = int(horse_info.get("sogo_2chaku", "0") or "0")
+            sogo_3 = int(horse_info.get("sogo_3chaku", "0") or "0")
+            sogo_4 = int(horse_info.get("sogo_4chaku", "0") or "0")
+            sogo_5 = int(horse_info.get("sogo_5chaku", "0") or "0")
+            sogo_gai = int(horse_info.get("sogo_chakugai", "0") or "0")
+
+            total_races = sogo_1 + sogo_2 + sogo_3 + sogo_4 + sogo_5 + sogo_gai
+            wins = sogo_1
             win_rate = wins / total_races if total_races > 0 else 0.0
 
             # 通算獲得賞金
