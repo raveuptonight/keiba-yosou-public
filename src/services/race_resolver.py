@@ -101,13 +101,11 @@ class RaceResolver:
         """
         レース指定文字列をレースIDに解決
 
-        現在日時を基準に、最も近い該当レースを検索します：
-        - 未来のレース優先（今日〜14日後）
-        - 未来になければ過去（7日前〜昨日）
+        指定日（または今日）のレースのみを検索します。
 
         Args:
             race_spec: レース指定文字列（例: 京都2r）
-            target_date: 基準日（省略時は本日）
+            target_date: 対象日（省略時は本日JST）
 
         Returns:
             レースID。解決失敗時はNone
@@ -123,26 +121,15 @@ class RaceResolver:
         if target_date is None:
             target_date = date.today()
 
-        logger.info(f"レース解決開始: venue={venue}, race_number={race_number}, 基準日={target_date}")
+        logger.info(f"レース解決開始: venue={venue}, race_number={race_number}, 対象日={target_date}")
 
-        # まず未来のレースを検索（今日〜30日後）
-        for days_ahead in range(0, 31):
-            search_date = target_date + timedelta(days=days_ahead)
-            race_id = self._find_race_from_api(venue, race_number, search_date)
-            if race_id:
-                logger.info(f"レース解決成功（未来+{days_ahead}日）: race_spec={race_spec} -> race_id={race_id}")
-                return race_id
+        # 指定日のレースのみを検索
+        race_id = self._find_race_from_api(venue, race_number, target_date)
+        if race_id:
+            logger.info(f"レース解決成功: race_spec={race_spec} -> race_id={race_id} (日付: {target_date})")
+            return race_id
 
-        # 未来に見つからなければ過去を検索（昨日〜30日前）
-        logger.debug("未来に見つからず、過去を検索")
-        for days_ago in range(1, 31):
-            search_date = target_date - timedelta(days=days_ago)
-            race_id = self._find_race_from_api(venue, race_number, search_date)
-            if race_id:
-                logger.info(f"レース解決成功（過去-{days_ago}日）: race_spec={race_spec} -> race_id={race_id}")
-                return race_id
-
-        logger.warning(f"レース解決失敗: race_spec={race_spec} (過去30日〜未来30日で見つかりませんでした)")
+        logger.warning(f"レース解決失敗: race_spec={race_spec} ({target_date}に該当レースが見つかりませんでした)")
         return None
 
     def _find_race_from_api(
@@ -441,6 +428,12 @@ def resolve_race_input(
 
         if race_id:
             return race_id
+        else:
+            raise ValueError(
+                f"'{race_input}'のレースが今日見つかりません。\n"
+                f"開催予定、もしくは過去のレースの場合は日付をYYYY-MM-DD形式で指定してください。\n"
+                f"例: 2024-12-28 または 2024/12/28"
+            )
 
     # 4. レース名検索（年度指定対応）
     specific_year, race_name = extract_year_from_input(race_input)
