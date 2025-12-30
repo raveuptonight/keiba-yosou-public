@@ -532,14 +532,14 @@ async def search_races_by_name(
     days_before: int = Query(
         30,
         ge=0,
-        le=90,
-        description="過去何日前まで検索するか（0〜90日）"
+        le=365,
+        description="過去何日前まで検索するか（0〜365日）"
     ),
     days_after: int = Query(
         30,
         ge=0,
-        le=90,
-        description="未来何日先まで検索するか（0〜90日）"
+        le=365,
+        description="未来何日先まで検索するか（0〜365日）"
     ),
     limit: int = Query(
         20,

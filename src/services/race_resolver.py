@@ -447,12 +447,13 @@ def resolve_race_input(
             f"例: 京都2r, 2025-12-28, 有馬記念, 2022 日本ダービー, または16桁のレースID"
         )
 
-    # 複数レースがある場合は選択させる
+    # 複数レースがある場合は最新のレースを返す
     if len(races) > 1:
-        raise MultipleRacesFoundException(
-            f"'{race_input}'で{len(races)}件のレースが見つかりました。選択してください。",
-            races
-        )
+        # race_dateでソート（降順）して最新のレースを取得
+        sorted_races = sorted(races, key=lambda r: r.get("race_date", ""), reverse=True)
+        latest_race = sorted_races[0]
+        logger.info(f"複数レース検出（{len(races)}件）、最新のレースを選択: {latest_race.get('race_date')}")
+        return latest_race["race_id"]
 
     # 1件だけならそれを返す
     return races[0]["race_id"]
