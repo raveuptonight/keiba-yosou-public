@@ -43,6 +43,8 @@ from src.db.table_names import (
     COL_CHOKYOSICODE,
     COL_KISYU_NAME,
     COL_CHOKYOSI_NAME,
+    COL_KYOSO_JOKEN_CD,
+    COL_KYOSO_SHUBETSU_CD,
     DATA_KUBUN_KAKUTEI,
 )
 from src.config import ML_TRAINING_YEARS_BACK
@@ -80,7 +82,9 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
             {COL_RACE_NUM},
             {COL_KAISAI_YEAR},
             {COL_KAISAI_MONTHDAY},
-            {COL_HASSO_JIKOKU}
+            {COL_HASSO_JIKOKU},
+            {COL_KYOSO_JOKEN_CD},
+            {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
@@ -174,7 +178,9 @@ async def get_races_by_date(
             {COL_DIRT_BABA_CD},
             {COL_TENKO_CD},
             {COL_KAISAI_YEAR},
-            {COL_KAISAI_MONTHDAY}
+            {COL_KAISAI_MONTHDAY},
+            {COL_KYOSO_JOKEN_CD},
+            {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_KAISAI_YEAR} = $1
           AND {COL_KAISAI_MONTHDAY} = $2
@@ -288,7 +294,9 @@ async def get_upcoming_races(
             {COL_RACE_NUM},
             {COL_HASSO_JIKOKU},
             {COL_KAISAI_YEAR},
-            {COL_KAISAI_MONTHDAY}
+            {COL_KAISAI_MONTHDAY},
+            {COL_KYOSO_JOKEN_CD},
+            {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_KAISAI_YEAR} = $1
           AND {COL_KAISAI_MONTHDAY} >= $2
@@ -503,7 +511,9 @@ async def search_races_by_name_db(
             {COL_RACE_NUM},
             {COL_GRADE_CD},
             {COL_KYORI},
-            {COL_TRACK_CD}
+            {COL_TRACK_CD},
+            {COL_KYOSO_JOKEN_CD},
+            {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_NAME} LIKE $1
           AND (
@@ -567,7 +577,9 @@ async def search_races_by_name_db(
                 "race_number": row[COL_RACE_NUM],
                 "grade_code": row[COL_GRADE_CD],
                 "distance": row[COL_KYORI],
-                "track_code": row[COL_TRACK_CD]
+                "track_code": row[COL_TRACK_CD],
+                "kyoso_joken_code": row.get(COL_KYOSO_JOKEN_CD),
+                "kyoso_shubetsu_code": row.get(COL_KYOSO_SHUBETSU_CD)
             })
 
         logger.info(f"Found {len(results)} races matching '{race_name_query}'")
