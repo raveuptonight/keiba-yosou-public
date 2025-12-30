@@ -10,7 +10,7 @@ from typing import Optional, List
 from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace, TrainingData
 from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
-from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name, get_training_before_race
+from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name, get_training_before_race, get_horses_training
 from src.db.table_names import (
     COL_KETTONUM,
     COL_BAMEI,
@@ -285,4 +285,62 @@ async def get_horse(
         raise
     except Exception as e:
         logger.error(f"Failed to get horse detail: {e}")
+        raise DatabaseErrorException(str(e))
+
+
+@router.get(
+    "/horses/{kettonum}/training",
+    response_model=List[TrainingData],
+    status_code=status.HTTP_200_OK,
+    summary="馬の調教データ取得",
+    description="指定した馬の調教データ（坂路・ウッドチップ）を取得します。"
+)
+async def get_horse_training(
+    kettonum: str = Path(
+        ...,
+        min_length=10,
+        max_length=10,
+        description="血統登録番号（10桁）"
+    ),
+    days_back: int = Query(
+        30,
+        ge=7,
+        le=90,
+        description="何日前まで取得するか（7〜90日）"
+    )
+) -> List[TrainingData]:
+    """
+    馬の調教データを取得
+
+    Args:
+        kettonum: 血統登録番号（10桁）
+        days_back: 何日前まで取得するか
+
+    Returns:
+        List[TrainingData]: 調教データリスト
+
+    Raises:
+        DatabaseErrorException: DB接続エラー
+    """
+    logger.info(f"GET /horses/{kettonum}/training: days_back={days_back}")
+
+    try:
+        async with get_connection() as conn:
+            training_dict = await get_horses_training(conn, [kettonum], days_back=days_back)
+            training_list = training_dict.get(kettonum, [])
+
+            results = []
+            for t in training_list:
+                results.append(TrainingData(
+                    training_type="坂路" if t["training_type"] == "hanro" else "ウッド",
+                    training_date=t["chokyo_nengappi"],
+                    time_4f=t.get("time_gokei_4furlong"),
+                    time_3f=t.get("time_gokei_3furlong")
+                ))
+
+            logger.info(f"Found {len(results)} training records for {kettonum}")
+            return results
+
+    except Exception as e:
+        logger.error(f"Failed to get training data: {e}")
         raise DatabaseErrorException(str(e))
