@@ -61,6 +61,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _get_race_name_with_fallback(race_name: str, grade_code: str = None) -> str:
+    """レース名が空の場合にフォールバック値を返す"""
+    if race_name and race_name.strip():
+        return race_name.strip()
+    # レース名が空の場合
+    if grade_code in ['A', 'B', 'C', 'D']:
+        return "重賞レース"
+    return "条件戦"
+
+
 def _get_venue_name(venue_code: str) -> str:
     """競馬場コードから名称を取得"""
     venue_map = {
@@ -124,7 +134,7 @@ async def get_today_races(
 
                 races.append(RaceBase(
                     race_id=race[COL_RACE_ID],
-                    race_name=race[COL_RACE_NAME],
+                    race_name=_get_race_name_with_fallback(race[COL_RACE_NAME], race.get(COL_GRADE_CD)),
                     race_number=f"{race[COL_RACE_NUM]}R" if race.get(COL_RACE_NUM) else "不明",
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
@@ -188,7 +198,7 @@ async def get_upcoming_races_list(
             for race in races_data:
                 races.append(RaceBase(
                     race_id=race[COL_RACE_ID],
-                    race_name=race[COL_RACE_NAME],
+                    race_name=_get_race_name_with_fallback(race[COL_RACE_NAME], race.get(COL_GRADE_CD)),
                     race_number=f"{race.get(COL_RACE_NUM, '?')}R",
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
@@ -263,7 +273,7 @@ async def get_races_for_date(
             for race in races_data:
                 races.append(RaceBase(
                     race_id=race[COL_RACE_ID],
-                    race_name=race[COL_RACE_NAME],
+                    race_name=_get_race_name_with_fallback(race[COL_RACE_NAME], race.get(COL_GRADE_CD)),
                     race_number=f"{race.get(COL_RACE_NUM, '?')}R",
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
@@ -439,7 +449,7 @@ async def get_race(
 
             response = RaceDetail(
                 race_id=race[COL_RACE_ID],
-                race_name=race[COL_RACE_NAME],
+                race_name=_get_race_name_with_fallback(race[COL_RACE_NAME], race.get(COL_GRADE_CD)),
                 race_number=f"{race.get(COL_RACE_NUM, '?')}R",
                 race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                 venue=_get_venue_name(race[COL_JYOCD]),
@@ -530,7 +540,7 @@ async def search_races_by_name(
             for race in races_data:
                 races.append(RaceBase(
                     race_id=race["race_id"],
-                    race_name=race["race_name"],
+                    race_name=_get_race_name_with_fallback(race["race_name"], race.get("grade_code")),
                     race_number=f"{race.get('race_number', '?')}R",
                     race_time=None,
                     venue=_get_venue_name(race["venue_code"]),

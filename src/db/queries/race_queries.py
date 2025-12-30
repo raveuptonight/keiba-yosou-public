@@ -470,7 +470,7 @@ async def search_races_by_name_db(
     limit: int = 20
 ) -> List[Dict[str, Any]]:
     """
-    レース名で検索（データベースから直接）
+    レース名で検索（データベースから直接、エイリアス対応）
 
     Args:
         conn: データベース接続
@@ -482,6 +482,8 @@ async def search_races_by_name_db(
     Returns:
         マッチしたレースのリスト
     """
+    from src.services.race_name_aliases import expand_race_name_query
+
     today = date.today()
     start_date = today - __import__('datetime').timedelta(days=days_before)
     end_date = today + __import__('datetime').timedelta(days=days_after)
@@ -515,23 +517,44 @@ async def search_races_by_name_db(
     """
 
     try:
-        # 部分一致検索用パターン（前後に%を付ける）
-        search_pattern = f"%{race_name_query}%"
-        logger.debug(f"Searching races with pattern: {search_pattern}")
+        # エイリアス展開（例: "日本ダービー" → ["日本ダービー", "東京優駿"]）
+        search_terms = expand_race_name_query(race_name_query)
+        logger.info(f"Expanded search terms: {search_terms}")
 
-        rows = await conn.fetch(
-            sql,
-            search_pattern,
-            start_year,
-            start_monthday,
-            end_year,
-            end_monthday,
-            DATA_KUBUN_KAKUTEI,
-            limit
-        )
+        all_results = []
+        seen_race_ids = set()
+
+        # 各検索語で検索（重複排除）
+        for term in search_terms:
+            search_pattern = f"%{term}%"
+            logger.debug(f"Searching races with pattern: {search_pattern}")
+
+            rows = await conn.fetch(
+                sql,
+                search_pattern,
+                start_year,
+                start_monthday,
+                end_year,
+                end_monthday,
+                DATA_KUBUN_KAKUTEI,
+                limit
+            )
+
+            for row in rows:
+                race_id = row[COL_RACE_ID]
+                if race_id in seen_race_ids:
+                    continue
+                seen_race_ids.add(race_id)
+                all_results.append(row)
+
+        # 日付順にソート（新しい順）
+        all_results.sort(key=lambda r: (r[COL_KAISAI_YEAR], r[COL_KAISAI_MONTHDAY]), reverse=True)
+
+        # limit適用
+        all_results = all_results[:limit]
 
         results = []
-        for row in rows:
+        for row in all_results:
             year = row[COL_KAISAI_YEAR]
             monthday = row[COL_KAISAI_MONTHDAY]
             race_date = f"{year}-{monthday[:2]}-{monthday[2:]}"
