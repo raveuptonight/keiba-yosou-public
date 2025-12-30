@@ -261,10 +261,43 @@ def parse_date_input(date_input: str) -> Optional[date]:
     return None
 
 
+def extract_year_from_input(race_input: str) -> Tuple[Optional[int], str]:
+    """
+    入力から年度を抽出
+
+    例:
+    - "2022 日本ダービー" -> (2022, "日本ダービー")
+    - "2024有馬記念" -> (2024, "有馬記念")
+    - "有馬記念" -> (None, "有馬記念")
+
+    Args:
+        race_input: ユーザー入力
+
+    Returns:
+        (年度, レース名)のタプル。年度指定がない場合はNone
+    """
+    race_input = race_input.strip()
+
+    # "YYYY レース名" or "YYYYレース名" のパターン
+    match = re.match(r'^(\d{4})\s*(.+)$', race_input)
+    if match:
+        year_str = match.group(1)
+        race_name = match.group(2).strip()
+        try:
+            year = int(year_str)
+            # 妥当な年度範囲チェック（1980-2030）
+            if 1980 <= year <= 2030:
+                return (year, race_name)
+        except ValueError:
+            pass
+
+    return (None, race_input)
+
+
 def search_races_by_name(
     race_name: str,
     api_base_url: str = API_BASE_URL_DEFAULT,
-    days_range: int = 90
+    specific_year: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """
     レース名で検索（データベースから直接・高速）
@@ -272,19 +305,29 @@ def search_races_by_name(
     Args:
         race_name: レース名（部分一致）
         api_base_url: API base URL
-        days_range: 検索範囲（前後日数、デフォルト90）
+        specific_year: 特定年度（指定時はその年のみ検索）
 
     Returns:
         マッチしたレースのリスト
     """
     try:
+        # 検索範囲を決定
+        if specific_year:
+            # 特定年度指定時: その年の1/1〜12/31
+            days_before = (date.today() - date(specific_year, 1, 1)).days
+            days_after = (date(specific_year, 12, 31) - date.today()).days
+        else:
+            # 通常: 過去365日（今日を含まない）
+            days_before = 365
+            days_after = 0
+
         # 新しいAPI エンドポイントを使用（1回のリクエストで全検索）
         response = requests.get(
             f"{api_base_url}/api/races/search/name",
             params={
                 "query": race_name,
-                "days_before": days_range,
-                "days_after": days_range,
+                "days_before": max(0, days_before),
+                "days_after": max(0, days_after),
                 "limit": 50
             },
             timeout=10
@@ -399,14 +442,16 @@ def resolve_race_input(
         if race_id:
             return race_id
 
-    # 4. レース名検索
-    logger.info(f"レース名検索: {race_input}")
-    races = search_races_by_name(race_input, api_base_url)
+    # 4. レース名検索（年度指定対応）
+    specific_year, race_name = extract_year_from_input(race_input)
+    logger.info(f"レース名検索: {race_name}" + (f" (年度: {specific_year})" if specific_year else ""))
+    races = search_races_by_name(race_name, api_base_url, specific_year)
 
     if not races:
+        year_msg = f"{specific_year}年の" if specific_year else ""
         raise ValueError(
-            f"レース '{race_input}' が見つかりません。\n"
-            f"例: 京都2r, 2025-12-28, 有馬記念, または16桁のレースID"
+            f"{year_msg}レース '{race_name}' が見つかりません。\n"
+            f"例: 京都2r, 2025-12-28, 有馬記念, 2022 日本ダービー, または16桁のレースID"
         )
 
     # 複数レースがある場合は選択させる
