@@ -515,7 +515,10 @@ async def search_races_by_name_db(
     """
 
     try:
+        # 部分一致検索用パターン（前後に%を付ける）
         search_pattern = f"%{race_name_query}%"
+        logger.debug(f"Searching races with pattern: {search_pattern}")
+
         rows = await conn.fetch(
             sql,
             search_pattern,

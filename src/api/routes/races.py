@@ -138,7 +138,7 @@ async def get_today_races(
             response = RaceListResponse(
                 date=today.strftime("%Y-%m-%d"),
                 races=races,
-                total=len(races)
+                count=len(races)
             )
 
             logger.info(f"Found {len(races)} races for today")
@@ -202,7 +202,7 @@ async def get_upcoming_races_list(
             response = RaceListResponse(
                 date=date.today().strftime("%Y-%m-%d"),
                 races=races,
-                total=len(races)
+                count=len(races)
             )
 
             logger.info(f"Found {len(races)} upcoming races")
@@ -277,7 +277,7 @@ async def get_races_for_date(
             response = RaceListResponse(
                 date=target_date,
                 races=races,
-                total=len(races)
+                count=len(races)
             )
 
             logger.info(f"Found {len(races)} races for {target_date}")

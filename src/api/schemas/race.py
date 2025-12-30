@@ -15,7 +15,7 @@ class RaceBase(BaseModel):
     )
     race_name: str = Field(..., description="レース名")
     race_number: str = Field(..., description="レース番号（例: '11R'）")
-    race_time: str = Field(..., description="発走時刻（例: '15:25'）")
+    race_time: Optional[str] = Field(None, description="発走時刻（例: '15:25'）")
     venue: str = Field(..., description="競馬場名（例: '中山'）")
     venue_code: str = Field(..., description="競馬場コード（例: '05'）")
     grade: Optional[str] = Field(
@@ -140,6 +140,6 @@ class HeadToHeadRace(BaseModel):
 class RaceListResponse(BaseModel):
     """レース一覧レスポンス"""
 
-    date: str = Field(..., description="レース日（YYYY-MM-DD）")
+    date: Optional[str] = Field(None, description="レース日（YYYY-MM-DD）、複数日にまたがる場合はNone")
     races: List[RaceBase] = Field(..., description="レース一覧")
-    total: int = Field(..., ge=0, description="レース総数")
+    count: int = Field(..., ge=0, description="レース総数")
