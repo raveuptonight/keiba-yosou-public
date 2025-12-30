@@ -384,7 +384,7 @@ async def get_race(
                     jockey_name=entry.get(COL_KISYU_NAME, "不明"),
                     trainer_code=entry[COL_CHOKYOSICODE],
                     trainer_name=entry.get(COL_CHOKYOSI_NAME, "不明"),
-                    weight=float(entry.get(COL_KINRYO, 0)),
+                    weight=float(entry.get(COL_KINRYO, 0)) / 10.0,
                     horse_weight=entry.get(COL_BATAIJU),
                     odds=float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None
                 ))

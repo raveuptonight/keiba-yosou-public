@@ -233,7 +233,7 @@ async def get_horse(
                     time_diff=race.get("time_sa"),  # 勝ち馬とのタイム差
                     winner_name=race.get("winner_name"),  # 勝ち馬名
                     jockey=race.get(COL_KISYU_NAME, "不明"),
-                    weight=float(race.get("futan", 0)),
+                    weight=float(race.get("futan", 0)) / 10.0,
                     horse_weight=race.get("bataiju"),
                     odds=float(race["tansho_odds"]) / 10.0 if race.get("tansho_odds") else None,
                     prize_money=race.get("syogkin", 0),
