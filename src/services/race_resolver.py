@@ -264,7 +264,7 @@ def parse_date_input(date_input: str) -> Optional[date]:
 def search_races_by_name(
     race_name: str,
     api_base_url: str = API_BASE_URL_DEFAULT,
-    days_range: int = 30
+    days_range: int = 90
 ) -> List[Dict[str, Any]]:
     """
     レース名で検索（データベースから直接・高速）
@@ -272,7 +272,7 @@ def search_races_by_name(
     Args:
         race_name: レース名（部分一致）
         api_base_url: API base URL
-        days_range: 検索範囲（前後日数、デフォルト30）
+        days_range: 検索範囲（前後日数、デフォルト90）
 
     Returns:
         マッチしたレースのリスト
