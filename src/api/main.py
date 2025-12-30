@@ -12,7 +12,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from src.db.async_connection import init_db_pool, close_db_pool
+from src.db.async_connection import init_db_pool, close_db_pool, get_connection
+from src.db.code_master import initialize_code_cache
 
 # .envファイルを読み込み
 load_dotenv()
@@ -33,8 +34,14 @@ async def lifespan(app: FastAPI):
     try:
         await init_db_pool()
         logger.info("Database pool initialized")
+
+        # コードマスタキャッシュを初期化
+        async with get_connection() as conn:
+            await initialize_code_cache(conn)
+        logger.info("Code master cache initialized")
+
     except Exception as e:
-        logger.error(f"Failed to initialize database pool: {e}")
+        logger.error(f"Failed to initialize application: {e}")
         raise
 
     yield
