@@ -2,12 +2,13 @@
 レース指定文字列をレースIDに解決するモジュール
 
 「京都2r」のような指定を実際のレースIDに変換
+日付指定（2025-12-28）やレース名検索（有馬記念）にも対応
 """
 
 import re
 import logging
 from datetime import date, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 import requests
 
 from src.config import API_BASE_URL_DEFAULT
@@ -35,6 +36,13 @@ VENUE_NAME_MAP = {}
 for official, aliases in VENUE_ALIASES.items():
     for alias in aliases:
         VENUE_NAME_MAP[alias] = official
+
+
+class MultipleRacesFoundException(Exception):
+    """複数のレースが見つかった場合の例外"""
+    def __init__(self, message: str, races: List[Dict[str, Any]]):
+        super().__init__(message)
+        self.races = races
 
 
 class RaceResolver:
@@ -93,9 +101,13 @@ class RaceResolver:
         """
         レース指定文字列をレースIDに解決
 
+        現在日時を基準に、最も近い該当レースを検索します：
+        - 未来のレース優先（今日〜14日後）
+        - 未来になければ過去（7日前〜昨日）
+
         Args:
             race_spec: レース指定文字列（例: 京都2r）
-            target_date: 対象日（省略時は本日）
+            target_date: 基準日（省略時は本日）
 
         Returns:
             レースID。解決失敗時はNone
@@ -107,29 +119,30 @@ class RaceResolver:
 
         venue, race_number = parsed
 
-        # 対象日が指定されていなければ本日
+        # 基準日が指定されていなければ本日
         if target_date is None:
             target_date = date.today()
 
-        logger.info(f"レース解決開始: venue={venue}, race_number={race_number}, date={target_date}")
+        logger.info(f"レース解決開始: venue={venue}, race_number={race_number}, 基準日={target_date}")
 
-        # APIからレース一覧を取得（本日〜翌日）
-        race_id = self._find_race_from_api(venue, race_number, target_date)
+        # まず未来のレースを検索（今日〜30日後）
+        for days_ahead in range(0, 31):
+            search_date = target_date + timedelta(days=days_ahead)
+            race_id = self._find_race_from_api(venue, race_number, search_date)
+            if race_id:
+                logger.info(f"レース解決成功（未来+{days_ahead}日）: race_spec={race_spec} -> race_id={race_id}")
+                return race_id
 
-        if race_id:
-            logger.info(f"レース解決成功: race_spec={race_spec} -> race_id={race_id}")
-            return race_id
+        # 未来に見つからなければ過去を検索（昨日〜30日前）
+        logger.debug("未来に見つからず、過去を検索")
+        for days_ago in range(1, 31):
+            search_date = target_date - timedelta(days=days_ago)
+            race_id = self._find_race_from_api(venue, race_number, search_date)
+            if race_id:
+                logger.info(f"レース解決成功（過去-{days_ago}日）: race_spec={race_spec} -> race_id={race_id}")
+                return race_id
 
-        # 本日見つからなければ翌日を検索
-        next_date = target_date + timedelta(days=1)
-        logger.debug(f"本日見つからず、翌日を検索: {next_date}")
-        race_id = self._find_race_from_api(venue, race_number, next_date)
-
-        if race_id:
-            logger.info(f"レース解決成功（翌日）: race_spec={race_spec} -> race_id={race_id}")
-            return race_id
-
-        logger.warning(f"レース解決失敗: race_spec={race_spec}")
+        logger.warning(f"レース解決失敗: race_spec={race_spec} (過去30日〜未来30日で見つかりませんでした)")
         return None
 
     def _find_race_from_api(
@@ -150,31 +163,170 @@ class RaceResolver:
             レースID。見つからない場合はNone
         """
         try:
-            # TODO: APIエンドポイントが実装されたら修正
-            # response = requests.get(
-            #     f"{self.api_base_url}/api/races",
-            #     params={"date": target_date.isoformat()},
-            #     timeout=10
-            # )
-            #
-            # if response.status_code != 200:
-            #     logger.error(f"レース一覧取得失敗: status={response.status_code}")
-            #     return None
-            #
-            # races = response.json().get("races", [])
-            #
-            # for race in races:
-            #     if (race.get("venue") == venue and
-            #         race.get("race_number") == race_number):
-            #         return race.get("race_id")
+            # APIエンドポイント: /api/races/date/{target_date}
+            response = requests.get(
+                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}",
+                timeout=10
+            )
 
-            # 暫定: モックレスポンス
-            logger.warning("APIエンドポイント未実装のため、レース解決をスキップ")
+            if response.status_code != 200:
+                logger.error(f"レース一覧取得失敗: status={response.status_code}")
+                return None
+
+            data = response.json()
+            races = data.get("races", [])
+
+            logger.debug(f"API取得: {len(races)}件のレース（{target_date}）")
+
+            for race in races:
+                race_venue = race.get("venue", "")
+                race_num_str = race.get("race_number", "")
+
+                # race_numberは "11R" 形式なので数字部分を抽出
+                try:
+                    race_num = int(re.sub(r'[^0-9]', '', race_num_str))
+                except (ValueError, TypeError):
+                    continue
+
+                logger.debug(f"チェック: {race_venue} {race_num}R vs {venue} {race_number}R")
+
+                if race_venue == venue and race_num == race_number:
+                    race_id = race.get("race_id")
+                    logger.info(f"レース発見: {venue} {race_number}R -> {race_id}")
+                    return race_id
+
+            logger.debug(f"該当レース未発見: {venue} {race_number}R on {target_date}")
             return None
 
         except requests.exceptions.RequestException as e:
             logger.error(f"レース一覧取得エラー: {e}")
             return None
+
+
+def parse_date_input(date_input: str) -> Optional[date]:
+    """
+    日付文字列をパース
+
+    対応形式:
+    - YYYY-MM-DD (例: 2025-12-28)
+    - YYYY/MM/DD (例: 2025/12/28)
+    - MM/DD (例: 12/28) - 今年または来年
+    - MMDD (例: 1228) - 今年または来年
+
+    Args:
+        date_input: 日付文字列
+
+    Returns:
+        dateオブジェクト、パース失敗時はNone
+    """
+    date_input = date_input.strip()
+    today = date.today()
+
+    # YYYY-MM-DD or YYYY/MM/DD
+    match = re.match(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$', date_input)
+    if match:
+        try:
+            return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        except ValueError:
+            return None
+
+    # MM/DD
+    match = re.match(r'^(\d{1,2})/(\d{1,2})$', date_input)
+    if match:
+        try:
+            month, day = int(match.group(1)), int(match.group(2))
+            # 今年で試す
+            target = date(today.year, month, day)
+            # 過去の日付なら来年
+            if target < today:
+                target = date(today.year + 1, month, day)
+            return target
+        except ValueError:
+            return None
+
+    # MMDD
+    match = re.match(r'^(\d{2})(\d{2})$', date_input)
+    if match:
+        try:
+            month, day = int(match.group(1)), int(match.group(2))
+            # 今年で試す
+            target = date(today.year, month, day)
+            # 過去の日付なら来年
+            if target < today:
+                target = date(today.year + 1, month, day)
+            return target
+        except ValueError:
+            return None
+
+    return None
+
+
+def search_races_by_name(
+    race_name: str,
+    api_base_url: str = API_BASE_URL_DEFAULT,
+    days_range: int = 60
+) -> List[Dict[str, Any]]:
+    """
+    レース名で検索（過去30日〜未来30日）
+
+    Args:
+        race_name: レース名（部分一致）
+        api_base_url: API base URL
+        days_range: 検索範囲（前後日数）
+
+    Returns:
+        マッチしたレースのリスト
+    """
+    found_races = []
+    today = date.today()
+
+    # 未来を優先検索
+    for days_ahead in range(0, days_range + 1):
+        search_date = today + timedelta(days=days_ahead)
+        races = _get_races_from_api(api_base_url, search_date)
+
+        for race in races:
+            if race_name in race.get("race_name", ""):
+                race["race_date"] = search_date.isoformat()
+                found_races.append(race)
+
+    # 過去も検索
+    for days_ago in range(1, days_range + 1):
+        search_date = today - timedelta(days=days_ago)
+        races = _get_races_from_api(api_base_url, search_date)
+
+        for race in races:
+            if race_name in race.get("race_name", ""):
+                race["race_date"] = search_date.isoformat()
+                found_races.append(race)
+
+    return found_races
+
+
+def _get_races_from_api(api_base_url: str, target_date: date) -> List[Dict[str, Any]]:
+    """
+    APIから指定日のレース一覧を取得
+
+    Args:
+        api_base_url: API base URL
+        target_date: 対象日
+
+    Returns:
+        レース一覧
+    """
+    try:
+        response = requests.get(
+            f"{api_base_url}/api/races/date/{target_date.isoformat()}",
+            timeout=10
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("races", [])
+        return []
+    except requests.exceptions.RequestException as e:
+        logger.error(f"レース一覧取得エラー: {e}")
+        return []
 
 
 def resolve_race_input(
@@ -184,8 +336,14 @@ def resolve_race_input(
     """
     レース指定文字列をレースIDに解決（ユーティリティ関数）
 
+    対応形式:
+    1. レースID (16桁): 2025122806050811
+    2. 競馬場+レース番号: 京都2r, 中山11R
+    3. 日付: 2025-12-28, 12/28, 1228
+    4. レース名: 有馬記念, 京都金杯
+
     Args:
-        race_input: レース指定文字列（レースID or 京都2r形式）
+        race_input: レース指定文字列
         api_base_url: API base URL
 
     Returns:
@@ -193,20 +351,58 @@ def resolve_race_input(
 
     Raises:
         ValueError: レース指定が無効な場合
+        MultipleRacesFoundException: 複数のレースが見つかった場合
     """
-    # すでにレースID形式（12桁の数字）の場合はそのまま返す
-    if re.match(r"^\d{12}$", race_input):
+    race_input = race_input.strip()
+
+    # 1. すでにレースID形式（16桁の数字）の場合はそのまま返す
+    if re.match(r"^\d{16}$", race_input):
         logger.debug(f"レースID形式と判定: {race_input}")
         return race_input
 
-    # 競馬場名+レース番号形式の場合は解決
-    resolver = RaceResolver(api_base_url)
-    race_id = resolver.resolve_to_race_id(race_input)
+    # 2. 日付形式かチェック
+    target_date = parse_date_input(race_input)
+    if target_date:
+        logger.info(f"日付指定と判定: {race_input} -> {target_date}")
+        races = _get_races_from_api(api_base_url, target_date)
 
-    if race_id is None:
+        if not races:
+            raise ValueError(f"{target_date}のレースが見つかりません")
+
+        # 複数レースがある場合は選択させる
+        if len(races) > 1:
+            raise MultipleRacesFoundException(
+                f"{target_date}に{len(races)}件のレースがあります。選択してください。",
+                races
+            )
+
+        # 1件だけならそれを返す
+        return races[0]["race_id"]
+
+    # 3. 競馬場名+レース番号形式かチェック
+    if re.match(r"^.+\d{1,2}[rR]$", race_input):
+        resolver = RaceResolver(api_base_url)
+        race_id = resolver.resolve_to_race_id(race_input)
+
+        if race_id:
+            return race_id
+
+    # 4. レース名検索
+    logger.info(f"レース名検索: {race_input}")
+    races = search_races_by_name(race_input, api_base_url)
+
+    if not races:
         raise ValueError(
             f"レース '{race_input}' が見つかりません。\n"
-            f"例: 京都2r, 中山11R, または12桁のレースID"
+            f"例: 京都2r, 2025-12-28, 有馬記念, または16桁のレースID"
         )
 
-    return race_id
+    # 複数レースがある場合は選択させる
+    if len(races) > 1:
+        raise MultipleRacesFoundException(
+            f"'{race_input}'で{len(races)}件のレースが見つかりました。選択してください。",
+            races
+        )
+
+    # 1件だけならそれを返す
+    return races[0]["race_id"]

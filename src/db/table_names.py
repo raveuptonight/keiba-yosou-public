@@ -104,6 +104,7 @@ COL_HASSO_JIKOKU: Final[str] = "hasso_jikoku"  # 発走時刻
 COL_BAMEI: Final[str] = "bamei"  # 馬名
 COL_SEX: Final[str] = "seibetsu_code"  # 性別コード
 COL_KEIROCODE: Final[str] = "moshoku_code"  # 毛色コード
+COL_BIRTH_DATE: Final[str] = "seinengappi"  # 生年月日
 
 # 成績
 COL_KAKUTEI_CHAKUJUN: Final[str] = "kakutei_chakujun"  # 確定着順
@@ -112,6 +113,9 @@ COL_TIME: Final[str] = "soha_time"  # 走破タイム
 COL_BATAIJU: Final[str] = "bataiju"  # 馬体重
 COL_KINRYO: Final[str] = "futan_juryo"  # 斤量（負担重量）
 COL_RACE_DATE: Final[str] = "race_date"  # レース日
+COL_WAKUBAN: Final[str] = "wakuban"  # 枠番
+COL_BAREI: Final[str] = "barei"  # 馬齢
+COL_TOZAI_CODE: Final[str] = "tozai_shozoku_code"  # 東西所属コード
 
 # 騎手・調教師
 COL_KISYUCODE: Final[str] = "kishu_code"  # 騎手コード

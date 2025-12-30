@@ -67,9 +67,10 @@ app.add_middleware(
 
 
 # ルーター登録
-from src.api.routes import health, races, horses, odds, predictions, jockeys
+from src.api.routes import health, races, horses, odds, predictions, jockeys, debug
 
 app.include_router(health.router, tags=["health"])
+app.include_router(debug.router, prefix="/api", tags=["debug"])
 
 # /api/v1 プレフィックス (バージョニング用)
 app.include_router(races.router, prefix="/api/v1", tags=["races-v1"])

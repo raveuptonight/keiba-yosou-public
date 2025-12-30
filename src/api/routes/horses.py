@@ -7,15 +7,16 @@ from datetime import date
 from fastapi import APIRouter, Query, Path, status
 
 from typing import Optional, List
-from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace
+from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace, TrainingData
 from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
-from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name
+from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name, get_training_before_race
 from src.db.table_names import (
     COL_KETTONUM,
     COL_BAMEI,
     COL_SEX,
     COL_KEIROCODE,
+    COL_BIRTH_DATE,
     COL_CHOKYOSICODE,
     COL_CHOKYOSI_NAME,
     COL_RACE_ID,
@@ -207,6 +208,19 @@ async def get_horse(
                 race_monthday = race[COL_KAISAI_MONTHDAY]
                 race_date = date(int(race_year), int(race_monthday[:2]), int(race_monthday[2:]))
 
+                # 調教データを取得（レース前14日以内）
+                race_date_str = f"{race_year}{race_monthday}"
+                training_data = await get_training_before_race(conn, kettonum, race_date_str, days_before=14)
+
+                training_obj = None
+                if training_data:
+                    training_obj = TrainingData(
+                        training_type=training_data.get("training_type", "不明"),
+                        training_date=training_data.get("training_date", ""),
+                        time_4f=training_data.get("time_4f"),
+                        time_3f=training_data.get("time_3f")
+                    )
+
                 recent_races.append(RecentRace(
                     race_id=race[COL_RACE_ID],
                     race_name=race[COL_RACE_NAME],
@@ -216,11 +230,14 @@ async def get_horse(
                     track_condition=race.get("baba_jotai", "不明"),
                     finish_position=race[COL_KAKUTEI_CHAKUJUN],
                     time=race.get(COL_TIME, "不明"),
+                    time_diff=race.get("time_sa"),  # 勝ち馬とのタイム差
+                    winner_name=race.get("winner_name"),  # 勝ち馬名
                     jockey=race.get(COL_KISYU_NAME, "不明"),
                     weight=float(race.get("futan", 0)),
                     horse_weight=race.get("bataiju"),
-                    odds=float(race["tansyo_odds"]) / 10.0 if race.get("tansyo_odds") else None,
-                    prize_money=race.get("syogkin", 0)
+                    odds=float(race["tansho_odds"]) / 10.0 if race.get("tansho_odds") else None,
+                    prize_money=race.get("syogkin", 0),
+                    training=training_obj
                 ))
 
             # 勝利数と勝率を計算
@@ -231,10 +248,20 @@ async def get_horse(
             # 通算獲得賞金
             total_prize_money = horse_info.get("total_honcho_sochu_kei_sochu", 0)
 
+            # 生年月日を変換
+            birth_date_val = date(2000, 1, 1)  # デフォルト値
+            birth_date_str = horse_info.get(COL_BIRTH_DATE)
+            if birth_date_str:
+                try:
+                    bd_str = str(birth_date_str)[:8]
+                    birth_date_val = date(int(bd_str[:4]), int(bd_str[4:6]), int(bd_str[6:8]))
+                except (ValueError, IndexError):
+                    pass
+
             response = HorseDetail(
                 kettonum=kettonum,
                 horse_name=horse_info[COL_BAMEI],
-                birth_date=horse_info.get("birth_date", date(2000, 1, 1)),
+                birth_date=birth_date_val,
                 sex=_get_sex_name(horse_info.get(COL_SEX, "1")),
                 coat_color=_get_color_name(horse_info.get(COL_KEIROCODE, "1")),
                 sire=pedigree_data.get("chichi_name", "不明"),

@@ -45,42 +45,53 @@ async def get_odds_win_place(
             "place": [{"umaban": 1, "odds_min": 1.5, "odds_max": 2.0}, ...]
         }
     """
-    sql = f"""
+    # 単勝オッズ取得
+    sql_win = f"""
         SELECT
             {COL_UMABAN},
-            tansyo_odds,
-            fukusyo_odds_min,
-            fukusyo_odds_max,
-            tansyo_ninki,
-            fukusyo_ninki
+            odds,
+            ninki
         FROM {TABLE_ODDS_TANSHO}
         WHERE {COL_RACE_ID} = $1
           AND {COL_DATA_KUBUN} = $2
         ORDER BY {COL_UMABAN}
     """
 
+    # 複勝オッズ取得
+    sql_place = f"""
+        SELECT
+            {COL_UMABAN},
+            odds_saitei,
+            odds_saikou,
+            ninki
+        FROM {TABLE_ODDS_FUKUSHO}
+        WHERE {COL_RACE_ID} = $1
+          AND {COL_DATA_KUBUN} = $2
+        ORDER BY {COL_UMABAN}
+    """
+
     try:
-        rows = await conn.fetch(sql, race_id, DATA_KUBUN_SAISYU_ODDS)
-
+        # 単勝オッズ
+        win_rows = await conn.fetch(sql_win, race_id, DATA_KUBUN_SAISYU_ODDS)
         win_odds = []
-        place_odds = []
-
-        for row in rows:
-            # 単勝オッズ
-            if row['tansyo_odds']:
+        for row in win_rows:
+            if row['odds']:
                 win_odds.append({
                     "umaban": row[COL_UMABAN],
-                    "odds": float(row['tansyo_odds']) / 10.0,  # JRA-VANは10倍値で格納
-                    "ninki": row['tansyo_ninki']
+                    "odds": float(row['odds']) / 10.0,  # JRA-VANは10倍値で格納
+                    "ninki": row['ninki']
                 })
 
-            # 複勝オッズ
-            if row['fukusyo_odds_min'] and row['fukusyo_odds_max']:
+        # 複勝オッズ
+        place_rows = await conn.fetch(sql_place, race_id, DATA_KUBUN_SAISYU_ODDS)
+        place_odds = []
+        for row in place_rows:
+            if row['odds_saitei'] and row['odds_saikou']:
                 place_odds.append({
                     "umaban": row[COL_UMABAN],
-                    "odds_min": float(row['fukusyo_odds_min']) / 10.0,
-                    "odds_max": float(row['fukusyo_odds_max']) / 10.0,
-                    "ninki": row['fukusyo_ninki']
+                    "odds_min": float(row['odds_saitei']) / 10.0,
+                    "odds_max": float(row['odds_saikou']) / 10.0,
+                    "ninki": row['ninki']
                 })
 
         return {

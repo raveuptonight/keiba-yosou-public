@@ -47,6 +47,45 @@ class RaceEntry(BaseModel):
     odds: Optional[float] = Field(
         None, ge=0.1, description="単勝オッズ"
     )
+    finish_position: Optional[int] = Field(
+        None, description="着順（レース終了後のみ）"
+    )
+    finish_time: Optional[str] = Field(
+        None, description="走破タイム（レース終了後のみ）"
+    )
+
+
+class RaceResult(BaseModel):
+    """レース結果情報"""
+
+    horse_number: int = Field(..., description="馬番")
+    horse_name: str = Field(..., description="馬名")
+    jockey_name: str = Field(..., description="騎手名")
+    finish_position: int = Field(..., description="着順")
+    finish_time: str = Field(..., description="走破タイム")
+    odds: Optional[float] = Field(None, description="単勝オッズ")
+    kohan_3f: Optional[str] = Field(None, description="上がり3F")
+
+
+class PayoffInfo(BaseModel):
+    """払戻金情報"""
+
+    kumi: str = Field(..., description="組番（例: '5', '5-9', '5→9→4'）")
+    payoff: int = Field(..., description="払戻金（円）")
+    ninki: Optional[int] = Field(None, description="人気順")
+
+
+class RacePayoffs(BaseModel):
+    """レース払戻金"""
+
+    win: Optional[PayoffInfo] = Field(None, description="単勝")
+    place: Optional[List[PayoffInfo]] = Field(None, description="複勝")
+    bracket_quinella: Optional[PayoffInfo] = Field(None, description="枠連")
+    quinella: Optional[PayoffInfo] = Field(None, description="馬連")
+    exacta: Optional[PayoffInfo] = Field(None, description="馬単")
+    wide: Optional[List[PayoffInfo]] = Field(None, description="ワイド")
+    trio: Optional[PayoffInfo] = Field(None, description="3連複")
+    trifecta: Optional[PayoffInfo] = Field(None, description="3連単")
 
 
 class RaceDetail(RaceBase):
@@ -64,6 +103,38 @@ class RaceDetail(RaceBase):
     entries: List[RaceEntry] = Field(
         ..., description="出走馬一覧"
     )
+    results: Optional[List[RaceResult]] = Field(
+        None, description="レース結果（レース終了後のみ）"
+    )
+    payoffs: Optional[RacePayoffs] = Field(
+        None, description="払戻金（レース終了後のみ）"
+    )
+    lap_times: Optional[List[str]] = Field(
+        None, description="ラップタイム（200m毎、レース終了後のみ）"
+    )
+    head_to_head: Optional[List["HeadToHeadRace"]] = Field(
+        None, description="出走馬の過去対戦成績"
+    )
+
+
+class HorseInMatchup(BaseModel):
+    """対戦表内の馬情報"""
+
+    kettonum: str = Field(..., description="血統登録番号")
+    name: str = Field(..., description="馬名")
+    horse_number: int = Field(..., description="馬番")
+    finish_position: int = Field(..., description="着順")
+
+
+class HeadToHeadRace(BaseModel):
+    """馬同士の過去対戦レース"""
+
+    race_id: str = Field(..., description="レースID")
+    race_name: str = Field(..., description="レース名")
+    race_date: str = Field(..., description="レース日（YYYY-MM-DD）")
+    venue_code: str = Field(..., description="競馬場コード")
+    distance: int = Field(..., description="距離（メートル）")
+    horses: List[HorseInMatchup] = Field(..., description="対戦した馬のリスト")
 
 
 class RaceListResponse(BaseModel):

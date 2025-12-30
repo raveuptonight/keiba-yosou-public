@@ -33,6 +33,12 @@ from src.db.table_names import (
     COL_DIRT_BABA_CD,
     COL_HASSO_JIKOKU,
     COL_BAMEI,
+    COL_SEX,
+    COL_KINRYO,
+    COL_BATAIJU,
+    COL_WAKUBAN,
+    COL_BAREI,
+    COL_TOZAI_CODE,
     COL_KISYUCODE,
     COL_CHOKYOSICODE,
     COL_KISYU_NAME,
@@ -108,22 +114,17 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
             ks.{COL_KISYU_NAME},
             se.{COL_CHOKYOSICODE},
             ch.{COL_CHOKYOSI_NAME},
-            se.futan,
-            se.bataiju,
-            o1.tansyo_odds,
-            se.wakuban,
-            se.sei_code,
-            se.barei,
-            se.tozai_code,
-            se.chokyosi_code
+            se.{COL_KINRYO},
+            se.{COL_BATAIJU},
+            se.tansho_odds,
+            se.{COL_WAKUBAN},
+            se.{COL_SEX},
+            se.{COL_BAREI},
+            se.{COL_TOZAI_CODE}
         FROM {TABLE_UMA_RACE} se
         INNER JOIN {TABLE_UMA} um ON se.{COL_KETTONUM} = um.{COL_KETTONUM}
         LEFT JOIN {TABLE_KISYU} ks ON se.{COL_KISYUCODE} = ks.{COL_KISYUCODE}
         LEFT JOIN {TABLE_CHOKYOSI} ch ON se.{COL_CHOKYOSICODE} = ch.{COL_CHOKYOSICODE}
-        LEFT JOIN {TABLE_ODDS_TANSHO} o1
-            ON se.{COL_RACE_ID} = o1.{COL_RACE_ID}
-            AND se.{COL_UMABAN} = o1.{COL_UMABAN}
-            AND o1.{COL_DATA_KUBUN} = '3'
         WHERE se.{COL_RACE_ID} = $1
           AND se.{COL_DATA_KUBUN} = $2
         ORDER BY se.{COL_UMABAN}
@@ -362,4 +363,100 @@ async def check_race_exists(conn: Connection, race_id: str) -> bool:
         return row['exists'] if row else False
     except Exception as e:
         logger.error(f"Failed to check race exists: race_id={race_id}, error={e}")
+        raise
+
+
+async def get_horse_head_to_head(
+    conn: Connection,
+    kettonums: List[str],
+    limit: int = 20
+) -> List[Dict[str, Any]]:
+    """
+    複数の馬の過去の対戦成績を取得
+
+    Args:
+        conn: データベース接続
+        kettonums: 血統登録番号のリスト
+        limit: 取得する過去レース数の上限
+
+    Returns:
+        過去の対戦レースのリスト（各レースで対象馬の着順を含む）
+    """
+    if len(kettonums) < 2:
+        return []
+
+    # 対象馬が2頭以上出走したレースを検索
+    sql = f"""
+        WITH target_horses AS (
+            SELECT {COL_RACE_ID}, {COL_KETTONUM}, {COL_UMABAN}, kakutei_chakujun, {COL_BAMEI}
+            FROM {TABLE_UMA_RACE}
+            WHERE {COL_KETTONUM} = ANY($1)
+              AND {COL_DATA_KUBUN} = $2
+              AND kakutei_chakujun IS NOT NULL
+              AND kakutei_chakujun > 0
+        ),
+        race_counts AS (
+            SELECT {COL_RACE_ID}, COUNT(DISTINCT {COL_KETTONUM}) as horse_count
+            FROM target_horses
+            GROUP BY {COL_RACE_ID}
+            HAVING COUNT(DISTINCT {COL_KETTONUM}) >= 2
+        ),
+        matched_races AS (
+            SELECT DISTINCT th.{COL_RACE_ID}
+            FROM target_horses th
+            INNER JOIN race_counts rc ON th.{COL_RACE_ID} = rc.{COL_RACE_ID}
+        )
+        SELECT
+            r.{COL_RACE_ID},
+            r.{COL_RACE_NAME},
+            r.{COL_KAISAI_YEAR},
+            r.{COL_KAISAI_MONTHDAY},
+            r.{COL_JYOCD},
+            r.{COL_KYORI},
+            th.{COL_KETTONUM},
+            th.{COL_BAMEI},
+            th.{COL_UMABAN},
+            th.kakutei_chakujun
+        FROM matched_races mr
+        INNER JOIN {TABLE_RACE} r ON mr.{COL_RACE_ID} = r.{COL_RACE_ID}
+        INNER JOIN target_horses th ON mr.{COL_RACE_ID} = th.{COL_RACE_ID}
+        WHERE r.{COL_DATA_KUBUN} = $2
+        ORDER BY r.{COL_KAISAI_YEAR} DESC, r.{COL_KAISAI_MONTHDAY} DESC, r.{COL_RACE_ID} DESC
+        LIMIT $3
+    """
+
+    try:
+        rows = await conn.fetch(sql, kettonums, DATA_KUBUN_KAKUTEI, limit * len(kettonums))
+
+        # レースごとにグループ化
+        races_dict: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            race_id = row[COL_RACE_ID]
+
+            if race_id not in races_dict:
+                races_dict[race_id] = {
+                    "race_id": race_id,
+                    "race_name": row[COL_RACE_NAME],
+                    "race_date": f"{row[COL_KAISAI_YEAR]}-{row[COL_KAISAI_MONTHDAY][:2]}-{row[COL_KAISAI_MONTHDAY][2:]}",
+                    "venue_code": row[COL_JYOCD],
+                    "distance": row[COL_KYORI],
+                    "horses": []
+                }
+
+            races_dict[race_id]["horses"].append({
+                "kettonum": row[COL_KETTONUM],
+                "name": row[COL_BAMEI],
+                "horse_number": row[COL_UMABAN],
+                "finish_position": row["kakutei_chakujun"]
+            })
+
+        # リストに変換してソート（レース日付の新しい順）
+        result = list(races_dict.values())
+        result.sort(key=lambda x: x["race_date"], reverse=True)
+
+        logger.info(f"Found {len(result)} head-to-head races for {len(kettonums)} horses")
+        return result[:limit]
+
+    except Exception as e:
+        logger.error(f"Failed to get head-to-head data: {e}")
         raise

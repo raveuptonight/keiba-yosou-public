@@ -3,11 +3,21 @@
 """
 
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 from fastapi import APIRouter, Query, Path, status
 
-from src.api.schemas.race import RaceListResponse, RaceDetail, RaceBase, RaceEntry
+from src.api.schemas.race import (
+    RaceListResponse,
+    RaceDetail,
+    RaceBase,
+    RaceEntry,
+    RaceResult,
+    RacePayoffs,
+    PayoffInfo,
+    HeadToHeadRace,
+    HorseInMatchup,
+)
 from src.api.schemas.common import PrizeMoneyResponse
 from src.api.exceptions import RaceNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
@@ -17,7 +27,9 @@ from src.db.queries.race_queries import (
     get_upcoming_races,
     get_race_detail,
     get_race_entry_count,
+    get_horse_head_to_head,
 )
+from src.db.queries.payoff_queries import get_race_results, get_race_payoffs, get_race_lap_times
 from src.db.table_names import (
     COL_RACE_ID,
     COL_RACE_NAME,
@@ -34,6 +46,9 @@ from src.db.table_names import (
     COL_KAISAI_MONTHDAY,
     COL_KETTONUM,
     COL_BAMEI,
+    COL_UMABAN,
+    COL_KINRYO,
+    COL_BATAIJU,
     COL_KISYUCODE,
     COL_KISYU_NAME,
     COL_CHOKYOSICODE,
@@ -317,16 +332,16 @@ async def get_race(
             entries = []
             for entry in entries_data:
                 entries.append(RaceEntry(
-                    horse_number=entry["umaban"],
+                    horse_number=entry[COL_UMABAN],
                     kettonum=entry[COL_KETTONUM],
                     horse_name=entry[COL_BAMEI],
                     jockey_code=entry[COL_KISYUCODE],
                     jockey_name=entry.get(COL_KISYU_NAME, "不明"),
                     trainer_code=entry[COL_CHOKYOSICODE],
                     trainer_name=entry.get(COL_CHOKYOSI_NAME, "不明"),
-                    weight=float(entry.get("futan", 0)),
-                    horse_weight=entry.get("bataiju"),
-                    odds=float(entry["tansyo_odds"]) / 10.0 if entry.get("tansyo_odds") else None
+                    weight=float(entry.get(COL_KINRYO, 0)),
+                    horse_weight=entry.get(COL_BATAIJU),
+                    odds=float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None
                 ))
 
             # 賞金情報
@@ -341,6 +356,86 @@ async def get_race(
             # 馬場状態（芝またはダート）
             track_condition = race.get(COL_SHIBA_BABA_CD) or race.get(COL_DIRT_BABA_CD)
 
+            # レース日付を取得
+            race_year = race.get(COL_KAISAI_YEAR)
+            race_monthday = race.get(COL_KAISAI_MONTHDAY)
+            race_date = None
+            if race_year and race_monthday and len(race_monthday) == 4:
+                try:
+                    race_date = date(int(race_year), int(race_monthday[:2]), int(race_monthday[2:]))
+                except (ValueError, IndexError):
+                    pass
+
+            # 過去のレースかチェック（レース日 < 今日）
+            results_data = None
+            payoffs_data = None
+            lap_times_data = None
+            if race_date and race_date < date.today():
+                # 結果と配当を取得
+                try:
+                    results_raw = await get_race_results(conn, race_id)
+                    if results_raw:
+                        results_data = [
+                            RaceResult(
+                                horse_number=r['umaban'],
+                                horse_name=r['bamei'],
+                                jockey_name=r['kishumei'],
+                                finish_position=r['chakujun'],
+                                finish_time=r['time'],
+                                odds=r.get('odds'),
+                                kohan_3f=r.get('kohan_3f')
+                            )
+                            for r in results_raw
+                        ]
+
+                    payoffs_raw = await get_race_payoffs(conn, race_id)
+                    if payoffs_raw:
+                        payoffs_data = RacePayoffs(
+                            win=PayoffInfo(**payoffs_raw['win']) if payoffs_raw.get('win') else None,
+                            place=[PayoffInfo(**p) for p in payoffs_raw['place']] if payoffs_raw.get('place') else None,
+                            bracket_quinella=PayoffInfo(**payoffs_raw['bracket_quinella']) if payoffs_raw.get('bracket_quinella') else None,
+                            quinella=PayoffInfo(**payoffs_raw['quinella']) if payoffs_raw.get('quinella') else None,
+                            exacta=PayoffInfo(**payoffs_raw['exacta']) if payoffs_raw.get('exacta') else None,
+                            wide=[PayoffInfo(**w) for w in payoffs_raw['wide']] if payoffs_raw.get('wide') else None,
+                            trio=PayoffInfo(**payoffs_raw['trio']) if payoffs_raw.get('trio') else None,
+                            trifecta=PayoffInfo(**payoffs_raw['trifecta']) if payoffs_raw.get('trifecta') else None
+                        )
+
+                    lap_times_data = await get_race_lap_times(conn, race_id)
+                except Exception as e:
+                    logger.warning(f"Failed to get race results/payoffs: {e}")
+                    # 結果・配当取得エラーでも、レース情報は返す
+
+            # 出走馬の過去対戦成績を取得
+            head_to_head_data = None
+            try:
+                kettonums = [entry[COL_KETTONUM] for entry in entries_data]
+                if len(kettonums) >= 2:
+                    matchups_raw = await get_horse_head_to_head(conn, kettonums, limit=10)
+                    if matchups_raw:
+                        head_to_head_data = [
+                            HeadToHeadRace(
+                                race_id=m["race_id"],
+                                race_name=m["race_name"],
+                                race_date=m["race_date"],
+                                venue_code=m["venue_code"],
+                                distance=m["distance"],
+                                horses=[
+                                    HorseInMatchup(
+                                        kettonum=h["kettonum"],
+                                        name=h["name"],
+                                        horse_number=h["horse_number"],
+                                        finish_position=h["finish_position"]
+                                    )
+                                    for h in m["horses"]
+                                ]
+                            )
+                            for m in matchups_raw
+                        ]
+            except Exception as e:
+                logger.warning(f"Failed to get head-to-head data: {e}")
+                # 対戦表取得エラーでも、レース情報は返す
+
             response = RaceDetail(
                 race_id=race[COL_RACE_ID],
                 race_name=race[COL_RACE_NAME],
@@ -354,7 +449,11 @@ async def get_race(
                 track_condition=track_condition,
                 weather=race.get(COL_TENKO_CD),
                 prize_money=prize_money,
-                entries=entries
+                entries=entries,
+                results=results_data,
+                payoffs=payoffs_data,
+                lap_times=lap_times_data if lap_times_data else None,
+                head_to_head=head_to_head_data
             )
 
             logger.info(f"Race detail retrieved: {race[COL_RACE_NAME]} ({len(entries)} horses)")

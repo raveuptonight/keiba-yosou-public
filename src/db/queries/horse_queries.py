@@ -25,6 +25,7 @@ from src.db.table_names import (
     COL_BAMEI,
     COL_SEX,
     COL_KEIROCODE,
+    COL_BIRTH_DATE,
     COL_KAISAI_YEAR,
     COL_KAISAI_MONTHDAY,
     COL_KAKUTEI_CHAKUJUN,
@@ -42,6 +43,9 @@ from src.db.table_names import (
     COL_JYOCD,
     COL_KYORI,
     COL_RACE_NAME,
+    COL_SHIBA_BABA_CD,
+    COL_DIRT_BABA_CD,
+    COL_KINRYO,
     DATA_KUBUN_KAKUTEI,
 )
 from src.config import ML_TRAINING_YEARS_BACK
@@ -64,19 +68,20 @@ async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, 
         SELECT
             {COL_KETTONUM},
             {COL_BAMEI},
-            birth_date,
+            {COL_BIRTH_DATE},
             {COL_SEX},
             {COL_KEIROCODE},
-            chichi_kettonum,
-            haha_kettonum,
-            breeder_code,
-            owner_code,
+            ketto1_hanshoku_toroku_bango,
+            ketto2_hanshoku_toroku_bango,
+            seisansha_code,
+            banushi_code,
             {COL_CHOKYOSICODE},
-            total_honcho_sochu_shoto_sho,
-            total_honcho_sochu_kei_sochu,
-            heichi_sochu_kei,
-            heichi_shutoku,
-            tokubetsu_sochu_kei
+            heichi_honshokin_ruikei,
+            shogai_honshokin_ruikei,
+            heichi_fukashokin_ruikei,
+            shogai_fukashokin_ruikei,
+            heichi_shutokushokin_ruikei,
+            shogai_shutokushokin_ruikei
         FROM {TABLE_UMA}
         WHERE {COL_KETTONUM} = $1
     """
@@ -118,23 +123,23 @@ async def get_horses_recent_races(
                 ra.{COL_KAISAI_MONTHDAY},
                 ra.{COL_JYOCD},
                 ra.{COL_KYORI},
-                ra.baba_jotai,
+                COALESCE(ra.{COL_SHIBA_BABA_CD}, ra.{COL_DIRT_BABA_CD}) as baba_jotai,
                 ra.{COL_RACE_NAME},
-                ra.grade_cd,
+                ra.grade_code,
                 se.{COL_KAKUTEI_CHAKUJUN},
                 se.{COL_TIME},
                 se.{COL_KISYUCODE},
-                se.futan,
+                se.{COL_KINRYO} as futan,
                 se.{COL_BATAIJU},
-                se.tansyo_odds,
-                se.syogkin,
+                se.tansho_odds,
+                se.kakutoku_honshokin,
                 se.umaban,
-                se.zogensa,
-                se.corner1_jyuni,
-                se.corner2_jyuni,
-                se.corner3_jyuni,
-                se.corner4_jyuni,
-                se.time_dif,
+                se.zogen_sa,
+                se.corner1_juni,
+                se.corner2_juni,
+                se.corner3_juni,
+                se.corner4_juni,
+                se.time_sa,
                 ROW_NUMBER() OVER (
                     PARTITION BY se.{COL_KETTONUM}
                     ORDER BY ra.{COL_KAISAI_YEAR} DESC, ra.{COL_KAISAI_MONTHDAY} DESC
@@ -145,10 +150,16 @@ async def get_horses_recent_races(
               AND se.{COL_DATA_KUBUN} = $2
               AND ra.{COL_KAISAI_YEAR} >= $3
         )
-        SELECT *
-        FROM ranked_races
-        WHERE rn <= $4
-        ORDER BY {COL_KETTONUM}, rn
+        SELECT
+            rr.*,
+            winner.{COL_BAMEI} as winner_name
+        FROM ranked_races rr
+        LEFT JOIN {TABLE_UMA_RACE} winner
+            ON rr.{COL_RACE_ID} = winner.{COL_RACE_ID}
+            AND winner.{COL_KAKUTEI_CHAKUJUN} = 1
+            AND winner.{COL_DATA_KUBUN} = $2
+        WHERE rr.rn <= $4
+        ORDER BY rr.{COL_KETTONUM}, rr.rn
     """
 
     try:
@@ -205,31 +216,31 @@ async def get_horses_pedigree(
     sql = f"""
         SELECT
             sk.{COL_KETTONUM},
-            sk.{COL_SANDAI_KETTO}[1] AS chichi,
-            sk.{COL_SANDAI_KETTO}[2] AS haha,
-            sk.{COL_SANDAI_KETTO}[3] AS chichi_chichi,
-            sk.{COL_SANDAI_KETTO}[4] AS chichi_haha,
-            sk.{COL_SANDAI_KETTO}[5] AS haha_chichi,
-            sk.{COL_SANDAI_KETTO}[6] AS haha_haha,
-            hn_f.{COL_HANSYOKUBA_NAME} AS chichi_name,
-            hn_m.{COL_HANSYOKUBA_NAME} AS haha_name,
-            hn_ff.{COL_HANSYOKUBA_NAME} AS chichi_chichi_name,
-            hn_fm.{COL_HANSYOKUBA_NAME} AS chichi_haha_name,
-            hn_mf.{COL_HANSYOKUBA_NAME} AS haha_chichi_name,
-            hn_mm.{COL_HANSYOKUBA_NAME} AS haha_haha_name
+            sk.ketto1_hanshoku_toroku_bango AS chichi,
+            sk.ketto2_hanshoku_toroku_bango AS haha,
+            sk.ketto3_hanshoku_toroku_bango AS chichi_chichi,
+            sk.ketto4_hanshoku_toroku_bango AS chichi_haha,
+            sk.ketto5_hanshoku_toroku_bango AS haha_chichi,
+            sk.ketto6_hanshoku_toroku_bango AS haha_haha,
+            hn_f.bamei AS chichi_name,
+            hn_m.bamei AS haha_name,
+            hn_ff.bamei AS chichi_chichi_name,
+            hn_fm.bamei AS chichi_haha_name,
+            hn_mf.bamei AS haha_chichi_name,
+            hn_mm.bamei AS haha_haha_name
         FROM {TABLE_SANKU} sk
         LEFT JOIN {TABLE_HANSYOKU} hn_f
-            ON sk.{COL_SANDAI_KETTO}[1] = hn_f.{COL_HANSYOKU_NUM}
+            ON sk.ketto1_hanshoku_toroku_bango = hn_f.{COL_HANSYOKU_NUM}
         LEFT JOIN {TABLE_HANSYOKU} hn_m
-            ON sk.{COL_SANDAI_KETTO}[2] = hn_m.{COL_HANSYOKU_NUM}
+            ON sk.ketto2_hanshoku_toroku_bango = hn_m.{COL_HANSYOKU_NUM}
         LEFT JOIN {TABLE_HANSYOKU} hn_ff
-            ON sk.{COL_SANDAI_KETTO}[3] = hn_ff.{COL_HANSYOKU_NUM}
+            ON sk.ketto3_hanshoku_toroku_bango = hn_ff.{COL_HANSYOKU_NUM}
         LEFT JOIN {TABLE_HANSYOKU} hn_fm
-            ON sk.{COL_SANDAI_KETTO}[4] = hn_fm.{COL_HANSYOKU_NUM}
+            ON sk.ketto4_hanshoku_toroku_bango = hn_fm.{COL_HANSYOKU_NUM}
         LEFT JOIN {TABLE_HANSYOKU} hn_mf
-            ON sk.{COL_SANDAI_KETTO}[5] = hn_mf.{COL_HANSYOKU_NUM}
+            ON sk.ketto5_hanshoku_toroku_bango = hn_mf.{COL_HANSYOKU_NUM}
         LEFT JOIN {TABLE_HANSYOKU} hn_mm
-            ON sk.{COL_SANDAI_KETTO}[6] = hn_mm.{COL_HANSYOKU_NUM}
+            ON sk.ketto6_hanshoku_toroku_bango = hn_mm.{COL_HANSYOKU_NUM}
         WHERE sk.{COL_KETTONUM} = ANY($1)
     """
 
@@ -271,51 +282,51 @@ async def get_horses_training(
         WITH combined_training AS (
             -- 坂路調教
             SELECT
-                {COL_KETTONUM},
-                {COL_CHOKYO_DATE},
+                ketto_toroku_bango,
+                chokyo_nengappi,
                 'hanro' AS training_type,
-                han_name,
-                baba_jotai,
-                {COL_TIME_4F},
-                {COL_TIME_3F},
-                han_type,
-                tresen_kubun
+                tracen_kubun,
+                time_gokei_4furlong,
+                time_gokei_3furlong,
+                lap_time_4furlong,
+                lap_time_3furlong
             FROM {TABLE_HANRO_CHOKYO}
-            WHERE {COL_KETTONUM} = ANY($1)
-              AND {COL_CHOKYO_DATE} >= $2
-              AND {COL_TIME_4F} > 0
+            WHERE ketto_toroku_bango = ANY($1)
+              AND chokyo_nengappi >= $2
+              AND time_gokei_4furlong IS NOT NULL
+              AND time_gokei_4furlong <> '0'
 
             UNION ALL
 
             -- ウッド調教
             SELECT
-                {COL_KETTONUM},
-                {COL_CHOKYO_DATE},
+                ketto_toroku_bango,
+                chokyo_nengappi,
                 'wood' AS training_type,
-                han_name,
-                baba_jotai,
-                time_6f AS {COL_TIME_4F},
-                time_5f AS {COL_TIME_3F},
-                han_type,
-                tresen_kubun
+                tracen_kubun,
+                time_gokei_6furlong AS time_gokei_4furlong,
+                time_gokei_5furlong AS time_gokei_3furlong,
+                laptime_6furlong AS lap_time_4furlong,
+                laptime_5furlong AS lap_time_3furlong
             FROM {TABLE_WOOD_CHOKYO}
-            WHERE {COL_KETTONUM} = ANY($1)
-              AND {COL_CHOKYO_DATE} >= $2
-              AND time_6f > 0
+            WHERE ketto_toroku_bango = ANY($1)
+              AND chokyo_nengappi >= $2
+              AND time_gokei_6furlong IS NOT NULL
+              AND time_gokei_6furlong <> '0'
         ),
         ranked_training AS (
             SELECT
                 *,
                 ROW_NUMBER() OVER (
-                    PARTITION BY {COL_KETTONUM}
-                    ORDER BY {COL_CHOKYO_DATE} DESC
+                    PARTITION BY ketto_toroku_bango
+                    ORDER BY chokyo_nengappi DESC
                 ) AS rn
             FROM combined_training
         )
         SELECT *
         FROM ranked_training
         WHERE rn <= 5
-        ORDER BY {COL_KETTONUM}, rn
+        ORDER BY ketto_toroku_bango, rn
     """
 
     try:
@@ -324,7 +335,7 @@ async def get_horses_training(
         # kettonum ごとにグループ化
         result: Dict[str, List[Dict[str, Any]]] = {}
         for row in rows:
-            kettonum = row[COL_KETTONUM]
+            kettonum = row['ketto_toroku_bango']
             if kettonum not in result:
                 result[kettonum] = []
             result[kettonum].append(dict(row))
@@ -509,3 +520,98 @@ async def search_horses_by_name(
     except Exception as e:
         logger.error(f"Failed to search horses by name: name={name}, error={e}")
         raise
+
+
+async def get_training_before_race(
+    conn: Connection,
+    kettonum: str,
+    race_date: str,
+    days_before: int = 14
+) -> Optional[Dict[str, Any]]:
+    """
+    レース前の直近調教データを取得
+
+    Args:
+        conn: データベース接続
+        kettonum: 血統登録番号
+        race_date: レース日（YYYYMMDD形式）
+        days_before: 何日前まで遡るか（デフォルト: 14日）
+
+    Returns:
+        調教データ（坂路またはウッドチップ）
+    """
+    try:
+        # race_dateをdate型に変換
+        race_year = int(race_date[:4])
+        race_month = int(race_date[4:6])
+        race_day = int(race_date[6:8])
+        race_dt = date(race_year, race_month, race_day)
+
+        # 検索開始日
+        start_date = race_dt - timedelta(days=days_before)
+        start_date_str = start_date.strftime("%Y%m%d")
+
+        # 坂路調教データを検索
+        hanro_sql = f"""
+            SELECT
+                chokyo_nengappi as training_date,
+                time_gokei_4furlong as time_4f,
+                time_gokei_3furlong as time_3f,
+                '坂路' as training_type
+            FROM {TABLE_HANRO_CHOKYO}
+            WHERE {COL_KETTONUM} = $1
+              AND chokyo_nengappi >= $2
+              AND chokyo_nengappi < $3
+              AND {COL_DATA_KUBUN} = $4
+            ORDER BY chokyo_nengappi DESC
+            LIMIT 1
+        """
+
+        hanro_row = await conn.fetchrow(
+            hanro_sql,
+            kettonum,
+            start_date_str,
+            race_date,
+            DATA_KUBUN_KAKUTEI
+        )
+
+        # ウッドチップ調教データを検索
+        wood_sql = f"""
+            SELECT
+                chokyo_nengappi as training_date,
+                time_gokei_4furlong as time_4f,
+                time_gokei_3furlong as time_3f,
+                'ウッド' as training_type
+            FROM {TABLE_WOOD_CHOKYO}
+            WHERE {COL_KETTONUM} = $1
+              AND chokyo_nengappi >= $2
+              AND chokyo_nengappi < $3
+              AND {COL_DATA_KUBUN} = $4
+            ORDER BY chokyo_nengappi DESC
+            LIMIT 1
+        """
+
+        wood_row = await conn.fetchrow(
+            wood_sql,
+            kettonum,
+            start_date_str,
+            race_date,
+            DATA_KUBUN_KAKUTEI
+        )
+
+        # より新しい方を返す
+        if hanro_row and wood_row:
+            if hanro_row["training_date"] >= wood_row["training_date"]:
+                return dict(hanro_row)
+            else:
+                return dict(wood_row)
+        elif hanro_row:
+            return dict(hanro_row)
+        elif wood_row:
+            return dict(wood_row)
+        else:
+            return None
+
+    except Exception as e:
+        logger.error(f"Failed to get training data: kettonum={kettonum}, race_date={race_date}, error={e}")
+        return None

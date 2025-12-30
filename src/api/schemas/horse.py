@@ -28,6 +28,15 @@ class Pedigree(BaseModel):
     dam_dam: str = Field(..., description="母母馬")
 
 
+class TrainingData(BaseModel):
+    """調教データ"""
+
+    training_type: str = Field(..., description="調教種別（坂路/ウッド）")
+    training_date: str = Field(..., description="調教日（YYYYMMDD）")
+    time_4f: Optional[str] = Field(None, description="4ハロンタイム")
+    time_3f: Optional[str] = Field(None, description="3ハロンタイム")
+
+
 class RecentRace(BaseModel):
     """最近のレース成績"""
 
@@ -47,6 +56,12 @@ class RecentRace(BaseModel):
     time: str = Field(
         ..., description="タイム（MM:SS.S形式）"
     )
+    time_diff: Optional[str] = Field(
+        None, description="勝ち馬とのタイム差（秒）"
+    )
+    winner_name: Optional[str] = Field(
+        None, description="勝ち馬名（1着馬）"
+    )
     jockey: str = Field(..., description="騎手名")
     weight: float = Field(..., description="装着重量（kg）")
     horse_weight: Optional[int] = Field(
@@ -57,6 +72,9 @@ class RecentRace(BaseModel):
     )
     prize_money: int = Field(
         ..., ge=0, description="獲得賞金（円）"
+    )
+    training: Optional[TrainingData] = Field(
+        None, description="レース前直近調教データ"
     )
 
 
