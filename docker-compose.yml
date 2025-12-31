@@ -25,6 +25,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - PYTHONDONTWRITEBYTECODE=1
       - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
@@ -39,7 +40,7 @@ services:
       - ./prompts:/app/prompts:ro
       - ./models:/app/models
       - ./logs:/app/logs
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -57,6 +58,7 @@ services:
     container_name: keiba-discord-bot
     command: python -m src.discord.bot
     environment:
+      - PYTHONDONTWRITEBYTECODE=1
       - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
