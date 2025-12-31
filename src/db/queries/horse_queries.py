@@ -32,6 +32,7 @@ from src.db.table_names import (
     COL_TIME,
     COL_BATAIJU,
     COL_KISYUCODE,
+    COL_KISYU_NAME,
     COL_CHOKYOSICODE,
     COL_DATA_KUBUN,
     COL_SANDAI_KETTO,
