@@ -7,7 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Query, Path, status
 
 from typing import Optional, List
-from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace, TrainingData
+from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace, TrainingData, TrainingRecord
 from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
 from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name, get_training_before_race, get_horses_training
@@ -265,6 +265,17 @@ async def get_horse(
                 except (ValueError, IndexError):
                     pass
 
+            # 調教データを変換
+            training_data = detail.get("training", [])
+            training_records = []
+            for t in training_data[:5]:  # 直近5件
+                training_records.append(TrainingRecord(
+                    training_type=t.get("training_type", "unknown"),
+                    chokyo_nengappi=t.get("chokyo_nengappi", ""),
+                    time_gokei_4furlong=t.get("time_gokei_4furlong"),
+                    time_gokei_3furlong=t.get("time_gokei_3furlong"),
+                ))
+
             response = HorseDetail(
                 kettonum=kettonum,
                 horse_name=horse_info[COL_BAMEI],
@@ -282,7 +293,8 @@ async def get_horse(
                 prize_money=total_prize_money,
                 running_style=None,  # TODO: 脚質判定ロジックを追加
                 pedigree=pedigree,
-                recent_races=recent_races
+                recent_races=recent_races,
+                training=training_records
             )
 
             logger.info(f"Horse detail retrieved: {horse_info[COL_BAMEI]} ({total_races} races)")

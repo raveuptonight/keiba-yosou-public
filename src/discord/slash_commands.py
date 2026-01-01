@@ -28,6 +28,34 @@ logger = logging.getLogger(__name__)
 
 
 # ========================================
+# ヘルパー関数
+# ========================================
+
+def format_race_time(time_val: str) -> str:
+    """
+    レースタイムをフォーマット
+
+    Args:
+        time_val: タイム値（例: "1194" = 1分19秒4）
+
+    Returns:
+        フォーマット済みタイム（例: "1:19.4"）
+    """
+    if not time_val or time_val == "?" or not str(time_val).isdigit():
+        return str(time_val) if time_val else "?"
+
+    time_str = str(time_val)
+    if len(time_str) >= 3:
+        # 最後の1桁がコンマ秒、その前2桁が秒、残りが分
+        deciseconds = time_str[-1]  # コンマ秒（0.1秒単位）
+        seconds = int(time_str[-3:-1])  # 秒
+        minutes = int(time_str[:-3]) if len(time_str) > 3 else 0  # 分
+        return f"{minutes}:{seconds:02d}.{deciseconds}"
+    else:
+        return time_str
+
+
+# ========================================
 # インタラクティブコンポーネント
 # ========================================
 
@@ -483,8 +511,9 @@ class HorseDetailButtonView(View):
             venue = race.get("venue", "?")[:4]
             distance = race.get("distance", "?")
             time_val = race.get("time", "?")
+            time_formatted = format_race_time(time_val)
 
-            lines.append(f"{race_date:<12} {pos:>4}着 {venue:<6} {distance:>6}m {time_val:>8}")
+            lines.append(f"{race_date:<12} {pos:>4}着 {venue:<6} {distance:>6}m {time_formatted:>8}")
 
         lines.append("```")
 
@@ -653,6 +682,7 @@ def create_horse_summary_embed(horse_data: Dict[str, Any], race_entry: Dict[str,
             finish = race.get("finish_position", "?")
             distance = race.get("distance", "?")
             time = race.get("time", "?")
+            time_formatted = format_race_time(time)
             time_diff = race.get("time_diff")
             winner_name = race.get("winner_name")
             weight = race.get("weight", 0)  # 斤量
@@ -688,7 +718,7 @@ def create_horse_summary_embed(horse_data: Dict[str, Any], race_entry: Dict[str,
                     time_sec = int(time_4f) / 10.0
                     training_str = f" [{training_type}{time_sec:.1f}]"
 
-            race_text += f"{finish}着 {race_name} {distance}m ({time}){diff_str}{weight_str}{training_str}\n"
+            race_text += f"{finish}着 {race_name} {distance}m ({time_formatted}){diff_str}{weight_str}{training_str}\n"
 
         embed.add_field(
             name="📅 近走5走",
@@ -696,12 +726,38 @@ def create_horse_summary_embed(horse_data: Dict[str, Any], race_entry: Dict[str,
             inline=False
         )
 
-    # 調教データ（近日中に実装予定のプレースホルダー）
-    embed.add_field(
-        name="🏃 調教データ",
-        value="準備中（坂路・ウッドチップの調教タイム）",
-        inline=False
-    )
+    # 調教データ（直近の調教タイム）
+    training_data = horse_data.get("training", [])
+    if training_data:
+        training_text = ""
+        for t in training_data[:5]:  # 最大5件
+            t_date = t.get("chokyo_nengappi", "")
+            if t_date and len(t_date) >= 8:
+                formatted_date = f"{t_date[:4]}/{t_date[4:6]}/{t_date[6:8]}"
+            else:
+                formatted_date = t_date
+            t_type = "坂路" if t.get("training_type") == "hanro" else "ウッド"
+            time_4f = t.get("time_gokei_4furlong", "-")
+            time_3f = t.get("time_gokei_3furlong", "-")
+            # タイムをフォーマット（例: 0523 → 52.3秒）
+            if time_4f and time_4f != "-" and len(time_4f) >= 3:
+                time_4f_sec = int(time_4f) / 10.0
+                time_4f = f"{time_4f_sec:.1f}"
+            if time_3f and time_3f != "-" and len(time_3f) >= 3:
+                time_3f_sec = int(time_3f) / 10.0
+                time_3f = f"{time_3f_sec:.1f}"
+            training_text += f"**{formatted_date}** [{t_type}] 4F: {time_4f} / 3F: {time_3f}\n"
+        embed.add_field(
+            name="🏃 調教データ",
+            value=training_text or "データなし",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="🏃 調教データ",
+            value="データなし",
+            inline=False
+        )
 
     return embed
 

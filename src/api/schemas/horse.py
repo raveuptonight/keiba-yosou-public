@@ -92,6 +92,15 @@ class HorseSearchResult(BaseModel):
     prize: int = Field(0, ge=0, description="獲得賞金（円）")
 
 
+class TrainingRecord(BaseModel):
+    """調教記録（DB生データ形式）"""
+
+    training_type: str = Field(..., description="調教種別（hanro/wood）")
+    chokyo_nengappi: str = Field(..., description="調教日（YYYYMMDD）")
+    time_gokei_4furlong: Optional[str] = Field(None, description="4ハロンタイム")
+    time_gokei_3furlong: Optional[str] = Field(None, description="3ハロンタイム")
+
+
 class HorseDetail(BaseModel):
     """馬の詳細情報"""
 
@@ -131,4 +140,7 @@ class HorseDetail(BaseModel):
     )
     recent_races: List[RecentRace] = Field(
         ..., description="最近のレース成績"
+    )
+    training: List[TrainingRecord] = Field(
+        default_factory=list, description="直近の調教データ"
     )
