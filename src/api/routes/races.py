@@ -100,6 +100,24 @@ def _get_venue_name(venue_code: str) -> str:
     return venue_map.get(venue_code, "不明")
 
 
+def _get_grade_display(grade_code: str) -> Optional[str]:
+    """グレードコードから表示名を取得"""
+    if not grade_code:
+        return None
+    grade_map = {
+        "A": "G1",
+        "B": "G2",
+        "C": "G3",
+        "D": "重賞",
+        "E": "OP",
+        "F": "J・G1",
+        "G": "J・G2",
+        "H": "J・G3",
+        "L": "L",
+    }
+    return grade_map.get(grade_code.strip())
+
+
 def _format_track_code(track_code: str) -> str:
     """馬場コードをフォーマット"""
     if track_code.startswith("1"):
@@ -163,7 +181,7 @@ async def get_today_races(
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
                     venue_code=race[COL_JYOCD],
-                    grade=race.get(COL_GRADE_CD),
+                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
                     distance=race[COL_KYORI],
                     track_code=race[COL_TRACK_CD],
                 ))
@@ -232,7 +250,7 @@ async def get_upcoming_races_list(
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
                     venue_code=race[COL_JYOCD],
-                    grade=race.get(COL_GRADE_CD),
+                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
                     distance=race[COL_KYORI],
                     track_code=race[COL_TRACK_CD],
                     race_date=f"{race[COL_KAISAI_YEAR]}-{race[COL_KAISAI_MONTHDAY][:2]}-{race[COL_KAISAI_MONTHDAY][2:]}"
@@ -312,7 +330,7 @@ async def get_races_for_date(
                     race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                     venue=_get_venue_name(race[COL_JYOCD]),
                     venue_code=race[COL_JYOCD],
-                    grade=race.get(COL_GRADE_CD),
+                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
                     distance=race[COL_KYORI],
                     track_code=race[COL_TRACK_CD],
                     race_date=target_date
@@ -493,7 +511,7 @@ async def get_race(
                 race_time=race.get(COL_HASSO_JIKOKU, '不明'),
                 venue=_get_venue_name(race[COL_JYOCD]),
                 venue_code=race[COL_JYOCD],
-                grade=race.get(COL_GRADE_CD),
+                grade=_get_grade_display(race.get(COL_GRADE_CD)),
                 distance=race[COL_KYORI],
                 track_code=race[COL_TRACK_CD],
                 track_condition=track_condition,
@@ -589,7 +607,7 @@ async def search_races_by_name(
                     race_time=None,
                     venue=_get_venue_name(race["venue_code"]),
                     venue_code=race["venue_code"],
-                    grade=race.get("grade_code"),
+                    grade=_get_grade_display(race.get("grade_code")),
                     distance=race["distance"],
                     track_code=race["track_code"]
                 ))

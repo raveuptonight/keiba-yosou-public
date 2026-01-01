@@ -56,6 +56,24 @@ def format_race_time(time_val: str) -> str:
         return time_str
 
 
+def get_grade_display(grade_code: str) -> str:
+    """グレードコードから表示名を取得"""
+    if not grade_code:
+        return ""
+    grade_map = {
+        "A": "G1",
+        "B": "G2",
+        "C": "G3",
+        "D": "重賞",
+        "E": "OP",
+        "F": "J・G1",
+        "G": "J・G2",
+        "H": "J・G3",
+        "L": "L",
+    }
+    return grade_map.get(grade_code.strip(), grade_code)
+
+
 def format_prize_money(prize: int) -> str:
     """
     賞金を万円単位でフォーマット
@@ -878,7 +896,7 @@ def get_upcoming_races_from_db(days_ahead: int = 7) -> List[Dict]:
                     'race_number': row[2],
                     'kyori': row[3],
                     'track': track_type,
-                    'grade': row[5] or '',
+                    'grade': get_grade_display(row[5]) if row[5] else '',
                     'date': target_date.strftime("%m/%d"),
                     'date_str': target_date.strftime("%Y-%m-%d")
                 })
