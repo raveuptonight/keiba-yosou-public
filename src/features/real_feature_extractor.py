@@ -210,9 +210,9 @@ class RealFeatureExtractor:
 
         # ===== 馬場適性 =====
         track_code = race_info.get('track_code', '')
+        features['is_turf'] = 1 if track_code.startswith('1') else 0  # 1x = 芝
         features['turf_win_rate'] = self._calc_surface_rate(past_races, is_turf=True)
         features['dirt_win_rate'] = self._calc_surface_rate(past_races, is_turf=False)
-        features['is_turf'] = 1 if track_code.startswith('1') else 0  # 1x = 芝
 
         # ===== クラス昇降 =====
         features['class_change'] = self._calc_class_change(past_races, race_info)
@@ -686,6 +686,7 @@ class RealFeatureExtractor:
             return result
         except Exception as e:
             logger.debug(f"Training data not available: {e}")
+            self.conn.rollback()
             return {'score': 50.0, 'time_4f': 52.0, 'count': 0}
 
     def _calc_distance_change(self, past_races: List[Dict], race_info: Dict) -> int:
@@ -805,6 +806,7 @@ class RealFeatureExtractor:
             return result
         except Exception as e:
             logger.debug(f"Distance stats not available: {e}")
+            self.conn.rollback()
             return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
 
     def _get_baba_stats(self, kettonum: str, race_code: str, track_code: str, baba_code: str) -> Dict:
@@ -860,6 +862,7 @@ class RealFeatureExtractor:
             return result
         except Exception as e:
             logger.debug(f"Baba stats not available: {e}")
+            self.conn.rollback()
             return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
 
     def _get_detailed_training(self, kettonum: str, race_code: str) -> Dict:
@@ -908,6 +911,7 @@ class RealFeatureExtractor:
             return result
         except Exception as e:
             logger.debug(f"Detailed training not available: {e}")
+            self.conn.rollback()
             return {'time_3f': 38.0, 'lap_1f': 12.5, 'days_before': 7}
 
     def _calc_turn_rate(self, past_races: List[Dict], is_right: bool) -> float:

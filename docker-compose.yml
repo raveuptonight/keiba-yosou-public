@@ -35,15 +35,24 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_MODEL=${GEMINI_MODEL}
       - LLM_PROVIDER=${LLM_PROVIDER}
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ./src:/app/src:ro        # ソースコード（読み取り専用）
       - ./prompts:/app/prompts:ro
       - ./models:/app/models
       - ./logs:/app/logs
+      - ./backtest_results:/app/backtest_results
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -99,12 +108,21 @@ services:
       - DB_NAME=keiba_db
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
+      - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./data:/app/data
+      - ./backtest_results:/app/backtest_results
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     labels:
       # 毎日午前3時に実行（レース終了後、翌日の予想前）
       ofelia.enabled: "true"
