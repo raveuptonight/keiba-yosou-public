@@ -6,12 +6,12 @@ Discord Bot スラッシュコマンド
 
 import os
 import logging
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Any
 import discord
 from discord import app_commands
 from discord.ext import commands
-from discord.ui import Select, View, Button
+from discord.ui import Select, View, Button, Modal, TextInput
 import requests
 
 from src.config import (
@@ -23,6 +23,7 @@ from src.discord.formatters import (
     format_race_list,
 )
 from src.services.race_resolver import resolve_race_input, MultipleRacesFoundException
+from src.db.connection import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -801,6 +802,513 @@ def format_horse_detail(data: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ========================================
+# 予想コマンド用インタラクティブコンポーネント
+# ========================================
+
+def get_upcoming_races_from_db(days_ahead: int = 7) -> List[Dict]:
+    """出馬表確定済みのレースをDBから取得"""
+    db = get_db()
+    conn = db.get_connection()
+
+    keibajo_names = {
+        '01': '札幌', '02': '函館', '03': '福島', '04': '新潟', '05': '東京',
+        '06': '中山', '07': '中京', '08': '京都', '09': '阪神', '10': '小倉'
+    }
+
+    try:
+        cur = conn.cursor()
+
+        # 今日以降のdata_kubunが3,4,5,6のレースを取得
+        today = date.today()
+        races = []
+
+        for i in range(days_ahead + 1):
+            target_date = today + timedelta(days=i)
+            kaisai_gappi = target_date.strftime("%m%d")
+            kaisai_nen = str(target_date.year)
+
+            cur.execute('''
+                SELECT DISTINCT r.race_code, r.keibajo_code, r.race_bango,
+                       r.kyori, r.track_code, r.grade_code, r.kaisai_gappi
+                FROM race_shosai r
+                WHERE r.kaisai_nen = %s
+                  AND r.kaisai_gappi = %s
+                  AND r.data_kubun IN ('3', '4', '5', '6')
+                ORDER BY r.race_code
+            ''', (kaisai_nen, kaisai_gappi))
+
+            for row in cur.fetchall():
+                track_type = '芝' if row[4] and row[4].startswith('1') else 'ダ'
+                races.append({
+                    'race_code': row[0],
+                    'keibajo_code': row[1],
+                    'keibajo': keibajo_names.get(row[1], row[1]),
+                    'race_number': row[2],
+                    'kyori': row[3],
+                    'track': track_type,
+                    'grade': row[5] or '',
+                    'date': target_date.strftime("%m/%d"),
+                    'date_str': target_date.strftime("%Y-%m-%d")
+                })
+
+        cur.close()
+        return races
+
+    finally:
+        conn.close()
+
+
+def run_ml_prediction(race_code: str) -> List[Dict]:
+    """MLモデルで予想を実行"""
+    import joblib
+    import pandas as pd
+    import numpy as np
+
+    model_path = "/app/models/xgboost_model_latest.pkl"
+
+    try:
+        # モデル読み込み
+        model_data = joblib.load(model_path)
+        model = model_data['model']
+        feature_names = model_data['feature_names']
+    except Exception as e:
+        logger.error(f"モデル読み込み失敗: {e}")
+        return []
+
+    db = get_db()
+    conn = db.get_connection()
+
+    try:
+        from src.models.fast_train import FastFeatureExtractor
+
+        cur = conn.cursor()
+
+        # レース情報取得
+        cur.execute('''
+            SELECT kaisai_nen, keibajo_code, race_bango
+            FROM race_shosai
+            WHERE race_code = %s
+            LIMIT 1
+        ''', (race_code,))
+        race_info = cur.fetchone()
+        if not race_info:
+            return []
+
+        year = int(race_info[0])
+
+        # 出走馬データを取得
+        cur.execute('''
+            SELECT
+                race_code, umaban, wakuban, ketto_toroku_bango,
+                seibetsu_code, barei, futan_juryo,
+                blinker_shiyo_kubun, kishu_code, chokyoshi_code,
+                bataiju, zogen_sa, bamei
+            FROM umagoto_race_joho
+            WHERE race_code = %s
+              AND data_kubun IN ('3', '4', '5', '6')
+            ORDER BY umaban::int
+        ''', (race_code,))
+
+        cols = [d[0] for d in cur.description]
+        rows = cur.fetchall()
+        entries = [dict(zip(cols, row)) for row in rows]
+
+        if not entries:
+            return []
+
+        # レース情報取得
+        cur.execute('''
+            SELECT race_code, kaisai_nen, kaisai_gappi, keibajo_code,
+                   kyori, track_code, grade_code,
+                   shiba_babajotai_code, dirt_babajotai_code
+            FROM race_shosai
+            WHERE race_code = %s
+        ''', (race_code,))
+        race_row = cur.fetchone()
+        race_cols = [d[0] for d in cur.description]
+        races = [dict(zip(race_cols, race_row))] if race_row else []
+
+        # 特徴量抽出
+        extractor = FastFeatureExtractor(conn)
+        kettonums = [e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')]
+        past_stats = extractor._get_past_stats_batch(kettonums)
+        extractor._cache_jockey_trainer_stats(year)
+
+        jh_pairs = [(e.get('kishu_code', ''), e.get('ketto_toroku_bango', ''))
+                    for e in entries if e.get('kishu_code') and e.get('ketto_toroku_bango')]
+        jockey_horse_stats = extractor._get_jockey_horse_combo_batch(jh_pairs)
+        surface_stats = extractor._get_surface_stats_batch(kettonums)
+        turn_stats = extractor._get_turn_rates_batch(kettonums)
+        for kettonum, stats in turn_stats.items():
+            if kettonum in past_stats:
+                past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
+                past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
+        training_stats = extractor._get_training_stats_batch(kettonums)
+
+        # 特徴量生成
+        features_list = []
+        for entry in entries:
+            entry['kakutei_chakujun'] = '01'  # 予測用ダミー
+
+            features = extractor._build_features(
+                entry, races, past_stats,
+                jockey_horse_stats=jockey_horse_stats,
+                distance_stats=surface_stats,
+                training_stats=training_stats
+            )
+            if features:
+                features['bamei'] = entry.get('bamei', '')
+                features_list.append(features)
+
+        if not features_list:
+            return []
+
+        # 予測
+        df = pd.DataFrame(features_list)
+        X = df[feature_names].fillna(0)
+        predictions = model.predict(X)
+
+        # 結果を整形
+        results = []
+        for i, pred in enumerate(predictions):
+            results.append({
+                'umaban': features_list[i]['umaban'],
+                'bamei': features_list[i].get('bamei', ''),
+                'pred_score': float(pred),
+                'pred_rank': 0
+            })
+
+        # 予測順位を設定（スコアが低いほど上位）
+        results.sort(key=lambda x: x['pred_score'])
+        for i, r in enumerate(results):
+            r['pred_rank'] = i + 1
+
+        cur.close()
+        return results
+
+    except Exception as e:
+        logger.error(f"ML予測エラー: {e}", exc_info=True)
+        return []
+    finally:
+        conn.close()
+
+
+def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types: List[str]) -> Dict:
+    """
+    予測結果から推奨馬券を生成
+
+    Args:
+        predictions: ML予測結果
+        budget: 予算（円）
+        bet_types: 購入する馬券種類
+
+    Returns:
+        推奨馬券情報
+    """
+    if not predictions:
+        return {'error': '予測データがありません'}
+
+    top3 = sorted(predictions, key=lambda x: x['pred_rank'])[:3]
+    top5 = sorted(predictions, key=lambda x: x['pred_rank'])[:5]
+
+    recommendations = {
+        'top_picks': top3,
+        'bets': [],
+        'total_cost': 0
+    }
+
+    # 各馬券種類ごとの推奨
+    bet_costs = {
+        'tansho': 100,      # 単勝
+        'fukusho': 100,     # 複勝
+        'umaren': 100,      # 馬連
+        'wide': 100,        # ワイド
+        'umatan': 100,      # 馬単
+        'sanrenpuku': 100,  # 三連複
+        'sanrentan': 100,   # 三連単
+    }
+
+    bet_names = {
+        'tansho': '単勝',
+        'fukusho': '複勝',
+        'umaren': '馬連',
+        'wide': 'ワイド',
+        'umatan': '馬単',
+        'sanrenpuku': '三連複',
+        'sanrentan': '三連単',
+    }
+
+    total = 0
+
+    for bet_type in bet_types:
+        if bet_type == 'tansho':
+            # 単勝: 1位予想
+            bet = {
+                'type': bet_names[bet_type],
+                'picks': [f"{top3[0]['umaban']}番 {top3[0]['bamei']}"],
+                'cost': bet_costs[bet_type]
+            }
+            recommendations['bets'].append(bet)
+            total += bet_costs[bet_type]
+
+        elif bet_type == 'fukusho':
+            # 複勝: TOP3それぞれ
+            for h in top3:
+                bet = {
+                    'type': bet_names[bet_type],
+                    'picks': [f"{h['umaban']}番 {h['bamei']}"],
+                    'cost': bet_costs[bet_type]
+                }
+                recommendations['bets'].append(bet)
+                total += bet_costs[bet_type]
+
+        elif bet_type == 'umaren':
+            # 馬連: 1-2位
+            bet = {
+                'type': bet_names[bet_type],
+                'picks': [f"{top3[0]['umaban']}-{top3[1]['umaban']}"],
+                'cost': bet_costs[bet_type]
+            }
+            recommendations['bets'].append(bet)
+            total += bet_costs[bet_type]
+
+        elif bet_type == 'wide':
+            # ワイド: 1-2, 1-3, 2-3
+            for i, j in [(0, 1), (0, 2), (1, 2)]:
+                bet = {
+                    'type': bet_names[bet_type],
+                    'picks': [f"{top3[i]['umaban']}-{top3[j]['umaban']}"],
+                    'cost': bet_costs[bet_type]
+                }
+                recommendations['bets'].append(bet)
+                total += bet_costs[bet_type]
+
+        elif bet_type == 'umatan':
+            # 馬単: 1位→2位
+            bet = {
+                'type': bet_names[bet_type],
+                'picks': [f"{top3[0]['umaban']}→{top3[1]['umaban']}"],
+                'cost': bet_costs[bet_type]
+            }
+            recommendations['bets'].append(bet)
+            total += bet_costs[bet_type]
+
+        elif bet_type == 'sanrenpuku':
+            # 三連複: 1-2-3位
+            bet = {
+                'type': bet_names[bet_type],
+                'picks': [f"{top3[0]['umaban']}-{top3[1]['umaban']}-{top3[2]['umaban']}"],
+                'cost': bet_costs[bet_type]
+            }
+            recommendations['bets'].append(bet)
+            total += bet_costs[bet_type]
+
+        elif bet_type == 'sanrentan':
+            # 三連単: 1位→2位→3位
+            bet = {
+                'type': bet_names[bet_type],
+                'picks': [f"{top3[0]['umaban']}→{top3[1]['umaban']}→{top3[2]['umaban']}"],
+                'cost': bet_costs[bet_type]
+            }
+            recommendations['bets'].append(bet)
+            total += bet_costs[bet_type]
+
+    recommendations['total_cost'] = total
+
+    # 予算オーバーの場合は警告
+    if total > budget:
+        recommendations['warning'] = f"推奨馬券の合計({total:,}円)が予算({budget:,}円)を超えています"
+
+    return recommendations
+
+
+class BudgetModal(Modal, title="予算入力"):
+    """予算入力用モーダル"""
+
+    budget = TextInput(
+        label="予算（円）",
+        placeholder="10000",
+        default="10000",
+        required=True,
+        min_length=1,
+        max_length=10
+    )
+
+    def __init__(self, race_code: str, race_info: str, bet_types: List[str]):
+        super().__init__()
+        self.race_code = race_code
+        self.race_info = race_info
+        self.bet_types = bet_types
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            budget_value = int(self.budget.value.replace(',', ''))
+        except ValueError:
+            await interaction.followup.send("予算は数値で入力してください", ephemeral=True)
+            return
+
+        # ML予測実行
+        predictions = run_ml_prediction(self.race_code)
+
+        if not predictions:
+            await interaction.followup.send("予測に失敗しました。出馬表データを確認してください。", ephemeral=True)
+            return
+
+        # 推奨馬券生成
+        recommendations = generate_bet_recommendations(
+            predictions, budget_value, self.bet_types
+        )
+
+        # 結果をEmbedで表示
+        embed = discord.Embed(
+            title=f"🎯 予想結果: {self.race_info}",
+            description=f"予算: {budget_value:,}円",
+            color=discord.Color.gold()
+        )
+
+        # TOP3表示
+        top3_text = ""
+        medals = ['🥇', '🥈', '🥉']
+        for i, pick in enumerate(recommendations['top_picks']):
+            top3_text += f"{medals[i]} **{pick['umaban']}番 {pick['bamei']}**\n"
+        embed.add_field(name="📊 ML予想 TOP3", value=top3_text, inline=False)
+
+        # 推奨馬券表示
+        if recommendations['bets']:
+            bets_text = ""
+            for bet in recommendations['bets']:
+                bets_text += f"**{bet['type']}**: {', '.join(bet['picks'])} ({bet['cost']:,}円)\n"
+            embed.add_field(name="🎫 推奨馬券", value=bets_text, inline=False)
+
+            embed.add_field(
+                name="💰 合計金額",
+                value=f"{recommendations['total_cost']:,}円",
+                inline=False
+            )
+
+        if recommendations.get('warning'):
+            embed.add_field(name="⚠️ 注意", value=recommendations['warning'], inline=False)
+
+        embed.set_footer(text="※ 馬券の購入は自己責任でお願いします")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class BetTypeSelectView(View):
+    """馬券種類選択ビュー"""
+
+    def __init__(self, race_code: str, race_info: str, timeout: float = 120):
+        super().__init__(timeout=timeout)
+        self.race_code = race_code
+        self.race_info = race_info
+        self.selected_bet_types = ['tansho', 'fukusho', 'umaren']  # デフォルト
+
+        # 馬券種類選択ドロップダウン
+        bet_options = [
+            discord.SelectOption(label="単勝", value="tansho", default=True, description="1着を当てる"),
+            discord.SelectOption(label="複勝", value="fukusho", default=True, description="3着以内を当てる"),
+            discord.SelectOption(label="馬連", value="umaren", default=True, description="1,2着を当てる（順不同）"),
+            discord.SelectOption(label="ワイド", value="wide", description="3着以内の2頭を当てる"),
+            discord.SelectOption(label="馬単", value="umatan", description="1,2着を着順通りに当てる"),
+            discord.SelectOption(label="三連複", value="sanrenpuku", description="1,2,3着を当てる（順不同）"),
+            discord.SelectOption(label="三連単", value="sanrentan", description="1,2,3着を着順通りに当てる"),
+        ]
+
+        select = Select(
+            placeholder="馬券種類を選択（複数可）",
+            options=bet_options,
+            min_values=1,
+            max_values=7,
+            custom_id="bet_type_select"
+        )
+        select.callback = self.bet_type_selected
+        self.add_item(select)
+
+        # 次へボタン
+        next_btn = Button(label="予算入力へ", style=discord.ButtonStyle.primary, custom_id="next_to_budget")
+        next_btn.callback = self.go_to_budget
+        self.add_item(next_btn)
+
+    async def bet_type_selected(self, interaction: discord.Interaction):
+        """馬券種類が選択されたとき"""
+        self.selected_bet_types = interaction.data["values"]
+        bet_names = {
+            'tansho': '単勝', 'fukusho': '複勝', 'umaren': '馬連',
+            'wide': 'ワイド', 'umatan': '馬単', 'sanrenpuku': '三連複', 'sanrentan': '三連単'
+        }
+        selected_names = [bet_names[bt] for bt in self.selected_bet_types]
+        await interaction.response.send_message(
+            f"選択した馬券: {', '.join(selected_names)}\n「予算入力へ」ボタンをクリックしてください",
+            ephemeral=True
+        )
+
+    async def go_to_budget(self, interaction: discord.Interaction):
+        """予算入力モーダルを表示"""
+        modal = BudgetModal(self.race_code, self.race_info, self.selected_bet_types)
+        await interaction.response.send_modal(modal)
+
+
+class PredictRaceSelectView(View):
+    """予想用レース選択ビュー"""
+
+    def __init__(self, races: List[Dict], timeout: float = 120):
+        super().__init__(timeout=timeout)
+        self.races = races
+
+        options = []
+        for race in races[:25]:  # 最大25件
+            label = f"{race['date']} {race['keibajo']} {race['race_number']}R"
+            if race.get('grade'):
+                label += f" [{race['grade']}]"
+            label = label[:100]
+
+            description = f"{race['track']}{race['kyori']}m"
+            description = description[:100]
+
+            options.append(discord.SelectOption(
+                label=label,
+                value=race['race_code'],
+                description=description
+            ))
+
+        if not options:
+            return
+
+        select = Select(
+            placeholder="予想するレースを選択...",
+            options=options,
+            min_values=1,
+            max_values=1,
+            custom_id="predict_race_select"
+        )
+        select.callback = self.race_selected
+        self.add_item(select)
+
+    async def race_selected(self, interaction: discord.Interaction):
+        """レースが選択されたとき"""
+        race_code = interaction.data["values"][0]
+
+        # 選択されたレース情報を取得
+        selected_race = next((r for r in self.races if r['race_code'] == race_code), None)
+        if not selected_race:
+            await interaction.response.send_message("レース情報の取得に失敗しました", ephemeral=True)
+            return
+
+        race_info = f"{selected_race['date']} {selected_race['keibajo']} {selected_race['race_number']}R"
+
+        # 馬券種類選択ビューを表示
+        view = BetTypeSelectView(race_code, race_info)
+        await interaction.response.send_message(
+            f"**選択されたレース**: {race_info} ({selected_race['track']}{selected_race['kyori']}m)\n\n"
+            "購入したい馬券の種類を選択してください（複数選択可）:",
+            view=view,
+            ephemeral=True
+        )
+
+
 class SlashCommands(commands.Cog):
     """
     スラッシュコマンド
@@ -817,18 +1325,63 @@ class SlashCommands(commands.Cog):
     # 予想コマンド
     # ========================================
 
-    @app_commands.command(name="predict", description="レースの予想を実行します")
+    @app_commands.command(name="predict", description="ML予想を実行します（インタラクティブ）")
+    @app_commands.describe(
+        days="何日先までのレースを表示するか（1-14日、デフォルト7日）"
+    )
+    async def predict(
+        self,
+        interaction: discord.Interaction,
+        days: int = 7
+    ):
+        """
+        ML予想を実行
+
+        インタラクティブなフローで：
+        1. 出馬表確定済みレースを選択
+        2. 馬券種類を選択
+        3. 予算を入力
+        4. 推奨馬券を表示
+        """
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # 出馬表確定済みレースを取得
+            races = get_upcoming_races_from_db(min(days, 14))
+
+            if not races:
+                await interaction.followup.send(
+                    "出馬表が確定しているレースがありません。\n"
+                    "開催前日（金曜日）以降にお試しください。",
+                    ephemeral=True
+                )
+                return
+
+            # レース選択ビューを表示
+            view = PredictRaceSelectView(races)
+            await interaction.followup.send(
+                f"🏇 **出馬表確定済みレース一覧** ({len(races)}件)\n\n"
+                "予想したいレースを選択してください:",
+                view=view,
+                ephemeral=True
+            )
+
+        except Exception as e:
+            logger.error(f"予想コマンドエラー: {e}", exc_info=True)
+            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
+
+    @app_commands.command(name="predict-race", description="特定のレースの予想を実行します")
     @app_commands.describe(
         race="レース指定（例: 京都2r, 中山11R, 202412280506）",
         temperature="LLM温度パラメータ（0.0-1.0、デフォルト0.3）"
     )
-    async def predict(
+    async def predict_race(
         self,
         interaction: discord.Interaction,
         race: str,
         temperature: float = 0.3
     ):
-        """レース予想を実行"""
+        """レース指定で予想を実行（従来の方式）"""
         # 処理中メッセージ（ephemeral）
         await interaction.response.defer(ephemeral=True)
 
@@ -1506,7 +2059,8 @@ class SlashCommands(commands.Cog):
         embed.add_field(
             name="予想",
             value=(
-                "`/predict <レース>` - レース予想を実行\n"
+                "`/predict [日数]` - ML予想を実行（インタラクティブ）\n"
+                "`/predict-race <レース>` - 特定レースの予想（従来方式）\n"
                 "`/today` - 本日のレース一覧\n"
                 "`/races [日数]` - 今後のレース一覧\n"
                 "`/race <レースID>` - レースの詳細情報"
