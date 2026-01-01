@@ -115,6 +115,21 @@ def generate_prediction_prompt(race_data: Dict[str, Any]) -> str:
         COL_TRAINER_NAME,
     )
 
+    # 追加のカラム名をインポート
+    from src.db.table_names import (
+        COL_着順, COL_RACE_DATE, COL_KYORI, COL_JYOCD,
+        COL_SHIBA_BABA_CD, COL_DIRT_BABA_CD, COL_TIME,
+        COL_RACE_NAME as COL_RACE_NAME_TBL,
+    )
+
+    # 競馬場コード変換
+    venue_map = {
+        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
+        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
+        "09": "阪神", "10": "小倉"
+    }
+    baba_map = {"1": "良", "2": "稍", "3": "重", "4": "不"}
+
     for i, horse in enumerate(horses[:18], 1):  # 最大18頭まで
         horse_num = horse.get(COL_UMABAN, i)
         horse_name = horse.get(COL_BAMEI, f"馬{i}")
@@ -128,16 +143,56 @@ def generate_prediction_prompt(race_data: Dict[str, Any]) -> str:
         prompt += f"- 騎手: {jockey}\n"
         prompt += f"- 調教師: {trainer}\n"
 
-        # 過去成績（最新5走）
+        # 血統情報
+        if kettonum in pedigrees:
+            pedigree = pedigrees[kettonum]
+            sire = pedigree.get("chichi_name", "不明")
+            dam_sire = pedigree.get("haha_chichi_name", "不明")
+            prompt += f"- 血統: 父{sire} / 母父{dam_sire}\n"
+
+        # 過去成績（最新5走）- 詳細情報付き
         if kettonum in histories and histories[kettonum]:
             prompt += "- 過去5走:\n"
             for idx, past_race in enumerate(histories[kettonum][:5], 1):
-                from src.db.table_names import COL_着順, COL_RACE_DATE
                 chakujun = past_race.get(COL_着順, "-")
-                race_date = past_race.get(COL_RACE_DATE, "不明")
-                prompt += f"  {idx}. {race_date} {chakujun}着\n"
+                race_date = past_race.get(COL_RACE_DATE, "")
+                kyori = past_race.get(COL_KYORI, "")
+                jyocd = past_race.get(COL_JYOCD, "")
+                venue_name = venue_map.get(str(jyocd).zfill(2), "不明")
+                # 馬場状態（芝 or ダート）
+                shiba_baba = past_race.get(COL_SHIBA_BABA_CD, "")
+                dirt_baba = past_race.get(COL_DIRT_BABA_CD, "")
+                baba_cd = shiba_baba if shiba_baba else dirt_baba
+                baba_name = baba_map.get(str(baba_cd), "")
+                # タイム
+                time_val = past_race.get(COL_TIME, "")
+                if time_val and len(str(time_val)) >= 3:
+                    t = str(time_val)
+                    time_str = f"{int(t[:-2]) if len(t) > 2 else 0}:{int(t[-2:]):02d}.{t[-1]}"
+                else:
+                    time_str = ""
+                race_name = past_race.get(COL_RACE_NAME_TBL, "")[:10] if past_race.get(COL_RACE_NAME_TBL) else ""
+
+                prompt += f"  {idx}. {race_date} {venue_name}{kyori}m {baba_name} {chakujun}着"
+                if time_str:
+                    prompt += f" {time_str}"
+                if race_name:
+                    prompt += f" ({race_name})"
+                prompt += "\n"
         else:
             prompt += "- 過去成績: データなし\n"
+
+        # 調教情報
+        if kettonum in training and training[kettonum]:
+            recent_training = training[kettonum][:2]  # 直近2本
+            prompt += "- 調教:\n"
+            for t in recent_training:
+                t_date = t.get("chokyo_nengappi", "")
+                t_type = "坂路" if t.get("training_type") == "hanro" else "ウッド"
+                time_4f = t.get("time_gokei_4furlong", "")
+                if time_4f and len(str(time_4f)) >= 3:
+                    time_4f_sec = int(time_4f) / 10.0
+                    prompt += f"  {t_date} {t_type} 4F{time_4f_sec:.1f}秒\n"
 
         # オッズ情報（単勝）
         if odds_data and "win" in odds_data:
