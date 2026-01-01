@@ -136,7 +136,7 @@ async def generate_prediction(
             get_race_prediction_data,
             check_race_exists,
         )
-        from src.services.gemini_client import generate_race_prediction
+        from src.services.claude_client import generate_race_prediction
 
         # 2. データ取得
         async with get_connection() as conn:
