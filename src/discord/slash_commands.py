@@ -56,6 +56,37 @@ def format_race_time(time_val: str) -> str:
         return time_str
 
 
+def format_prize_money(prize: int) -> str:
+    """
+    賞金を万円単位でフォーマット
+
+    Args:
+        prize: 賞金（100円単位で格納）
+
+    Returns:
+        フォーマット済み賞金（例: "1億3306万円"）
+    """
+    if not prize:
+        return "0円"
+
+    # 100円単位 → 円に変換
+    yen = prize * 100
+
+    # 億・万で表示
+    oku = yen // 100000000  # 億
+    man = (yen % 100000000) // 10000  # 万
+
+    if oku > 0:
+        if man > 0:
+            return f"{oku}億{man:,}万円"
+        else:
+            return f"{oku}億円"
+    elif man > 0:
+        return f"{man:,}万円"
+    else:
+        return f"{yen:,}円"
+
+
 # ========================================
 # インタラクティブコンポーネント
 # ========================================
@@ -641,7 +672,7 @@ def create_horse_summary_embed(horse_data: Dict[str, Any], race_entry: Dict[str,
         value=(
             f"{wins}勝 / {total_races}戦\n"
             f"勝率: {win_rate:.1f}%\n"
-            f"賞金: {horse_data.get('prize_money', 0):,}円"
+            f"賞金: {format_prize_money(horse_data.get('prize_money', 0))}"
         ),
         inline=True
     )
@@ -785,7 +816,7 @@ def format_horse_detail(data: Dict[str, Any]) -> str:
         f"調教師: {trainer_name}",
         "",
         f"**成績**: {wins}勝 / {total_races}戦 (勝率 {win_rate:.1f}%)",
-        f"**獲得賞金**: {prize:,}円",
+        f"**獲得賞金**: {format_prize_money(prize)}",
     ]
 
     # 直近レースがあれば表示
