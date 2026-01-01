@@ -15,7 +15,9 @@ from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 
 from src.features.feature_pipeline import FeatureExtractor
+from src.features.real_feature_extractor import RealFeatureExtractor
 from src.models.xgboost_model import HorseRacingXGBoost
+from src.db.connection import get_db
 from src.predict.llm import LLMClient
 from src.db.predictions_db import PredictionsDB
 from src.config import (
@@ -58,16 +60,19 @@ class HybridPredictionPipeline:
         predictions_db: 予想結果DBクライアント
     """
 
-    def __init__(self, model_path: Optional[str] = None):
+    def __init__(self, model_path: Optional[str] = None, use_real_features: bool = True):
         """
         Args:
             model_path: 学習済みモデルのパス（省略時はモックモード）
+            use_real_features: 実データから特徴量を抽出するか（False=モックデータ）
 
         Raises:
             ModelLoadError: モデル読み込みに失敗した場合
         """
         try:
+            self.use_real_features = use_real_features
             self.feature_extractor = FeatureExtractor()
+            self.real_feature_extractor = None  # 必要時に初期化
             self.ml_model = HorseRacingXGBoost()
             self.llm_client = LLMClient()
             self.predictions_db = PredictionsDB()
@@ -76,6 +81,8 @@ class HybridPredictionPipeline:
             if model_path:
                 logger.info(f"モデル読み込み: {model_path}")
                 self.ml_model.load(model_path)
+
+            logger.info(f"パイプライン初期化完了: use_real_features={use_real_features}")
         except Exception as e:
             logger.error(f"パイプライン初期化失敗: {e}")
             raise PipelineError(f"パイプライン初期化失敗: {e}") from e
@@ -215,12 +222,25 @@ class HybridPredictionPipeline:
             if num_horses == 0:
                 raise FeatureExtractionError("出走馬が0頭です")
 
-            # 特徴量抽出
-            logger.debug(f"特徴量抽出開始: {num_horses}頭")
-            features_df = self.feature_extractor.extract_all_features(
-                race_id,
-                num_horses
-            )
+            # 特徴量抽出（実データ or モック）
+            logger.debug(f"特徴量抽出開始: {num_horses}頭, use_real={self.use_real_features}")
+
+            if self.use_real_features:
+                # 実データから特徴量抽出
+                features_df = self._extract_real_features(race_id, race_data)
+            else:
+                # モックデータ
+                features_df = self.feature_extractor.extract_all_features(
+                    race_id,
+                    num_horses
+                )
+
+            if features_df.empty:
+                logger.warning("特徴量抽出結果が空、モックにフォールバック")
+                features_df = self.feature_extractor.extract_all_features(
+                    race_id,
+                    num_horses
+                )
 
             # ML予測
             logger.debug("ML予測開始")
@@ -235,7 +255,7 @@ class HybridPredictionPipeline:
                     'horse_name': horse.get('name', f'Horse {i + 1}'),
                     'rank_score': float(rank_scores[i]),
                     'win_probability': float(win_probs[i]),
-                    'features': features_df.iloc[i].to_dict()
+                    'features': features_df.iloc[i].to_dict() if i < len(features_df) else {}
                 })
 
             # 着順スコアでソート
@@ -252,6 +272,69 @@ class HybridPredictionPipeline:
             if isinstance(e, (FeatureExtractionError, ModelPredictionError)):
                 raise
             raise ModelPredictionError(f"ML予測失敗: {e}") from e
+
+    def _extract_real_features(
+        self,
+        race_id: str,
+        race_data: Dict[str, Any]
+    ) -> pd.DataFrame:
+        """
+        実データベースから特徴量を抽出
+
+        Args:
+            race_id: レースID（16桁のrace_code）
+            race_data: レースデータ
+
+        Returns:
+            DataFrame: 特徴量
+        """
+        try:
+            # DB接続を取得
+            db = get_db()
+            conn = db.get_connection()
+
+            if not conn:
+                logger.warning("DB接続失敗、モックにフォールバック")
+                return pd.DataFrame()
+
+            try:
+                # RealFeatureExtractorで特徴量抽出
+                if self.real_feature_extractor is None:
+                    self.real_feature_extractor = RealFeatureExtractor(conn)
+                else:
+                    self.real_feature_extractor.conn = conn
+
+                # data_kubun: 出馬表段階では "4" or "5"、確定後は "7"
+                # 予想時はまだ確定前なので "5"（速報出馬表）を使用
+                features_list = self.real_feature_extractor.extract_features_for_race(
+                    race_id,
+                    data_kubun="5"
+                )
+
+                if not features_list:
+                    # 確定データでも試す
+                    features_list = self.real_feature_extractor.extract_features_for_race(
+                        race_id,
+                        data_kubun="7"
+                    )
+
+                if not features_list:
+                    logger.warning(f"特徴量抽出結果が空: race_id={race_id}")
+                    return pd.DataFrame()
+
+                # umabanでソートしてDataFrameに変換
+                features_list.sort(key=lambda x: x.get('umaban', 0))
+                df = pd.DataFrame(features_list)
+
+                logger.info(f"実特徴量抽出完了: {len(df)}頭, features={len(df.columns)}")
+                return df
+
+            finally:
+                conn.close()
+
+        except Exception as e:
+            logger.error(f"実特徴量抽出失敗: {e}")
+            return pd.DataFrame()
 
     def _run_phase1(
         self,

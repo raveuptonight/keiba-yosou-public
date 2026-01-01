@@ -8,10 +8,17 @@ import logging
 import uuid
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from pathlib import Path
 import asyncpg
 
 import os
 from src.services.rate_limiter import claude_rate_limiter
+
+# MLモデルパス
+ML_MODEL_PATH = Path("/app/models/xgboost_model_latest.pkl")
+if not ML_MODEL_PATH.exists():
+    # ローカル開発時のパス
+    ML_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "xgboost_model_latest.pkl"
 from src.api.schemas.prediction import (
     PredictionResponse,
     PredictionResult,
@@ -51,6 +58,85 @@ VENUE_CODE_MAP = {
 def _is_mock_mode() -> bool:
     """モックモードかどうかを判定"""
     return os.getenv("DB_MODE", "local") == "mock"
+
+
+def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
+    """
+    機械学習による予測を計算
+
+    Args:
+        race_id: レースID（16桁）
+        horses: 出走馬リスト
+
+    Returns:
+        Dict[馬番, {"rank_score": float, "win_probability": float}]
+    """
+    logger.info(f"Computing ML predictions: race_id={race_id}, horses={len(horses)}")
+
+    try:
+        from src.features.real_feature_extractor import RealFeatureExtractor
+        from src.models.xgboost_model import HorseRacingXGBoost
+        from src.db.connection import get_db
+        import pandas as pd
+
+        # モデル読み込み
+        model = HorseRacingXGBoost()
+        if ML_MODEL_PATH.exists():
+            try:
+                model.load(str(ML_MODEL_PATH))
+                logger.info(f"ML model loaded: {ML_MODEL_PATH}")
+            except Exception as e:
+                logger.warning(f"Failed to load ML model, using mock: {e}")
+        else:
+            logger.warning(f"ML model not found: {ML_MODEL_PATH}")
+
+        # DB接続を取得
+        db = get_db()
+        conn = db.get_connection()
+
+        if not conn:
+            logger.warning("DB connection failed for ML prediction")
+            return {}
+
+        try:
+            # 特徴量抽出
+            extractor = RealFeatureExtractor(conn)
+
+            # data_kubun: 出馬表段階では "4" or "5"、確定後は "7"
+            features_list = extractor.extract_features_for_race(race_id, data_kubun="5")
+            if not features_list:
+                features_list = extractor.extract_features_for_race(race_id, data_kubun="7")
+
+            if not features_list:
+                logger.warning(f"No features extracted for race: {race_id}")
+                return {}
+
+            # DataFrame に変換
+            features_list.sort(key=lambda x: x.get('umaban', 0))
+            df = pd.DataFrame(features_list)
+
+            # ML予測
+            rank_scores = model.predict(df)
+            win_probs = model.predict_win_probability(df)
+
+            # 結果を辞書形式に変換
+            ml_scores = {}
+            for i, features in enumerate(features_list):
+                horse_num = features.get('umaban', i + 1)
+                ml_scores[str(horse_num)] = {
+                    "rank_score": float(rank_scores[i]),
+                    "win_probability": float(win_probs[i])
+                }
+
+            logger.info(f"ML predictions computed: {len(ml_scores)} horses")
+            return ml_scores
+
+        finally:
+            conn.close()
+
+    except Exception as e:
+        logger.error(f"ML prediction failed: {e}")
+        return {}
 
 
 def _generate_mock_prediction(race_id: str, total_investment: int, is_final: bool) -> PredictionResponse:
@@ -154,11 +240,23 @@ async def generate_prediction(
                     f"レースデータが不足しています: race_id={race_id}"
                 )
 
-        # 3. LLM予想実行（Gemini使用）
-        logger.debug("Calling Gemini API for prediction")
+        # 2.5. ML予測を計算（非同期処理の外で実行）
+        ml_scores = {}
+        try:
+            ml_scores = _compute_ml_predictions(race_id, race_data.get("horses", []))
+            if ml_scores:
+                logger.info(f"ML predictions available: {len(ml_scores)} horses")
+            else:
+                logger.warning("ML predictions not available, proceeding without")
+        except Exception as e:
+            logger.warning(f"ML prediction failed, proceeding without: {e}")
+
+        # 3. LLM予想実行（Claude使用、ML予測を含む）
+        logger.debug("Calling Claude API for prediction")
         try:
             llm_result = await generate_race_prediction(
                 race_data=race_data,
+                ml_scores=ml_scores if ml_scores else None,
             )
         except (LLMAPIError, LLMResponseError, LLMTimeoutError) as e:
             logger.error(f"LLM prediction failed: {e}")

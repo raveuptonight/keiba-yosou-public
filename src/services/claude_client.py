@@ -47,7 +47,10 @@ def _get_api_key() -> str:
     return api_key
 
 
-def generate_prediction_prompt(race_data: Dict[str, Any]) -> str:
+def generate_prediction_prompt(
+    race_data: Dict[str, Any],
+    ml_scores: Dict[str, Any] = None
+) -> str:
     """
     予想データからClaude APIに送信するプロンプトを生成
 
@@ -61,6 +64,13 @@ def generate_prediction_prompt(race_data: Dict[str, Any]) -> str:
                 "training": {...},      # 調教情報
                 "statistics": {...},    # 着度数統計
                 "odds": {...}          # オッズ情報
+            }
+        ml_scores: 機械学習予測スコア（オプション）
+            {
+                <馬番>: {
+                    "rank_score": float,      # 予測着順スコア（小さいほど上位）
+                    "win_probability": float  # 勝率予測（0-1）
+                }
             }
 
     Returns:
@@ -101,8 +111,30 @@ def generate_prediction_prompt(race_data: Dict[str, Any]) -> str:
 - トラック: {track_type}
 - グレード: {grade}
 - レース番号: {race_number}R
+"""
 
-## 出走馬データ
+    # ML予測スコアを追加
+    if ml_scores:
+        prompt += "\n## 機械学習による予測（参考データ）\n\n"
+        prompt += "XGBoostモデルによる予測結果です。このデータを参考に予想を立ててください。\n\n"
+
+        # 着順スコアでソートして上位10頭を表示
+        sorted_scores = sorted(
+            ml_scores.items(),
+            key=lambda x: x[1].get("rank_score", 99)
+        )
+
+        prompt += "| 順位 | 馬番 | 予測着順スコア | 勝率予測 |\n"
+        prompt += "|------|------|----------------|----------|\n"
+        for rank, (horse_num, scores) in enumerate(sorted_scores[:10], 1):
+            rank_score = scores.get("rank_score", 0)
+            win_prob = scores.get("win_probability", 0)
+            prompt += f"| {rank} | {horse_num} | {rank_score:.2f} | {win_prob:.1%} |\n"
+
+        prompt += "\n※ 予測着順スコアは小さいほど上位予想です\n"
+        prompt += "※ 機械学習は過去データに基づく統計的予測であり、展開や状態変化は考慮していません\n\n"
+
+    prompt += """## 出走馬データ
 """
 
     # 各馬の情報を追加
@@ -483,6 +515,7 @@ async def generate_race_prediction(
     race_data: Dict[str, Any],
     temperature: float = LLM_PREDICTION_TEMPERATURE,
     model: str = CLAUDE_DEFAULT_MODEL,
+    ml_scores: Dict[str, Any] = None,
 ) -> Dict[str, Any]:
     """
     レースデータから予想を生成（プロンプト生成→API呼び出し→パース）
@@ -493,6 +526,7 @@ async def generate_race_prediction(
         race_data: get_race_prediction_data() の返り値
         temperature: サンプリング温度
         model: 使用するClaudeモデル
+        ml_scores: 機械学習予測スコア（オプション）
 
     Returns:
         Dict[str, Any]: パース済み予想結果
@@ -512,10 +546,10 @@ async def generate_race_prediction(
         LLMResponseError: レスポンスパースエラー
         LLMTimeoutError: タイムアウトエラー
     """
-    logger.info("Starting race prediction generation")
+    logger.info(f"Starting race prediction generation (ml_scores={'provided' if ml_scores else 'none'})")
 
     # プロンプト生成
-    prompt = generate_prediction_prompt(race_data)
+    prompt = generate_prediction_prompt(race_data, ml_scores=ml_scores)
     logger.debug(f"Generated prompt: {len(prompt)} chars")
 
     # API呼び出し
