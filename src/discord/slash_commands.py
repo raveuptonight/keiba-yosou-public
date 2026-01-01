@@ -1025,6 +1025,57 @@ def run_ml_prediction(race_code: str) -> List[Dict]:
         conn.close()
 
 
+def calculate_confidence(predictions: List[Dict]) -> Dict:
+    """
+    予測の信頼度を計算
+
+    Args:
+        predictions: ML予測結果
+
+    Returns:
+        信頼度情報
+    """
+    if len(predictions) < 3:
+        return {'level': 'low', 'score': 0, 'description': 'データ不足'}
+
+    sorted_preds = sorted(predictions, key=lambda x: x['pred_score'])
+
+    # スコア差を計算（値が小さいほど上位予想）
+    score_1st = sorted_preds[0]['pred_score']
+    score_2nd = sorted_preds[1]['pred_score']
+    score_3rd = sorted_preds[2]['pred_score']
+    score_last = sorted_preds[-1]['pred_score']
+
+    # 1位と2位の差
+    gap_1_2 = score_2nd - score_1st
+    # 1位と3位の差
+    gap_1_3 = score_3rd - score_1st
+    # 全体のスコアレンジ
+    score_range = score_last - score_1st if score_last != score_1st else 1
+
+    # 信頼度スコア（0-100）
+    # 1位が抜けているほど高い
+    confidence_score = min(100, (gap_1_2 / score_range) * 200)
+
+    if confidence_score >= 70:
+        level = 'high'
+        description = '◎本命が抜けている'
+    elif confidence_score >= 40:
+        level = 'medium'
+        description = '○上位拮抗'
+    else:
+        level = 'low'
+        description = '△混戦模様'
+
+    return {
+        'level': level,
+        'score': round(confidence_score, 1),
+        'description': description,
+        'gap_1_2': round(gap_1_2, 3),
+        'gap_1_3': round(gap_1_3, 3)
+    }
+
+
 def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types: List[str]) -> Dict:
     """
     予測結果から推奨馬券を生成
@@ -1043,8 +1094,12 @@ def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types
     top3 = sorted(predictions, key=lambda x: x['pred_rank'])[:3]
     top5 = sorted(predictions, key=lambda x: x['pred_rank'])[:5]
 
+    # 信頼度計算
+    confidence = calculate_confidence(predictions)
+
     recommendations = {
         'top_picks': top3,
+        'confidence': confidence,
         'bets': [],
         'total_cost': 0
     }
@@ -1194,10 +1249,29 @@ class BudgetModal(Modal, title="予算入力"):
         )
 
         # 結果をEmbedで表示
+        # 信頼度に応じて色を変更
+        confidence = recommendations.get('confidence', {})
+        conf_level = confidence.get('level', 'low')
+        if conf_level == 'high':
+            embed_color = discord.Color.green()
+        elif conf_level == 'medium':
+            embed_color = discord.Color.gold()
+        else:
+            embed_color = discord.Color.orange()
+
         embed = discord.Embed(
             title=f"🎯 予想結果: {self.race_info}",
             description=f"予算: {budget_value:,}円",
-            color=discord.Color.gold()
+            color=embed_color
+        )
+
+        # 信頼度表示
+        conf_desc = confidence.get('description', '')
+        conf_score = confidence.get('score', 0)
+        embed.add_field(
+            name="📈 予想信頼度",
+            value=f"**{conf_desc}** (スコア: {conf_score:.0f})",
+            inline=False
         )
 
         # TOP3表示
