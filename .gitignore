@@ -208,3 +208,21 @@ __marimo__/
 
 # 予想結果ファイル
 results/
+
+# ===== プロジェクト固有 =====
+
+# モデルファイル（バイナリ）
+models/*.pkl
+!models/.gitkeep
+
+# バックテスト結果
+backtest_results/
+
+# ログディレクトリ
+logs/
+
+# 学習データ
+data/learning/
+
+# Claude Code設定
+.claude/
