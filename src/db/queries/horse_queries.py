@@ -93,13 +93,13 @@ async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, 
             u.sogo_4chaku,
             u.sogo_5chaku,
             u.sogo_chakugai,
-            -- 賞金合計を計算
-            COALESCE(u.heichi_honshokin_ruikei, 0) +
-            COALESCE(u.shogai_honshokin_ruikei, 0) +
-            COALESCE(u.heichi_fukashokin_ruikei, 0) +
-            COALESCE(u.shogai_fukashokin_ruikei, 0) +
-            COALESCE(u.heichi_shutokushokin_ruikei, 0) +
-            COALESCE(u.shogai_shutokushokin_ruikei, 0) as total_prize_money
+            -- 賞金合計を計算（カラムがcharacter型の場合に対応）
+            COALESCE(NULLIF(u.heichi_honshokin_ruikei, '')::bigint, 0) +
+            COALESCE(NULLIF(u.shogai_honshokin_ruikei, '')::bigint, 0) +
+            COALESCE(NULLIF(u.heichi_fukashokin_ruikei, '')::bigint, 0) +
+            COALESCE(NULLIF(u.shogai_fukashokin_ruikei, '')::bigint, 0) +
+            COALESCE(NULLIF(u.heichi_shutokushokin_ruikei, '')::bigint, 0) +
+            COALESCE(NULLIF(u.shogai_shutokushokin_ruikei, '')::bigint, 0) as total_prize_money
         FROM {TABLE_UMA} u
         LEFT JOIN {TABLE_CHOKYOSI} ch ON u.{COL_CHOKYOSICODE} = ch.{COL_CHOKYOSICODE}
         WHERE u.{COL_KETTONUM} = $1
