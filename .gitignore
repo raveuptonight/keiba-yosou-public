@@ -224,5 +224,14 @@ logs/
 # 学習データ
 data/learning/
 
+# 予想結果
+predictions/*.json
+!predictions/.gitkeep
+
+# 分析結果
+analysis/*.json
+analysis/*.txt
+!analysis/.gitkeep
+
 # Claude Code設定
 .claude/

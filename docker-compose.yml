@@ -108,12 +108,16 @@ services:
       - DB_NAME=keiba_db
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
+      - ./src:/app/src:ro
       - ./models:/app/models
       - ./logs:/app/logs
       - ./data:/app/data
       - ./backtest_results:/app/backtest_results
+      - ./predictions:/app/predictions
+      - ./analysis:/app/analysis
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
@@ -124,8 +128,17 @@ services:
               count: 1
               capabilities: [gpu]
     labels:
-      # 毎日午前3時に実行（レース終了後、翌日の予想前）
       ofelia.enabled: "true"
-      ofelia.job-exec.ml-train.schedule: "0 3 * * *"
-      ofelia.job-exec.ml-train.command: "python -m src.models.train --check-diff"
+      # 毎日21:00 - 結果収集（前日のレース結果を分析）
+      ofelia.job-exec.result-collect.schedule: "0 21 * * *"
+      ofelia.job-exec.result-collect.command: "python -m src.scheduler.result_collector --yesterday"
+      # 毎週日曜22:00 - 週次バックテスト・精度レポート
+      ofelia.job-exec.weekly-backtest.schedule: "0 22 * * 0"
+      ofelia.job-exec.weekly-backtest.command: "python -m src.scheduler.weekly_backtest"
+      # 毎月1日23:00 - モデル再学習
+      ofelia.job-exec.monthly-retrain.schedule: "0 23 1 * *"
+      ofelia.job-exec.monthly-retrain.command: "python -m src.scheduler.monthly_retrain"
+      # 開催前日(金曜)18:00 - 翌日の予想実行
+      ofelia.job-exec.daily-predict.schedule: "0 18 * * 5"
+      ofelia.job-exec.daily-predict.command: "python -m src.scheduler.daily_scheduler --days 1"
     restart: "no"
