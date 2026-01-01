@@ -47,9 +47,12 @@ class RealFeatureExtractor:
         # レース情報を取得
         race_info = self._get_race_info(race_code, data_kubun)
 
+        # 展開予想を事前計算
+        pace_info = self._calc_pace_prediction(entries, race_info)
+
         features_list = []
         for entry in entries:
-            features = self._extract_horse_features(entry, race_info, entries)
+            features = self._extract_horse_features(entry, race_info, entries, pace_info)
             features_list.append(features)
 
         return features_list
@@ -133,7 +136,8 @@ class RealFeatureExtractor:
         self,
         entry: Dict,
         race_info: Dict,
-        all_entries: List[Dict]
+        all_entries: List[Dict],
+        pace_info: Dict = None
     ) -> Dict[str, Any]:
         """各馬の特徴量を抽出"""
         features = {}
@@ -249,14 +253,21 @@ class RealFeatureExtractor:
         features['distance_cat_runs'] = distance_stats.get('runs', 0)
 
         # ===== 馬場状態別成績（shussobetsu_baba）=====
+        track_code = race_info.get('track_code', '')
+        is_turf = track_code.startswith('1') if track_code else True
+        baba_code = race_info.get('shiba_babajotai_code', '1') if is_turf else race_info.get('dirt_babajotai_code', '1')
+
         baba_stats = self._get_baba_stats(
             kettonum, race_info.get('race_code', ''),
-            race_info.get('track_code', ''),
-            race_info.get('shiba_baba_code', '') or race_info.get('dirt_baba_code', '')
+            track_code,
+            baba_code
         )
         features['baba_win_rate'] = baba_stats.get('win_rate', 0.0)
         features['baba_place_rate'] = baba_stats.get('place_rate', 0.0)
         features['baba_runs'] = baba_stats.get('runs', 0)
+
+        # 馬場状態エンコーディング（1=良, 2=稍重, 3=重, 4=不良）
+        features['baba_condition'] = self._safe_int(baba_code, 1)
 
         # ===== 調教詳細（坂路/ウッド）=====
         detailed_training = self._get_detailed_training(kettonum, race_info.get('race_code', ''))
@@ -267,6 +278,35 @@ class RealFeatureExtractor:
         # ===== コーナー別成績 =====
         features['right_turn_rate'] = self._calc_turn_rate(past_races, is_right=True)
         features['left_turn_rate'] = self._calc_turn_rate(past_races, is_right=False)
+
+        # ===== 間隔カテゴリ別成績 =====
+        days_since = features['days_since_last_race']
+        interval_cat = self._get_interval_category(days_since)
+        interval_stats = self._get_interval_stats(kettonum, interval_cat)
+        features['interval_win_rate'] = interval_stats.get('win_rate', features['win_rate'])
+        features['interval_place_rate'] = interval_stats.get('place_rate', features['place_rate'])
+        features['interval_runs'] = interval_stats.get('runs', 0)
+
+        # 間隔カテゴリ（エンコード: 1=連闘, 2=中1週, 3=中2週, 4=中3週, 5=中4週以上）
+        interval_cat_map = {'rentou': 1, 'week1': 2, 'week2': 3, 'week3': 4, 'week4plus': 5}
+        features['interval_category'] = interval_cat_map.get(interval_cat, 5)
+
+        # ===== 展開予想 =====
+        if pace_info:
+            features['pace_maker_count'] = pace_info.get('pace_maker_count', 1)
+            features['senkou_count'] = pace_info.get('senkou_count', 3)
+            features['sashi_count'] = pace_info.get('sashi_count', 5)
+            features['pace_type'] = pace_info.get('pace_type', 2)
+        else:
+            features['pace_maker_count'] = 1
+            features['senkou_count'] = 3
+            features['sashi_count'] = 5
+            features['pace_type'] = 2
+
+        # ===== 脚質×展開相性 =====
+        running_style = features['running_style']
+        pace_type = features['pace_type']
+        features['style_pace_compatibility'] = self._calc_style_pace_compatibility(running_style, pace_type)
 
         return features
 
@@ -932,6 +972,151 @@ class RealFeatureExtractor:
 
         places = sum(1 for r in filtered if self._safe_int(r.get('kakutei_chakujun'), 99) <= 3)
         return places / len(filtered)
+
+    def _get_interval_category(self, days: int) -> str:
+        """日数から間隔カテゴリを返す"""
+        if days <= 7:
+            return 'rentou'
+        elif days <= 14:
+            return 'week1'
+        elif days <= 21:
+            return 'week2'
+        elif days <= 28:
+            return 'week3'
+        else:
+            return 'week4plus'
+
+    def _get_interval_stats(self, kettonum: str, interval_cat: str) -> Dict:
+        """間隔カテゴリ別成績を取得"""
+        if not kettonum:
+            return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+
+        cache_key = f"interval_{kettonum}_{interval_cat}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        # 間隔カテゴリの日数範囲
+        interval_ranges = {
+            'rentou': (1, 7),
+            'week1': (8, 14),
+            'week2': (15, 21),
+            'week3': (22, 28),
+            'week4plus': (29, 365)
+        }
+        min_days, max_days = interval_ranges.get(interval_cat, (29, 365))
+
+        sql = """
+            WITH race_intervals AS (
+                SELECT
+                    ketto_toroku_bango,
+                    kakutei_chakujun,
+                    DATE(CONCAT(kaisai_nen, '-', SUBSTRING(kaisai_gappi, 1, 2), '-', SUBSTRING(kaisai_gappi, 3, 2)))
+                    - LAG(DATE(CONCAT(kaisai_nen, '-', SUBSTRING(kaisai_gappi, 1, 2), '-', SUBSTRING(kaisai_gappi, 3, 2))))
+                      OVER (PARTITION BY ketto_toroku_bango ORDER BY race_code) as interval_days
+                FROM umagoto_race_joho
+                WHERE ketto_toroku_bango = %s
+                  AND data_kubun = '7'
+                  AND kakutei_chakujun ~ '^[0-9]+$'
+            )
+            SELECT
+                COUNT(*) as runs,
+                SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+            FROM race_intervals
+            WHERE interval_days >= %s AND interval_days <= %s
+        """
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, (kettonum, min_days, max_days))
+            row = cur.fetchone()
+            cur.close()
+
+            if row and row[0] > 0:
+                runs = int(row[0])
+                wins = int(row[1] or 0)
+                places = int(row[2] or 0)
+                result = {
+                    'runs': runs,
+                    'win_rate': wins / runs if runs > 0 else 0.0,
+                    'place_rate': places / runs if runs > 0 else 0.0
+                }
+            else:
+                result = {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+
+            self._cache[cache_key] = result
+            return result
+        except Exception as e:
+            logger.debug(f"Interval stats not available: {e}")
+            self.conn.rollback()
+            return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+
+    def _calc_pace_prediction(self, entries: List[Dict], race_info: Dict) -> Dict:
+        """
+        展開予想を計算
+
+        Returns:
+            pace_maker_count: 逃げ馬の数
+            senkou_count: 先行馬の数
+            sashi_count: 差し馬の数
+            pace_type: 1=スロー, 2=ミドル, 3=ハイ
+        """
+        pace_makers = 0
+        senkou_count = 0
+        sashi_count = 0
+        oikomi_count = 0
+
+        for entry in entries:
+            kettonum = entry.get('ketto_toroku_bango', '')
+            past_races = self._get_past_races(kettonum, race_info.get('race_code', ''), limit=5)
+            style = self._determine_running_style(past_races)
+
+            if style == 1:  # 逃げ
+                pace_makers += 1
+            elif style == 2:  # 先行
+                senkou_count += 1
+            elif style == 3:  # 差し
+                sashi_count += 1
+            else:  # 追込
+                oikomi_count += 1
+
+        # ペース予測：逃げ馬が2頭以上→ハイペース、逃げ馬0頭→スローペース
+        if pace_makers >= 2:
+            pace_type = 3  # ハイペース
+        elif pace_makers == 0:
+            pace_type = 1  # スローペース
+        else:
+            pace_type = 2  # ミドル
+
+        return {
+            'pace_maker_count': pace_makers,
+            'senkou_count': senkou_count,
+            'sashi_count': sashi_count,
+            'pace_type': pace_type
+        }
+
+    def _calc_style_pace_compatibility(self, running_style: int, pace_type: int) -> float:
+        """
+        脚質×ペースの相性スコア
+
+        ハイペースでは差し・追込が有利
+        スローペースでは逃げ・先行が有利
+        """
+        compatibility_matrix = {
+            # (running_style, pace_type): compatibility_score
+            (1, 1): 0.8,   # 逃げ×スロー = 有利
+            (1, 2): 0.5,   # 逃げ×ミドル = 普通
+            (1, 3): 0.2,   # 逃げ×ハイ = 不利
+            (2, 1): 0.7,   # 先行×スロー = やや有利
+            (2, 2): 0.5,   # 先行×ミドル = 普通
+            (2, 3): 0.4,   # 先行×ハイ = やや不利
+            (3, 1): 0.3,   # 差し×スロー = やや不利
+            (3, 2): 0.5,   # 差し×ミドル = 普通
+            (3, 3): 0.7,   # 差し×ハイ = やや有利
+            (4, 1): 0.2,   # 追込×スロー = 不利
+            (4, 2): 0.5,   # 追込×ミドル = 普通
+            (4, 3): 0.8,   # 追込×ハイ = 有利
+        }
+        return compatibility_matrix.get((running_style, pace_type), 0.5)
 
     def clear_cache(self):
         """キャッシュをクリア"""

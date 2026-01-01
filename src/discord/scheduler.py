@@ -198,19 +198,19 @@ class PredictionScheduler(commands.Cog):
             レースリスト
         """
         try:
-            # TODO: APIエンドポイント実装後に修正
-            # response = requests.get(
-            #     f"{self.api_base_url}/api/races",
-            #     params={"date": target_date.isoformat()},
-            #     timeout=10
-            # )
-            #
-            # if response.status_code == 200:
-            #     return response.json().get("races", [])
+            response = requests.get(
+                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}",
+                timeout=10
+            )
 
-            # 暫定: モック（開発中）
-            logger.warning("レース一覧APIエンドポイント未実装")
-            return []
+            if response.status_code == 200:
+                data = response.json()
+                races = data.get("races", [])
+                logger.info(f"レース一覧取得成功: {target_date} -> {len(races)}件")
+                return races
+            else:
+                logger.warning(f"レース一覧取得失敗: status={response.status_code}")
+                return []
 
         except requests.exceptions.RequestException as e:
             logger.error(f"レース一覧取得エラー: {e}")

@@ -179,13 +179,172 @@ def _generate_mock_prediction(race_id: str, total_investment: int, is_final: boo
     )
 
 
+def _generate_ml_only_prediction(
+    race_data: Dict[str, Any],
+    ml_scores: Dict[str, Any],
+    total_investment: int
+) -> Dict[str, Any]:
+    """
+    MLスコアのみから予想結果を生成（LLM不使用）
+
+    Args:
+        race_data: レースデータ
+        ml_scores: ML予測スコア
+        total_investment: 総投資額
+
+    Returns:
+        Dict: LLM結果互換形式の予想データ
+    """
+    horses = race_data.get("horses", [])
+
+    # MLスコアでソート（スコアが低いほど上位）
+    scored_horses = []
+    for horse in horses:
+        umaban = str(horse.get("umaban", ""))
+        score_data = ml_scores.get(umaban, {})
+        scored_horses.append({
+            "horse_number": int(umaban) if umaban.isdigit() else 0,
+            "horse_name": horse.get("bamei", "不明"),
+            "rank_score": score_data.get("rank_score", 999),
+            "win_probability": score_data.get("win_probability", 0.0),
+        })
+
+    # スコア順にソート
+    scored_horses.sort(key=lambda x: x["rank_score"])
+
+    # 印を割り当て（上位から順に）
+    marks = ['◎', '○', '▲', '△', '△', '×', '×', '☆', '☆', '☆']
+    for i, h in enumerate(scored_horses):
+        h['mark'] = marks[i] if i < len(marks) else '消'
+
+    # TOP5を抽出
+    top5 = scored_horses[:5]
+
+    # 馬券配分を計算（100円単位）
+    bets = _calculate_bet_allocation_100yen(scored_horses, total_investment)
+
+    return {
+        "win_prediction": {
+            "first": {
+                "horse_number": top5[0]["horse_number"],
+                "horse_name": top5[0]["horse_name"],
+                "expected_odds": None,
+                "confidence": top5[0]["win_probability"],
+            },
+            "second": {
+                "horse_number": top5[1]["horse_number"],
+                "horse_name": top5[1]["horse_name"],
+                "expected_odds": None,
+                "confidence": top5[1]["win_probability"],
+            },
+            "third": {
+                "horse_number": top5[2]["horse_number"],
+                "horse_name": top5[2]["horse_name"],
+                "expected_odds": None,
+                "confidence": top5[2]["win_probability"],
+            },
+            "fourth": {
+                "horse_number": top5[3]["horse_number"],
+                "horse_name": top5[3]["horse_name"],
+                "expected_odds": None,
+                "confidence": top5[3]["win_probability"],
+            } if len(top5) > 3 else None,
+            "fifth": {
+                "horse_number": top5[4]["horse_number"],
+                "horse_name": top5[4]["horse_name"],
+                "expected_odds": None,
+                "confidence": top5[4]["win_probability"],
+            } if len(top5) > 4 else None,
+        },
+        "betting_strategy": {
+            "recommended_tickets": bets,
+        },
+        "ranked_horses": scored_horses,
+    }
+
+
+def _calculate_bet_allocation_100yen(
+    scored_horses: List[Dict],
+    budget: int
+) -> List[Dict]:
+    """
+    100円単位で馬券配分を計算（単勝＋三連複に特化）
+
+    Args:
+        scored_horses: スコア順の馬リスト
+        budget: 予算
+
+    Returns:
+        List[Dict]: 推奨馬券リスト
+    """
+    bets = []
+
+    # 上位馬を取得
+    top3 = scored_horses[:3]
+    himo = scored_horses[3:7]  # 紐候補（△×）
+
+    def round_to_100(amount: int) -> int:
+        """100円単位に丸める"""
+        return (amount // 100) * 100
+
+    # 単勝と三連複に特化した配分
+    # 単勝: 予算の20%、三連複: 予算の80%
+    tansho_amount = round_to_100(int(budget * 0.20))
+    sanrenpuku_amount = round_to_100(int(budget * 0.80))
+
+    # 信頼スコア計算用の関数
+    def calc_confidence(horses: List[Dict]) -> float:
+        """複数馬の組み合わせ信頼度（各馬の勝率の積を正規化）"""
+        if not horses:
+            return 0.0
+        probs = [h.get("win_probability", 0.1) for h in horses]
+        # 組み合わせスコア（幾何平均を使用）
+        import math
+        geo_mean = math.exp(sum(math.log(max(p, 0.01)) for p in probs) / len(probs))
+        # 0-100%にスケール
+        return min(geo_mean * 300, 99.0)  # 最大99%
+
+    # 単勝: 本命◎
+    if top3:
+        confidence = top3[0].get("win_probability", 0.1) * 100
+        bets.append({
+            "ticket_type": "単勝",
+            "numbers": [top3[0]["horse_number"]],
+            "confidence": min(confidence * 2, 95.0),  # スケール調整
+        })
+
+    # 三連複: ◎○▲ボックス + ◎○-紐流し
+    if len(top3) >= 3:
+        # 本線: ◎○▲ボックス
+        nums = sorted([h["horse_number"] for h in top3])
+        bets.append({
+            "ticket_type": "三連複",
+            "numbers": nums,
+            "confidence": calc_confidence(top3),
+        })
+
+        # 紐流し: ◎○-△×（上位2頭固定 + 紐1頭）
+        if himo:
+            flow_targets = himo[:4]  # 最大4頭まで
+            for h in flow_targets:
+                flow_nums = sorted([top3[0]["horse_number"], top3[1]["horse_number"], h["horse_number"]])
+                flow_horses = [top3[0], top3[1], h]
+                bets.append({
+                    "ticket_type": "三連複",
+                    "numbers": flow_nums,
+                    "confidence": calc_confidence(flow_horses),
+                    })
+
+    return bets
+
+
 async def generate_prediction(
     race_id: str,
     is_final: bool = False,
     total_investment: int = 10000
 ) -> PredictionResponse:
     """
-    予想生成のメイン関数
+    予想生成のメイン関数（MLモデルのみ使用、LLM不使用）
 
     Args:
         race_id: レースID（16桁）
@@ -199,21 +358,13 @@ async def generate_prediction(
         PredictionError: 予想生成に失敗した場合
     """
     logger.info(
-        f"Starting prediction generation: race_id={race_id}, "
+        f"Starting ML-only prediction: race_id={race_id}, "
         f"is_final={is_final}, investment={total_investment}"
     )
 
     # モックモードの場合
     if _is_mock_mode():
         return _generate_mock_prediction(race_id, total_investment, is_final)
-
-    # 1. レート制限チェック
-    if not claude_rate_limiter.is_allowed():
-        retry_after = claude_rate_limiter.get_retry_after()
-        logger.warning(f"Rate limit exceeded. Retry after {retry_after} seconds")
-        raise PredictionError(
-            f"レート制限に達しました。{retry_after}秒後に再試行してください。"
-        )
 
     try:
         # 遅延インポート（モック時は不要）
@@ -222,9 +373,8 @@ async def generate_prediction(
             get_race_prediction_data,
             check_race_exists,
         )
-        from src.services.claude_client import generate_race_prediction
 
-        # 2. データ取得
+        # 1. データ取得
         async with get_connection() as conn:
             # レースの存在チェック
             exists = await check_race_exists(conn, race_id)
@@ -240,33 +390,31 @@ async def generate_prediction(
                     f"レースデータが不足しています: race_id={race_id}"
                 )
 
-        # 2.5. ML予測を計算（非同期処理の外で実行）
+        # 2. ML予測を計算
         ml_scores = {}
         try:
             ml_scores = _compute_ml_predictions(race_id, race_data.get("horses", []))
             if ml_scores:
-                logger.info(f"ML predictions available: {len(ml_scores)} horses")
+                logger.info(f"ML predictions computed: {len(ml_scores)} horses")
             else:
-                logger.warning("ML predictions not available, proceeding without")
+                raise PredictionError("ML予測が利用できません")
         except Exception as e:
-            logger.warning(f"ML prediction failed, proceeding without: {e}")
+            logger.error(f"ML prediction failed: {e}")
+            raise PredictionError(f"ML予測に失敗しました: {e}") from e
 
-        # 3. LLM予想実行（Claude使用、ML予測を含む）
-        logger.debug("Calling Claude API for prediction")
-        try:
-            llm_result = await generate_race_prediction(
-                race_data=race_data,
-                ml_scores=ml_scores if ml_scores else None,
-            )
-        except (LLMAPIError, LLMResponseError, LLMTimeoutError) as e:
-            logger.error(f"LLM prediction failed: {e}")
-            raise PredictionError(f"予想生成に失敗しました: {e}") from e
+        # 3. MLスコアから予想結果を生成（LLM不使用）
+        logger.debug("Generating prediction from ML scores only")
+        ml_result = _generate_ml_only_prediction(
+            race_data=race_data,
+            ml_scores=ml_scores,
+            total_investment=total_investment
+        )
 
         # 4. 予想結果をPydanticモデルに変換
-        logger.debug("Converting LLM result to PredictionResponse")
+        logger.debug("Converting ML result to PredictionResponse")
         prediction_response = _convert_to_prediction_response(
             race_data=race_data,
-            llm_result=llm_result,
+            llm_result=ml_result,
             total_investment=total_investment,
             is_final=is_final
         )
@@ -276,7 +424,7 @@ async def generate_prediction(
         prediction_response.prediction_id = prediction_id
 
         logger.info(
-            f"Prediction generation completed: prediction_id={prediction_id}"
+            f"ML-only prediction completed: prediction_id={prediction_id}"
         )
         return prediction_response
 

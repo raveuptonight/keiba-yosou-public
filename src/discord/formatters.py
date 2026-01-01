@@ -104,27 +104,16 @@ def format_prediction_notification(
         # 推奨馬券
         if tickets:
             lines.append("")
-            lines.append("💰 推奨馬券")
-            for ticket in tickets[:3]:  # 最大3つまで表示
+            lines.append("💰 推奨買い目")
+            for ticket in tickets[:6]:  # 最大6つまで表示
                 ticket_type = ticket.get("ticket_type", "不明")
                 numbers = ticket.get("numbers", [])
-                amount = ticket.get("amount", 0)
+                confidence = ticket.get("confidence", 0.0)
                 if isinstance(numbers, list):
                     numbers_str = "-".join(map(str, numbers))
                 else:
                     numbers_str = str(numbers)
-                lines.append(f"・{ticket_type} [{numbers_str}] {amount:,}円")
-
-        # 投資額・期待回収
-        lines.append("")
-        lines.append(f"投資額: {total_investment:,}円")
-        lines.append(f"期待回収: {expected_return:,}円")
-        lines.append(f"期待ROI: {expected_roi:.1f}%")
-
-        # 詳細URL
-        if prediction_url:
-            lines.append("")
-            lines.append(f"📊 詳細: {prediction_url}")
+                lines.append(f"・{ticket_type} [{numbers_str}] 信頼度:{confidence:.0f}%")
 
         message = "\n".join(lines)
         logger.debug(f"予想通知フォーマット完了: race_name={race_name}, lines={len(lines)}")

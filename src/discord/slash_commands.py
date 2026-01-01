@@ -895,8 +895,13 @@ def run_ml_prediction(race_code: str) -> List[Dict]:
     import joblib
     import pandas as pd
     import numpy as np
+    from pathlib import Path
 
-    model_path = "/app/models/xgboost_model_latest.pkl"
+    # Docker環境とローカル環境の両方に対応
+    model_path = Path("/app/models/xgboost_model_latest.pkl")
+    if not model_path.exists():
+        # ローカル開発時のパス
+        model_path = Path(__file__).parent.parent.parent / "models" / "xgboost_model_latest.pkl"
 
     try:
         # モデル読み込み
@@ -928,7 +933,7 @@ def run_ml_prediction(race_code: str) -> List[Dict]:
 
         year = int(race_info[0])
 
-        # 出走馬データを取得
+        # 出走馬データを取得（確定後データ'7'も含む）
         cur.execute('''
             SELECT
                 race_code, umaban, wakuban, ketto_toroku_bango,
@@ -937,7 +942,7 @@ def run_ml_prediction(race_code: str) -> List[Dict]:
                 bataiju, zogen_sa, bamei
             FROM umagoto_race_joho
             WHERE race_code = %s
-              AND data_kubun IN ('3', '4', '5', '6')
+              AND data_kubun IN ('3', '4', '5', '6', '7')
             ORDER BY umaban::int
         ''', (race_code,))
 
@@ -1076,14 +1081,14 @@ def calculate_confidence(predictions: List[Dict]) -> Dict:
     }
 
 
-def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types: List[str]) -> Dict:
+def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types: List[str] = None) -> Dict:
     """
-    予測結果から推奨馬券を生成
+    予測結果から推奨馬券を生成（単勝＋三連複に特化、100円単位配分）
 
     Args:
         predictions: ML予測結果
         budget: 予算（円）
-        bet_types: 購入する馬券種類
+        bet_types: 購入する馬券種類（デフォルト: 単勝+三連複）
 
     Returns:
         推奨馬券情報
@@ -1091,8 +1096,20 @@ def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types
     if not predictions:
         return {'error': '予測データがありません'}
 
+    # デフォルトは単勝と三連複
+    if bet_types is None:
+        bet_types = ['tansho', 'sanrenpuku']
+
     top3 = sorted(predictions, key=lambda x: x['pred_rank'])[:3]
     top5 = sorted(predictions, key=lambda x: x['pred_rank'])[:5]
+    himo = sorted(predictions, key=lambda x: x['pred_rank'])[3:7]  # 紐候補（△×）
+    ana = sorted(predictions, key=lambda x: x['pred_rank'])[7:10]  # 穴馬（☆）
+
+    # 印を付与
+    marks = ['◎', '○', '▲', '△', '△', '×', '×', '☆', '☆', '☆']
+    sorted_preds = sorted(predictions, key=lambda x: x['pred_rank'])
+    for i, p in enumerate(sorted_preds):
+        p['mark'] = marks[i] if i < len(marks) else '消'
 
     # 信頼度計算
     confidence = calculate_confidence(predictions)
@@ -1101,104 +1118,78 @@ def generate_bet_recommendations(predictions: List[Dict], budget: int, bet_types
         'top_picks': top3,
         'confidence': confidence,
         'bets': [],
-        'total_cost': 0
+        'total_cost': 0,
+        'marked_predictions': sorted_preds[:10]  # 印付き上位10頭
     }
 
-    # 各馬券種類ごとの推奨
-    bet_costs = {
-        'tansho': 100,      # 単勝
-        'fukusho': 100,     # 複勝
-        'umaren': 100,      # 馬連
-        'wide': 100,        # ワイド
-        'umatan': 100,      # 馬単
-        'sanrenpuku': 100,  # 三連複
-        'sanrentan': 100,   # 三連単
+    def round_to_100(amount: int) -> int:
+        """100円単位に丸める"""
+        return (amount // 100) * 100
+
+    # 単勝と三連複に特化した配分
+    # 単勝: 予算の20%、三連複: 予算の80%
+    allocation = {
+        'tansho': 0.20,
+        'sanrenpuku': 0.80,
     }
 
     bet_names = {
         'tansho': '単勝',
-        'fukusho': '複勝',
-        'umaren': '馬連',
-        'wide': 'ワイド',
-        'umatan': '馬単',
         'sanrenpuku': '三連複',
-        'sanrentan': '三連単',
     }
 
     total = 0
 
     for bet_type in bet_types:
+        if bet_type not in allocation:
+            continue
+
+        ratio = allocation[bet_type]
+        bet_amount = round_to_100(int(budget * ratio))
+        if bet_amount < 100:
+            continue
+
         if bet_type == 'tansho':
-            # 単勝: 1位予想
+            # 単勝: 本命◎
             bet = {
                 'type': bet_names[bet_type],
-                'picks': [f"{top3[0]['umaban']}番 {top3[0]['bamei']}"],
-                'cost': bet_costs[bet_type]
+                'picks': [f"◎{top3[0]['umaban']}番 {top3[0]['bamei']}"],
+                'cost': bet_amount
             }
             recommendations['bets'].append(bet)
-            total += bet_costs[bet_type]
-
-        elif bet_type == 'fukusho':
-            # 複勝: TOP3それぞれ
-            for h in top3:
-                bet = {
-                    'type': bet_names[bet_type],
-                    'picks': [f"{h['umaban']}番 {h['bamei']}"],
-                    'cost': bet_costs[bet_type]
-                }
-                recommendations['bets'].append(bet)
-                total += bet_costs[bet_type]
-
-        elif bet_type == 'umaren':
-            # 馬連: 1-2位
-            bet = {
-                'type': bet_names[bet_type],
-                'picks': [f"{top3[0]['umaban']}-{top3[1]['umaban']}"],
-                'cost': bet_costs[bet_type]
-            }
-            recommendations['bets'].append(bet)
-            total += bet_costs[bet_type]
-
-        elif bet_type == 'wide':
-            # ワイド: 1-2, 1-3, 2-3
-            for i, j in [(0, 1), (0, 2), (1, 2)]:
-                bet = {
-                    'type': bet_names[bet_type],
-                    'picks': [f"{top3[i]['umaban']}-{top3[j]['umaban']}"],
-                    'cost': bet_costs[bet_type]
-                }
-                recommendations['bets'].append(bet)
-                total += bet_costs[bet_type]
-
-        elif bet_type == 'umatan':
-            # 馬単: 1位→2位
-            bet = {
-                'type': bet_names[bet_type],
-                'picks': [f"{top3[0]['umaban']}→{top3[1]['umaban']}"],
-                'cost': bet_costs[bet_type]
-            }
-            recommendations['bets'].append(bet)
-            total += bet_costs[bet_type]
+            total += bet_amount
 
         elif bet_type == 'sanrenpuku':
-            # 三連複: 1-2-3位
-            bet = {
-                'type': bet_names[bet_type],
-                'picks': [f"{top3[0]['umaban']}-{top3[1]['umaban']}-{top3[2]['umaban']}"],
-                'cost': bet_costs[bet_type]
-            }
-            recommendations['bets'].append(bet)
-            total += bet_costs[bet_type]
+            # 三連複: ◎○▲ボックス + ◎○-紐流し
+            # 予算配分: 本線40%、紐流し60%
+            main_amount = round_to_100(int(bet_amount * 0.40))
+            flow_amount = bet_amount - main_amount
 
-        elif bet_type == 'sanrentan':
-            # 三連単: 1位→2位→3位
-            bet = {
-                'type': bet_names[bet_type],
-                'picks': [f"{top3[0]['umaban']}→{top3[1]['umaban']}→{top3[2]['umaban']}"],
-                'cost': bet_costs[bet_type]
-            }
-            recommendations['bets'].append(bet)
-            total += bet_costs[bet_type]
+            # 本線: ◎○▲ボックス
+            if main_amount >= 100:
+                nums = sorted([top3[0]['umaban'], top3[1]['umaban'], top3[2]['umaban']])
+                bet = {
+                    'type': bet_names[bet_type],
+                    'picks': [f"◎○▲ {nums[0]}-{nums[1]}-{nums[2]}"],
+                    'cost': main_amount
+                }
+                recommendations['bets'].append(bet)
+                total += main_amount
+
+            # 紐流し: ◎○-△ and ◎○-×
+            if flow_amount >= 100 and himo:
+                flow_targets = himo[:4]  # 最大4頭まで
+                flow_unit = round_to_100(flow_amount // len(flow_targets))
+                if flow_unit >= 100:
+                    for h in flow_targets:
+                        nums = sorted([top3[0]['umaban'], top3[1]['umaban'], h['umaban']])
+                        bet = {
+                            'type': bet_names[bet_type],
+                            'picks': [f"◎○-{h['mark']} {nums[0]}-{nums[1]}-{nums[2]}"],
+                            'cost': flow_unit
+                        }
+                        recommendations['bets'].append(bet)
+                        total += flow_unit
 
     recommendations['total_cost'] = total
 
@@ -1303,22 +1294,22 @@ class BudgetModal(Modal, title="予算入力"):
 
 
 class BetTypeSelectView(View):
-    """馬券種類選択ビュー"""
+    """馬券種類選択ビュー（単勝＋三連複がデフォルト）"""
 
     def __init__(self, race_code: str, race_info: str, timeout: float = 120):
         super().__init__(timeout=timeout)
         self.race_code = race_code
         self.race_info = race_info
-        self.selected_bet_types = ['tansho', 'fukusho', 'umaren']  # デフォルト
+        self.selected_bet_types = ['tansho', 'sanrenpuku']  # デフォルト: 単勝+三連複
 
-        # 馬券種類選択ドロップダウン
+        # 馬券種類選択ドロップダウン（単勝と三連複がデフォルト選択）
         bet_options = [
-            discord.SelectOption(label="単勝", value="tansho", default=True, description="1着を当てる"),
-            discord.SelectOption(label="複勝", value="fukusho", default=True, description="3着以内を当てる"),
-            discord.SelectOption(label="馬連", value="umaren", default=True, description="1,2着を当てる（順不同）"),
+            discord.SelectOption(label="単勝", value="tansho", default=True, description="1着を当てる（推奨）"),
+            discord.SelectOption(label="三連複", value="sanrenpuku", default=True, description="1,2,3着を当てる（推奨）"),
+            discord.SelectOption(label="複勝", value="fukusho", description="3着以内を当てる"),
+            discord.SelectOption(label="馬連", value="umaren", description="1,2着を当てる（順不同）"),
             discord.SelectOption(label="ワイド", value="wide", description="3着以内の2頭を当てる"),
             discord.SelectOption(label="馬単", value="umatan", description="1,2着を着順通りに当てる"),
-            discord.SelectOption(label="三連複", value="sanrenpuku", description="1,2,3着を当てる（順不同）"),
             discord.SelectOption(label="三連単", value="sanrentan", description="1,2,3着を着順通りに当てる"),
         ]
 
@@ -1477,16 +1468,14 @@ class SlashCommands(commands.Cog):
 
     @app_commands.command(name="predict-race", description="特定のレースの予想を実行します")
     @app_commands.describe(
-        race="レース指定（例: 京都2r, 中山11R, 202412280506）",
-        temperature="LLM温度パラメータ（0.0-1.0、デフォルト0.3）"
+        race="レース指定（例: 京都2r, 中山11R, 202412280506）"
     )
     async def predict_race(
         self,
         interaction: discord.Interaction,
-        race: str,
-        temperature: float = 0.3
+        race: str
     ):
-        """レース指定で予想を実行（従来の方式）"""
+        """レース指定で予想を実行（ML予測のみ）"""
         # 処理中メッセージ（ephemeral）
         await interaction.response.defer(ephemeral=True)
 
@@ -1495,10 +1484,10 @@ class SlashCommands(commands.Cog):
             race_id = resolve_race_input(race, self.api_base_url)
             logger.debug(f"レース解決: {race} -> {race_id}")
 
-            # FastAPI経由で予想実行
+            # FastAPI経由で予想実行（MLのみ）
             response = requests.post(
                 f"{self.api_base_url}/api/predictions/",
-                json={"race_id": race_id, "temperature": temperature, "phase": "all"},
+                json={"race_id": race_id, "phase": "all"},
                 timeout=DISCORD_REQUEST_TIMEOUT,
             )
 
