@@ -34,6 +34,8 @@ from src.db.table_names import (
     COL_KISYUCODE,
     COL_KISYU_NAME,
     COL_CHOKYOSICODE,
+    COL_CHOKYOSI_NAME,
+    COL_TOZAI_CODE,
     COL_DATA_KUBUN,
     COL_SANDAI_KETTO,
     COL_HANSYOKU_NUM,
@@ -67,30 +69,40 @@ async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, 
     """
     sql = f"""
         SELECT
-            {COL_KETTONUM},
-            {COL_BAMEI},
-            {COL_BIRTH_DATE},
-            {COL_SEX},
-            {COL_KEIROCODE},
-            ketto1_hanshoku_toroku_bango,
-            ketto2_hanshoku_toroku_bango,
-            seisansha_code,
-            banushi_code,
-            {COL_CHOKYOSICODE},
-            heichi_honshokin_ruikei,
-            shogai_honshokin_ruikei,
-            heichi_fukashokin_ruikei,
-            shogai_fukashokin_ruikei,
-            heichi_shutokushokin_ruikei,
-            shogai_shutokushokin_ruikei,
-            sogo_1chaku,
-            sogo_2chaku,
-            sogo_3chaku,
-            sogo_4chaku,
-            sogo_5chaku,
-            sogo_chakugai
-        FROM {TABLE_UMA}
-        WHERE {COL_KETTONUM} = $1
+            u.{COL_KETTONUM},
+            u.{COL_BAMEI},
+            u.{COL_BIRTH_DATE},
+            u.{COL_SEX},
+            u.{COL_KEIROCODE},
+            u.ketto1_hanshoku_toroku_bango,
+            u.ketto2_hanshoku_toroku_bango,
+            u.seisansha_code,
+            u.banushi_code,
+            u.{COL_CHOKYOSICODE},
+            ch.{COL_CHOKYOSI_NAME},
+            ch.{COL_TOZAI_CODE} as tozai_code,
+            u.heichi_honshokin_ruikei,
+            u.shogai_honshokin_ruikei,
+            u.heichi_fukashokin_ruikei,
+            u.shogai_fukashokin_ruikei,
+            u.heichi_shutokushokin_ruikei,
+            u.shogai_shutokushokin_ruikei,
+            u.sogo_1chaku,
+            u.sogo_2chaku,
+            u.sogo_3chaku,
+            u.sogo_4chaku,
+            u.sogo_5chaku,
+            u.sogo_chakugai,
+            -- 賞金合計を計算
+            COALESCE(u.heichi_honshokin_ruikei, 0) +
+            COALESCE(u.shogai_honshokin_ruikei, 0) +
+            COALESCE(u.heichi_fukashokin_ruikei, 0) +
+            COALESCE(u.shogai_fukashokin_ruikei, 0) +
+            COALESCE(u.heichi_shutokushokin_ruikei, 0) +
+            COALESCE(u.shogai_shutokushokin_ruikei, 0) as total_prize_money
+        FROM {TABLE_UMA} u
+        LEFT JOIN {TABLE_CHOKYOSI} ch ON u.{COL_CHOKYOSICODE} = ch.{COL_CHOKYOSICODE}
+        WHERE u.{COL_KETTONUM} = $1
     """
 
     try:

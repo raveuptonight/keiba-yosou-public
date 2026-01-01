@@ -252,8 +252,8 @@ async def get_horse(
             wins = sogo_1
             win_rate = wins / total_races if total_races > 0 else 0.0
 
-            # 通算獲得賞金
-            total_prize_money = horse_info.get("total_honcho_sochu_kei_sochu", 0)
+            # 通算獲得賞金（クエリで計算済み）
+            total_prize_money = horse_info.get("total_prize_money", 0) or 0
 
             # 生年月日を変換
             birth_date_val = date(2000, 1, 1)  # デフォルト値

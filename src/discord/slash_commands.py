@@ -691,10 +691,10 @@ def create_horse_summary_embed(horse_data: Dict[str, Any], race_entry: Dict[str,
             # タイム差と勝ち馬を表示（1着以外の場合）
             diff_str = ""
             if finish != 1:
-                # タイム差
+                # タイム差（DBには0.1秒単位で格納されているので10で割る）
                 if time_diff:
                     try:
-                        diff_val = float(time_diff)
+                        diff_val = float(time_diff) / 10.0
                         diff_str = f" +{diff_val:.1f}秒"
                     except (ValueError, TypeError):
                         pass
