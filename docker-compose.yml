@@ -1,12 +1,10 @@
 version: '3.8'
 
 services:
-  # スケジューラ（定期実行管理）- DB_MODE=local の時のみ使用
+  # スケジューラ（定期実行管理）
   scheduler:
     image: mcuadros/ofelia:latest
     container_name: keiba-scheduler
-    profiles:
-      - ml  # DB_MODE=local の時のみ起動: docker compose --profile ml up
     depends_on:
       - api
     command: daemon --docker
@@ -99,8 +97,6 @@ services:
       context: .
       dockerfile: Dockerfile.ml
     container_name: keiba-ml-trainer
-    profiles:
-      - ml  # DB_MODE=local の時のみ起動: docker compose --profile ml up
     environment:
       - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
