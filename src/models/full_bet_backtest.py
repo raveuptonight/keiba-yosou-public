@@ -13,6 +13,7 @@ from collections import defaultdict
 
 from src.db.connection import get_db
 from src.models.fast_train import FastFeatureExtractor
+from src.models.advanced_train import AdvancedFeatureExtractor
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -230,7 +231,21 @@ def run_full_backtest(
 
     # モデル読み込み
     model_data = joblib.load(model_path)
-    model = model_data['model']
+
+    # アンサンブルモデルか単体モデルかを判定
+    if 'models' in model_data:
+        # アンサンブルモデル
+        models = model_data['models']
+        xgb_model = models.get('xgboost')
+        lgb_model = models.get('lightgbm')
+        is_ensemble = True
+        print("アンサンブルモデルを使用")
+    else:
+        # 単体XGBoostモデル
+        xgb_model = model_data['model']
+        lgb_model = None
+        is_ensemble = False
+
     feature_names = model_data['feature_names']
     print(f"モデル読み込み完了: {len(feature_names)}特徴量")
 
@@ -252,13 +267,20 @@ def run_full_backtest(
     total_races = 0
 
     try:
-        extractor = FastFeatureExtractor(conn)
+        # アンサンブルモデルは血統特徴量を使用
+        if is_ensemble:
+            extractor = AdvancedFeatureExtractor(conn)
+        else:
+            extractor = FastFeatureExtractor(conn)
 
         for year in range(start_year, end_year + 1):
             print(f"\n[{year}年] 処理中...", flush=True)
 
             # 特徴量データ取得
-            df = extractor.extract_year_data(year, max_races=10000)
+            if is_ensemble:
+                df = extractor.extract_year_data_advanced(year, max_races=10000)
+            else:
+                df = extractor.extract_year_data(year, max_races=10000)
             if len(df) == 0:
                 print(f"  {year}年: データなし")
                 continue
@@ -281,7 +303,12 @@ def run_full_backtest(
 
             # 予測実行
             X = df[feature_names].fillna(0)
-            df['pred_score'] = model.predict(X)
+            if is_ensemble and lgb_model is not None:
+                xgb_pred = xgb_model.predict(X)
+                lgb_pred = lgb_model.predict(X)
+                df['pred_score'] = (xgb_pred + lgb_pred) / 2
+            else:
+                df['pred_score'] = xgb_model.predict(X)
 
             year_races = 0
             sample_idx = 0
@@ -455,10 +482,11 @@ def run_full_backtest(
 
 def main():
     parser = argparse.ArgumentParser(description="全馬券種別バックテスト")
-    parser.add_argument("--model", "-m", default="models/xgboost_model_latest.pkl")
+    parser.add_argument("--model", "-m", default="models/ensemble_model_latest.pkl")
     parser.add_argument("--start-year", "-s", type=int, default=2015)
     parser.add_argument("--end-year", "-e", type=int, default=2025)
     parser.add_argument("--bet-unit", "-u", type=int, default=100)
+    parser.add_argument("--ensemble", "-e2", action="store_true", help="Use ensemble model")
 
     args = parser.parse_args()
 

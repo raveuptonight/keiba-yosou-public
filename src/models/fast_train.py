@@ -756,6 +756,10 @@ class FastFeatureExtractor:
         pace_type = features['pace_type']
         features['style_pace_compatibility'] = self._calc_style_pace_compatibility(running_style, pace_type)
 
+        # メタ情報（血統特徴量用）
+        features['kettonum'] = kettonum
+        features['race_code'] = race_code
+
         # ターゲット
         features['target'] = chakujun
 

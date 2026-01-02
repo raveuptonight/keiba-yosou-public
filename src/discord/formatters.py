@@ -7,6 +7,14 @@ Discord通知フォーマッター
 import logging
 from datetime import datetime, date
 from typing import Dict, Any, Optional, List
+import numpy as np
+
+from src.models.prediction_output import (
+    RacePrediction,
+    HorsePrediction,
+    create_race_prediction,
+    format_prediction_for_discord,
+)
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -433,6 +441,8 @@ def format_help_message() -> str:
         "**予想関連**",
         "`!predict <レース> [temperature]` - 指定レースの予想実行",
         "  例: `!predict 京都2r`, `!predict 中山11R`",
+        "`!ml <レースコード>` - ML予測（確率・順位分布・信頼度）",
+        "  例: `!ml 202501050811`",
         "`!today` - 本日のレース一覧",
         "",
         "**馬券購入**",
@@ -456,3 +466,52 @@ def format_help_message() -> str:
     message = "\n".join(lines)
     logger.debug("ヘルプメッセージフォーマット完了")
     return message
+
+
+def format_ml_prediction(
+    race_code: str,
+    race_name: str,
+    horse_numbers: List[int],
+    horse_names: List[str],
+    model_scores: np.ndarray,
+    pace_info: Dict = None
+) -> str:
+    """
+    MLモデル予測結果をDiscord用にフォーマット
+
+    4つの指標を出力:
+    1. 勝率（確率ベース）
+    2. 予測順位（ランキング形式）
+    3. 順位分布（1着/2着/3着/4着以下）
+    4. 信頼度スコア
+
+    Args:
+        race_code: レースコード
+        race_name: レース名
+        horse_numbers: 馬番リスト
+        horse_names: 馬名リスト
+        model_scores: モデルの予測スコア
+        pace_info: 展開予想情報
+
+    Returns:
+        フォーマット済みメッセージ
+    """
+    try:
+        # RacePrediction オブジェクトを作成
+        prediction = create_race_prediction(
+            race_code=race_code,
+            race_name=race_name,
+            horse_numbers=horse_numbers,
+            horse_names=horse_names,
+            model_scores=model_scores,
+            pace_info=pace_info
+        )
+
+        # Discord用フォーマット
+        message = format_prediction_for_discord(prediction)
+        logger.debug(f"ML予測フォーマット完了: race_code={race_code}")
+        return message
+
+    except Exception as e:
+        logger.error(f"ML予測フォーマットエラー: {e}")
+        return f"🏇 【ML予測】{race_name}\n\n❌ フォーマットエラーが発生しました"

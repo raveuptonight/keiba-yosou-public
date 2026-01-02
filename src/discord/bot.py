@@ -97,6 +97,15 @@ class KeibaBot(commands.Bot):
             logger.error(f"スケジューラーCogのロードに失敗: {e}")
             raise BotError(f"スケジューラーCogのロードに失敗: {e}") from e
 
+        # 予測コマンドCogをロード
+        try:
+            logger.info("予測コマンドCogロード開始")
+            await self.load_extension("src.discord.commands.prediction")
+            logger.info("予測コマンドCogロード完了")
+        except Exception as e:
+            logger.error(f"予測コマンドCogのロードに失敗: {e}")
+            raise BotError(f"予測コマンドCogのロードに失敗: {e}") from e
+
         # スラッシュコマンドを同期
         if self.guild_id:
             # 特定ギルドに即時反映（開発用）
