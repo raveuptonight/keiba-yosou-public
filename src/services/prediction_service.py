@@ -286,10 +286,10 @@ def _generate_ml_only_prediction(
         win_prob = h["win_probability"]
         pos_dist = calc_position_distribution(win_prob, rank, n_horses)
 
-        # 連対率（2着以内確率）
-        quinella_prob = pos_dist["first"] + pos_dist["second"]
-        # 複勝率（3着以内確率）
-        place_prob = quinella_prob + pos_dist["third"]
+        # 連対率（2着以内確率）- 上限1.0
+        quinella_prob = min(1.0, pos_dist["first"] + pos_dist["second"])
+        # 複勝率（3着以内確率）- 上限1.0
+        place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
 
         # 個別の信頼度（データの完全性とスコアの分離度から算出）
         # スコアが他の馬と十分に離れているかで信頼度を評価
