@@ -80,13 +80,19 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
 
         model_data = joblib.load(ML_MODEL_PATH)
 
-        # ensemble_modelのみ使用
-        if 'models' not in model_data:
+        # ensemble_modelのキーを取得（2つの形式に対応）
+        # 形式1: xgb_model, lgb_model（weekly_retrain_model.py形式）
+        # 形式2: models.xgboost, models.lightgbm（旧形式）
+        if 'xgb_model' in model_data:
+            xgb_model = model_data['xgb_model']
+            lgb_model = model_data['lgb_model']
+        elif 'models' in model_data:
+            xgb_model = model_data['models'].get('xgboost')
+            lgb_model = model_data['models'].get('lightgbm')
+        else:
             logger.error(f"Invalid model format: ensemble_model required")
             return {}
 
-        xgb_model = model_data['models'].get('xgboost')
-        lgb_model = model_data['models'].get('lightgbm')
         feature_names = model_data.get('feature_names', [])
         logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}")
 
@@ -237,7 +243,12 @@ def _generate_ml_only_prediction(
     # MLスコアでソート（スコアが低いほど上位）
     scored_horses = []
     for horse in horses:
-        umaban = str(horse.get("umaban", ""))
+        umaban_raw = horse.get("umaban", "")
+        # 馬番を正規化（'01' -> '1'、1 -> '1' 等）
+        try:
+            umaban = str(int(umaban_raw))
+        except (ValueError, TypeError):
+            umaban = str(umaban_raw)
         score_data = ml_scores.get(umaban, {})
         scored_horses.append({
             "horse_number": int(umaban) if umaban.isdigit() else 0,
