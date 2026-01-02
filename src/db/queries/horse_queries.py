@@ -409,8 +409,9 @@ async def get_horses_statistics(
 
         return result
     except Exception as e:
-        logger.error(f"Failed to get horses statistics: race_id={race_id}, error={e}")
-        raise
+        # 統計テーブルが存在しない場合は空の辞書を返す
+        logger.warning(f"Statistics not available: race_id={race_id}, error={e}")
+        return {}
 
 
 async def get_horse_detail(

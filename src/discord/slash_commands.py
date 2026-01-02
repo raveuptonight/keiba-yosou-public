@@ -1512,96 +1512,129 @@ class SlashCommands(commands.Cog):
     # 予想コマンド
     # ========================================
 
-    @app_commands.command(name="predict", description="ML予想を実行します（インタラクティブ）")
+    @app_commands.command(name="predict", description="ML予想を実行します")
     @app_commands.describe(
-        days="何日先までのレースを表示するか（1-14日、デフォルト7日）"
+        race="レース指定（例: 京都2r, 中山11R）。省略時は次の開催全レースを予想"
     )
     async def predict(
         self,
         interaction: discord.Interaction,
-        days: int = 7
+        race: str = None
     ):
         """
         ML予想を実行
 
-        インタラクティブなフローで：
-        1. 出馬表確定済みレースを選択
-        2. 馬券種類を選択
-        3. 予算を入力
-        4. 推奨馬券を表示
+        - race指定あり: そのレースのみ予想
+        - race指定なし: 次の開催の全レースを予想
         """
         await interaction.response.defer(ephemeral=True)
 
         try:
-            # 出馬表確定済みレースを取得
-            races = get_upcoming_races_from_db(min(days, 14))
+            if race:
+                # レース指定あり: そのレースのみ予想
+                race_id = resolve_race_input(race, self.api_base_url)
+                logger.debug(f"レース解決: {race} -> {race_id}")
 
-            if not races:
-                await interaction.followup.send(
-                    "出馬表が確定しているレースがありません。\n"
-                    "開催前日（金曜日）以降にお試しください。",
-                    ephemeral=True
+                # FastAPI経由で予想実行（MLのみ）
+                response = requests.post(
+                    f"{self.api_base_url}/api/predictions/",
+                    json={"race_id": race_id, "phase": "all"},
+                    timeout=DISCORD_REQUEST_TIMEOUT,
                 )
-                return
 
-            # レース選択ビューを表示
-            view = PredictRaceSelectView(races)
-            await interaction.followup.send(
-                f"🏇 **出馬表確定済みレース一覧** ({len(races)}件)\n\n"
-                "予想したいレースを選択してください:",
-                view=view,
-                ephemeral=True
-            )
-
-        except Exception as e:
-            logger.error(f"予想コマンドエラー: {e}", exc_info=True)
-            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
-
-    @app_commands.command(name="predict-race", description="特定のレースの予想を実行します")
-    @app_commands.describe(
-        race="レース指定（例: 京都2r, 中山11R, 202412280506）"
-    )
-    async def predict_race(
-        self,
-        interaction: discord.Interaction,
-        race: str
-    ):
-        """レース指定で予想を実行（ML予測のみ）"""
-        # 処理中メッセージ（ephemeral）
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            # レース指定をレースIDに解決
-            race_id = resolve_race_input(race, self.api_base_url)
-            logger.debug(f"レース解決: {race} -> {race_id}")
-
-            # FastAPI経由で予想実行（MLのみ）
-            response = requests.post(
-                f"{self.api_base_url}/api/predictions/",
-                json={"race_id": race_id, "phase": "all"},
-                timeout=DISCORD_REQUEST_TIMEOUT,
-            )
-
-            if response.status_code == 201:
-                prediction = response.json()
-                message = format_prediction_notification(
-                    race_name=prediction.get("race_name", "不明"),
-                    race_date=date.fromisoformat(prediction.get("race_date")),
-                    venue=prediction.get("venue", "不明"),
-                    race_time="15:25",
-                    race_number="11R",
-                    prediction_result=prediction.get("prediction_result", {}),
-                    total_investment=prediction.get("total_investment", 0),
-                    expected_return=prediction.get("expected_return", 0),
-                    expected_roi=prediction.get("expected_roi", 0.0) * 100,
-                    prediction_url=f"{self.api_base_url}/predictions/{prediction.get('id')}",
-                )
-                await interaction.followup.send(message, ephemeral=True)
+                if response.status_code == 201:
+                    prediction = response.json()
+                    message = format_prediction_notification(
+                        race_name=prediction.get("race_name", "不明"),
+                        race_date=date.fromisoformat(prediction.get("race_date")),
+                        venue=prediction.get("venue", "不明"),
+                        race_time="15:25",
+                        race_number="11R",
+                        prediction_result=prediction.get("prediction_result", {}),
+                        total_investment=prediction.get("total_investment", 0),
+                        expected_return=prediction.get("expected_return", 0),
+                        expected_roi=prediction.get("expected_roi", 0.0) * 100,
+                        prediction_url=f"{self.api_base_url}/predictions/{prediction.get('id')}",
+                    )
+                    await interaction.followup.send(message, ephemeral=True)
+                else:
+                    await interaction.followup.send(
+                        f"エラーが発生しました (Status: {response.status_code})\n{response.text}",
+                        ephemeral=True
+                    )
             else:
+                # レース指定なし: 次の開催の全レースを予想
+                races = get_upcoming_races_from_db(7)
+
+                if not races:
+                    await interaction.followup.send(
+                        "出馬表が確定しているレースがありません。\n"
+                        "開催前日（金曜日）以降にお試しください。",
+                        ephemeral=True
+                    )
+                    return
+
                 await interaction.followup.send(
-                    f"エラーが発生しました (Status: {response.status_code})\n{response.text}",
+                    f"🏇 **全{len(races)}レースの予想を実行中...**",
                     ephemeral=True
                 )
+
+                # 各レースの予想を実行
+                results = []
+                errors = []
+                for race_info in races:
+                    race_id = race_info.get("race_id")
+                    race_name = race_info.get("race_name", "不明")
+                    venue = race_info.get("venue", "")
+                    race_number = race_info.get("race_number", "")
+
+                    try:
+                        response = requests.post(
+                            f"{self.api_base_url}/api/predictions/",
+                            json={"race_id": race_id, "phase": "all"},
+                            timeout=DISCORD_REQUEST_TIMEOUT,
+                        )
+
+                        if response.status_code == 201:
+                            prediction = response.json()
+                            pred_result = prediction.get("prediction_result", {})
+                            win_pred = pred_result.get("win_prediction", {})
+
+                            # 簡易フォーマット
+                            honmei = win_pred.get("first", {})
+                            taikou = win_pred.get("second", {})
+                            ana = win_pred.get("third", {})
+
+                            summary = f"**{venue}{race_number}** {race_name}\n"
+                            if honmei:
+                                summary += f"◎{honmei.get('horse_number', '?')}番 {honmei.get('horse_name', '')}"
+                            if taikou:
+                                summary += f" ○{taikou.get('horse_number', '?')}番"
+                            if ana:
+                                summary += f" ▲{ana.get('horse_number', '?')}番"
+                            results.append(summary)
+                        else:
+                            errors.append(f"{venue}{race_number}: 予想失敗")
+                    except Exception as e:
+                        errors.append(f"{venue}{race_number}: {str(e)[:30]}")
+
+                # 結果を表示
+                if results:
+                    # 2000文字制限を考慮して分割送信
+                    current_msg = "🏇 **予想結果**\n\n"
+                    for result in results:
+                        if len(current_msg) + len(result) + 2 > 1900:
+                            await interaction.followup.send(current_msg, ephemeral=True)
+                            current_msg = ""
+                        current_msg += result + "\n\n"
+                    if current_msg:
+                        await interaction.followup.send(current_msg, ephemeral=True)
+
+                if errors:
+                    await interaction.followup.send(
+                        f"⚠️ 予想失敗: {', '.join(errors)}",
+                        ephemeral=True
+                    )
 
         except Exception as e:
             logger.error(f"予想コマンドエラー: {e}", exc_info=True)
@@ -2258,8 +2291,8 @@ class SlashCommands(commands.Cog):
         embed.add_field(
             name="予想",
             value=(
-                "`/predict [日数]` - ML予想を実行（インタラクティブ）\n"
-                "`/predict-race <レース>` - 特定レースの予想（従来方式）\n"
+                "`/predict` - 次の開催の全レースを予想\n"
+                "`/predict <レース>` - 特定レースの予想（例: 京都2r）\n"
                 "`/today` - 本日のレース一覧\n"
                 "`/races [日数]` - 今後のレース一覧\n"
                 "`/race <レースID>` - レースの詳細情報"

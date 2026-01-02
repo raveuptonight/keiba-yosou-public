@@ -1,5 +1,7 @@
 """
 予想関連のPydanticスキーマ
+
+確率ベース・ランキング形式・順位分布・信頼度スコアを出力
 """
 
 from pydantic import BaseModel, Field
@@ -7,89 +9,61 @@ from typing import Optional, List
 from datetime import datetime
 
 
-class HorseRanking(BaseModel):
-    """予想馬情報（本命・対抗・単穴等）"""
+class PositionDistribution(BaseModel):
+    """順位分布予測"""
 
+    first: float = Field(
+        ..., ge=0.0, le=1.0, description="1着確率"
+    )
+    second: float = Field(
+        ..., ge=0.0, le=1.0, description="2着確率"
+    )
+    third: float = Field(
+        ..., ge=0.0, le=1.0, description="3着確率"
+    )
+    out_of_place: float = Field(
+        ..., ge=0.0, le=1.0, description="4着以下確率"
+    )
+
+
+class HorseRankingEntry(BaseModel):
+    """全馬ランキングエントリ（確率ベース）"""
+
+    rank: int = Field(
+        ..., ge=1, description="予測順位（1が最上位）"
+    )
     horse_number: int = Field(
         ..., ge=1, le=18, description="馬番（1-18）"
     )
     horse_name: str = Field(..., description="馬名")
-    expected_odds: Optional[float] = Field(
-        None, ge=0.1, description="予想オッズ"
+    win_probability: float = Field(
+        ..., ge=0.0, le=1.0, description="勝率（1着確率）"
     )
-    confidence: Optional[float] = Field(
-        None, ge=0.0, le=1.0, description="信頼度（0.0-1.0）"
+    place_probability: float = Field(
+        ..., ge=0.0, le=1.0, description="複勝率（3着以内確率）"
     )
-
-
-class ExcludedHorse(BaseModel):
-    """消し馬情報"""
-
-    horse_number: int = Field(
-        ..., ge=1, le=18, description="馬番（1-18）"
+    position_distribution: PositionDistribution = Field(
+        ..., description="順位分布予測"
     )
-    horse_name: str = Field(..., description="馬名")
-    reason: Optional[str] = Field(
-        None, description="消す理由"
+    rank_score: float = Field(
+        ..., description="MLモデル予測スコア（小さいほど上位）"
     )
-
-
-class WinPrediction(BaseModel):
-    """1着予想情報"""
-
-    first: HorseRanking = Field(
-        ..., description="◎本命"
-    )
-    second: HorseRanking = Field(
-        ..., description="○対抗"
-    )
-    third: HorseRanking = Field(
-        ..., description="▲単穴"
-    )
-    fourth: Optional[HorseRanking] = Field(
-        None, description="△連下"
-    )
-    fifth: Optional[HorseRanking] = Field(
-        None, description="☆注目馬"
-    )
-    excluded: Optional[List[ExcludedHorse]] = Field(
-        None, description="✕消し馬リスト"
-    )
-
-
-class RecommendedTicket(BaseModel):
-    """推奨馬券情報"""
-
-    ticket_type: str = Field(
-        ..., description="馬券タイプ（単勝、馬連、3連複等）"
-    )
-    numbers: List[int] = Field(
-        ..., min_items=1, description="馬番リスト"
-    )
-    amount: int = Field(
-        ..., gt=0, description="購入金額（円）"
-    )
-    expected_payout: Optional[int] = Field(
-        None, ge=0, description="期待払戻額（円）"
-    )
-
-
-class BettingStrategy(BaseModel):
-    """投資戦略情報"""
-
-    recommended_tickets: List[RecommendedTicket] = Field(
-        ..., description="推奨馬券リスト"
+    confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="この馬の予測信頼度"
     )
 
 
 class PredictionResult(BaseModel):
-    """予想結果本体"""
+    """予想結果本体（確率ベース・ランキング形式）"""
 
-    win_prediction: WinPrediction = Field(
-        ..., description="1着予想"
+    ranked_horses: List[HorseRankingEntry] = Field(
+        ..., description="全馬ランキング（確率順）"
     )
-    betting_strategy: BettingStrategy = Field(
-        ..., description="投資戦略"
+    prediction_confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="予測全体の信頼度スコア"
+    )
+    model_info: str = Field(
+        ..., description="使用モデル情報"
     )
 
 
@@ -101,9 +75,6 @@ class PredictionRequest(BaseModel):
     )
     is_final: bool = Field(
         False, description="最終予想フラグ（馬体重後）"
-    )
-    total_investment: int = Field(
-        10000, gt=0, description="総投資額（円）"
     )
 
 
@@ -132,16 +103,7 @@ class PredictionResponse(BaseModel):
         ..., description="発走時刻"
     )
     prediction_result: PredictionResult = Field(
-        ..., description="予想結果本体"
-    )
-    total_investment: int = Field(
-        ..., gt=0, description="総投資額（円）"
-    )
-    expected_return: int = Field(
-        ..., ge=0, description="期待回収額（円）"
-    )
-    expected_roi: float = Field(
-        ..., ge=0.0, description="期待ROI（倍率）"
+        ..., description="予想結果本体（確率ベース・ランキング形式）"
     )
     predicted_at: datetime = Field(
         ..., description="予想実行日時"
@@ -163,8 +125,8 @@ class PredictionHistoryItem(BaseModel):
     is_final: bool = Field(
         ..., description="最終予想フラグ"
     )
-    expected_roi: float = Field(
-        ..., description="期待ROI（倍率）"
+    prediction_confidence: float = Field(
+        ..., ge=0.0, le=1.0, description="予測信頼度"
     )
 
 

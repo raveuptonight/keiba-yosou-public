@@ -51,12 +51,14 @@ async def generate_prediction(
         DatabaseErrorException: DB接続エラー
     """
     logger.info(
-        f"POST /predictions/generate: race_id={request.race_id}, "
-        f"is_final={request.is_final}, total_investment={request.total_investment}"
+        f"POST /predictions/generate: race_id={request.race_id}, is_final={request.is_final}"
     )
 
     try:
-        response = await prediction_service.generate_prediction(request)
+        response = await prediction_service.generate_prediction(
+            race_id=request.race_id,
+            is_final=request.is_final
+        )
         logger.info(f"Prediction generated successfully: {response.prediction_id}")
         return response
 
@@ -149,7 +151,7 @@ async def get_race_predictions(
     logger.info(f"GET /predictions/race/{race_id}?is_final={is_final}")
 
     try:
-        predictions_data = await prediction_service.get_race_predictions(
+        predictions_data = await prediction_service.get_predictions_by_race(
             race_id,
             is_final=is_final
         )

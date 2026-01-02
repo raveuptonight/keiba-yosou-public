@@ -18,13 +18,10 @@ from src.api.schemas.race import (
     RaceListResponse,
 )
 
-# 予想関連スキーマ
+# 予想関連スキーマ（確率ベース・ランキング形式）
 from src.api.schemas.prediction import (
-    HorseRanking,
-    ExcludedHorse,
-    WinPrediction,
-    RecommendedTicket,
-    BettingStrategy,
+    PositionDistribution,
+    HorseRankingEntry,
     PredictionResult,
     PredictionRequest,
     PredictionResponse,
@@ -68,12 +65,9 @@ __all__ = [
     "RaceEntry",
     "RaceDetail",
     "RaceListResponse",
-    # 予想関連
-    "HorseRanking",
-    "ExcludedHorse",
-    "WinPrediction",
-    "RecommendedTicket",
-    "BettingStrategy",
+    # 予想関連（確率ベース・ランキング形式）
+    "PositionDistribution",
+    "HorseRankingEntry",
     "PredictionResult",
     "PredictionRequest",
     "PredictionResponse",

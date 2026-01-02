@@ -484,5 +484,6 @@ async def get_race_odds(
 
         return result
     except Exception as e:
-        logger.error(f"Failed to get race odds: race_id={race_id}, error={e}")
-        raise
+        # オッズテーブルが存在しない場合は空の辞書を返す
+        logger.warning(f"Odds not available: race_id={race_id}, error={e}")
+        return {}

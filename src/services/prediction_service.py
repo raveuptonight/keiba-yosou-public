@@ -13,20 +13,17 @@ import asyncpg
 
 import os
 
-# MLモデルパス
-ML_MODEL_PATH = Path("/app/models/xgboost_model_latest.pkl")
+# MLモデルパス（ensemble_modelのみ使用）
+ML_MODEL_PATH = Path("/app/models/ensemble_model_latest.pkl")
 if not ML_MODEL_PATH.exists():
     # ローカル開発時のパス
-    ML_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "xgboost_model_latest.pkl"
+    ML_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "ensemble_model_latest.pkl"
 from src.api.schemas.prediction import (
     PredictionResponse,
     PredictionResult,
-    WinPrediction,
-    BettingStrategy,
-    HorseRanking,
-    RecommendedTicket,
+    HorseRankingEntry,
+    PositionDistribution,
     PredictionHistoryItem,
-    ExcludedHorse,
 )
 from src.exceptions import (
     PredictionError,
@@ -70,21 +67,28 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
     logger.info(f"Computing ML predictions: race_id={race_id}, horses={len(horses)}")
 
     try:
-        from src.features.real_feature_extractor import RealFeatureExtractor
-        from src.models.xgboost_model import HorseRacingXGBoost
+        from src.models.fast_train import FastFeatureExtractor
         from src.db.connection import get_db
         import pandas as pd
+        import numpy as np
+        import joblib
 
         # モデル読み込み
-        model = HorseRacingXGBoost()
-        if ML_MODEL_PATH.exists():
-            try:
-                model.load(str(ML_MODEL_PATH))
-                logger.info(f"ML model loaded: {ML_MODEL_PATH}")
-            except Exception as e:
-                logger.warning(f"Failed to load ML model, using mock: {e}")
-        else:
+        if not ML_MODEL_PATH.exists():
             logger.warning(f"ML model not found: {ML_MODEL_PATH}")
+            return {}
+
+        model_data = joblib.load(ML_MODEL_PATH)
+
+        # ensemble_modelのみ使用
+        if 'models' not in model_data:
+            logger.error(f"Invalid model format: ensemble_model required")
+            return {}
+
+        xgb_model = model_data['models'].get('xgboost')
+        lgb_model = model_data['models'].get('lightgbm')
+        feature_names = model_data.get('feature_names', [])
+        logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}")
 
         # DB接続を取得
         db = get_db()
@@ -95,25 +99,51 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
             return {}
 
         try:
-            # 特徴量抽出
-            extractor = RealFeatureExtractor(conn)
+            # 特徴量抽出（ML学習時と同じFastFeatureExtractorを使用）
+            extractor = FastFeatureExtractor(conn)
 
-            # data_kubun: 出馬表段階では "4" or "5"、確定後は "7"
-            features_list = extractor.extract_features_for_race(race_id, data_kubun="5")
-            if not features_list:
-                features_list = extractor.extract_features_for_race(race_id, data_kubun="7")
+            # 年度を取得してデータ抽出
+            year = int(race_id[:4])
+            logger.info(f"Extracting features for year {year}...")
 
-            if not features_list:
-                logger.warning(f"No features extracted for race: {race_id}")
+            df = extractor.extract_year_data(year, max_races=10000)
+
+            if len(df) == 0:
+                logger.warning(f"No data for year {year}")
                 return {}
 
-            # DataFrame に変換
-            features_list.sort(key=lambda x: x.get('umaban', 0))
-            df = pd.DataFrame(features_list)
+            # レースコードでフィルタ
+            race_df = df[df['race_code'] == race_id].copy()
 
-            # ML予測
-            rank_scores = model.predict(df)
-            win_probs = model.predict_win_probability(df)
+            if len(race_df) == 0:
+                logger.warning(f"No data for race: {race_id}")
+                return {}
+
+            logger.info(f"Found {len(race_df)} horses for race {race_id}")
+
+            # モデルが期待する特徴量のみを抽出
+            available_features = [f for f in feature_names if f in race_df.columns]
+            missing_features = [f for f in feature_names if f not in race_df.columns]
+            if missing_features:
+                logger.warning(f"Missing features: {missing_features[:5]}...")
+                for f in missing_features:
+                    race_df[f] = 0
+
+            X = race_df[feature_names].fillna(0)
+            features_list = race_df.to_dict('records')
+
+            # ML予測（ensemble_model: XGBoost + LightGBM）
+            if not xgb_model or not lgb_model:
+                logger.error("Ensemble model requires both XGBoost and LightGBM")
+                return {}
+
+            xgb_pred = xgb_model.predict(X)
+            lgb_pred = lgb_model.predict(X)
+            rank_scores = (xgb_pred + lgb_pred) / 2
+
+            # スコアを確率に変換（softmax風）
+            scores_exp = np.exp(-rank_scores)
+            win_probs = scores_exp / scores_exp.sum()
 
             # 結果を辞書形式に変換
             ml_scores = {}
@@ -135,27 +165,42 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
         return {}
 
 
-def _generate_mock_prediction(race_id: str, total_investment: int, is_final: bool) -> PredictionResponse:
-    """モック予想を生成"""
+def _generate_mock_prediction(race_id: str, is_final: bool) -> PredictionResponse:
+    """モック予想を生成（確率ベース・ランキング形式）"""
     logger.info(f"[MOCK] Generating mock prediction for race_id={race_id}")
 
-    # モックの予想結果
-    win_prediction = WinPrediction(
-        first=HorseRanking(horse_number=1, horse_name="モックホース1", expected_odds=3.5, confidence=0.8),
-        second=HorseRanking(horse_number=5, horse_name="モックホース5", expected_odds=8.2, confidence=0.6),
-        third=HorseRanking(horse_number=3, horse_name="モックホース3", expected_odds=12.0, confidence=0.5),
-    )
+    # モックのランキングデータ
+    mock_horses = [
+        {"rank": 1, "horse_number": 1, "horse_name": "モックホース1", "win_prob": 0.25},
+        {"rank": 2, "horse_number": 5, "horse_name": "モックホース5", "win_prob": 0.18},
+        {"rank": 3, "horse_number": 3, "horse_name": "モックホース3", "win_prob": 0.12},
+        {"rank": 4, "horse_number": 7, "horse_name": "モックホース7", "win_prob": 0.10},
+        {"rank": 5, "horse_number": 2, "horse_name": "モックホース2", "win_prob": 0.08},
+    ]
 
-    betting_strategy = BettingStrategy(
-        recommended_tickets=[
-            RecommendedTicket(ticket_type="3連複", numbers=[1, 3, 5], amount=1000, expected_payout=5000),
-            RecommendedTicket(ticket_type="馬連", numbers=[1, 5], amount=2000, expected_payout=4000),
-        ]
-    )
+    ranked_horses = [
+        HorseRankingEntry(
+            rank=h["rank"],
+            horse_number=h["horse_number"],
+            horse_name=h["horse_name"],
+            win_probability=h["win_prob"],
+            place_probability=min(h["win_prob"] * 2.5, 0.6),
+            position_distribution=PositionDistribution(
+                first=h["win_prob"],
+                second=h["win_prob"] * 0.8,
+                third=h["win_prob"] * 0.6,
+                out_of_place=max(0, 1.0 - h["win_prob"] * 2.4),
+            ),
+            rank_score=float(h["rank"]),
+            confidence=0.7 - h["rank"] * 0.05,
+        )
+        for h in mock_horses
+    ]
 
     prediction_result = PredictionResult(
-        win_prediction=win_prediction,
-        betting_strategy=betting_strategy
+        ranked_horses=ranked_horses,
+        prediction_confidence=0.72,
+        model_info="mock_model",
     )
 
     return PredictionResponse(
@@ -167,9 +212,6 @@ def _generate_mock_prediction(race_id: str, total_investment: int, is_final: boo
         race_number="11",
         race_time="15:40",
         prediction_result=prediction_result,
-        total_investment=total_investment,
-        expected_return=9000,
-        expected_roi=0.9,
         predicted_at=datetime.now(),
         is_final=is_final,
     )
@@ -177,21 +219,20 @@ def _generate_mock_prediction(race_id: str, total_investment: int, is_final: boo
 
 def _generate_ml_only_prediction(
     race_data: Dict[str, Any],
-    ml_scores: Dict[str, Any],
-    total_investment: int
+    ml_scores: Dict[str, Any]
 ) -> Dict[str, Any]:
     """
-    MLスコアのみから予想結果を生成（LLM不使用）
+    MLスコアから確率ベース・ランキング形式の予想結果を生成
 
     Args:
         race_data: レースデータ
         ml_scores: ML予測スコア
-        total_investment: 総投資額
 
     Returns:
-        Dict: LLM結果互換形式の予想データ
+        Dict: 確率ベース・ランキング形式の予想データ
     """
     horses = race_data.get("horses", [])
+    n_horses = len(horses)
 
     # MLスコアでソート（スコアが低いほど上位）
     scored_horses = []
@@ -208,159 +249,92 @@ def _generate_ml_only_prediction(
     # スコア順にソート
     scored_horses.sort(key=lambda x: x["rank_score"])
 
-    # 印を割り当て（上位から順に）
-    marks = ['◎', '○', '▲', '△', '△', '×', '×', '☆', '☆', '☆']
+    # 順位分布を計算（簡易モデル: 勝率ベースで推定）
+    def calc_position_distribution(win_prob: float, rank: int, n: int) -> Dict[str, float]:
+        """順位分布を推定（勝率と予測順位から算出）"""
+        # 1着確率 = 勝率
+        first = win_prob
+        # 2着確率 = 予測順位に応じて減衰
+        second = min(win_prob * 1.5, 0.3) if rank <= 5 else win_prob * 0.5
+        # 3着確率
+        third = min(win_prob * 1.8, 0.35) if rank <= 7 else win_prob * 0.3
+        # 4着以下
+        out = max(0.0, 1.0 - first - second - third)
+        return {
+            "first": round(first, 4),
+            "second": round(second, 4),
+            "third": round(third, 4),
+            "out_of_place": round(out, 4),
+        }
+
+    # ランキングエントリを生成
+    ranked_horses = []
     for i, h in enumerate(scored_horses):
-        h['mark'] = marks[i] if i < len(marks) else '消'
+        rank = i + 1
+        win_prob = h["win_probability"]
+        pos_dist = calc_position_distribution(win_prob, rank, n_horses)
 
-    # TOP5を抽出
-    top5 = scored_horses[:5]
+        # 複勝率（3着以内確率）
+        place_prob = pos_dist["first"] + pos_dist["second"] + pos_dist["third"]
 
-    # 馬券配分を計算（100円単位）
-    bets = _calculate_bet_allocation_100yen(scored_horses, total_investment)
+        # 個別の信頼度（データの完全性とスコアの分離度から算出）
+        # スコアが他の馬と十分に離れているかで信頼度を評価
+        if i < len(scored_horses) - 1:
+            score_gap = scored_horses[i + 1]["rank_score"] - h["rank_score"]
+            confidence = min(0.95, 0.5 + score_gap * 0.3)
+        else:
+            confidence = 0.5
+
+        ranked_horses.append({
+            "rank": rank,
+            "horse_number": h["horse_number"],
+            "horse_name": h["horse_name"],
+            "win_probability": round(win_prob, 4),
+            "place_probability": round(place_prob, 4),
+            "position_distribution": pos_dist,
+            "rank_score": round(h["rank_score"], 4),
+            "confidence": round(confidence, 4),
+        })
+
+    # 予測全体の信頼度（トップ馬の勝率と2位との差から算出）
+    if len(scored_horses) >= 2:
+        top_prob = scored_horses[0]["win_probability"]
+        second_prob = scored_horses[1]["win_probability"]
+        gap_ratio = (top_prob - second_prob) / max(top_prob, 0.01)
+        prediction_confidence = min(0.95, 0.4 + gap_ratio * 0.5 + top_prob)
+    else:
+        prediction_confidence = 0.5
 
     return {
-        "win_prediction": {
-            "first": {
-                "horse_number": top5[0]["horse_number"],
-                "horse_name": top5[0]["horse_name"],
-                "expected_odds": None,
-                "confidence": top5[0]["win_probability"],
-            },
-            "second": {
-                "horse_number": top5[1]["horse_number"],
-                "horse_name": top5[1]["horse_name"],
-                "expected_odds": None,
-                "confidence": top5[1]["win_probability"],
-            },
-            "third": {
-                "horse_number": top5[2]["horse_number"],
-                "horse_name": top5[2]["horse_name"],
-                "expected_odds": None,
-                "confidence": top5[2]["win_probability"],
-            },
-            "fourth": {
-                "horse_number": top5[3]["horse_number"],
-                "horse_name": top5[3]["horse_name"],
-                "expected_odds": None,
-                "confidence": top5[3]["win_probability"],
-            } if len(top5) > 3 else None,
-            "fifth": {
-                "horse_number": top5[4]["horse_number"],
-                "horse_name": top5[4]["horse_name"],
-                "expected_odds": None,
-                "confidence": top5[4]["win_probability"],
-            } if len(top5) > 4 else None,
-        },
-        "betting_strategy": {
-            "recommended_tickets": bets,
-        },
-        "ranked_horses": scored_horses,
+        "ranked_horses": ranked_horses,
+        "prediction_confidence": round(prediction_confidence, 4),
+        "model_info": "ensemble_model (XGBoost + LightGBM)",
     }
-
-
-def _calculate_bet_allocation_100yen(
-    scored_horses: List[Dict],
-    budget: int
-) -> List[Dict]:
-    """
-    100円単位で馬券配分を計算（単勝＋三連複に特化）
-
-    Args:
-        scored_horses: スコア順の馬リスト
-        budget: 予算
-
-    Returns:
-        List[Dict]: 推奨馬券リスト
-    """
-    bets = []
-
-    # 上位馬を取得
-    top3 = scored_horses[:3]
-    himo = scored_horses[3:7]  # 紐候補（△×）
-
-    def round_to_100(amount: int) -> int:
-        """100円単位に丸める"""
-        return (amount // 100) * 100
-
-    # 単勝と三連複に特化した配分
-    # 単勝: 予算の20%、三連複: 予算の80%
-    tansho_amount = round_to_100(int(budget * 0.20))
-    sanrenpuku_amount = round_to_100(int(budget * 0.80))
-
-    # 信頼スコア計算用の関数
-    def calc_confidence(horses: List[Dict]) -> float:
-        """複数馬の組み合わせ信頼度（各馬の勝率の積を正規化）"""
-        if not horses:
-            return 0.0
-        probs = [h.get("win_probability", 0.1) for h in horses]
-        # 組み合わせスコア（幾何平均を使用）
-        import math
-        geo_mean = math.exp(sum(math.log(max(p, 0.01)) for p in probs) / len(probs))
-        # 0-100%にスケール
-        return min(geo_mean * 300, 99.0)  # 最大99%
-
-    # 単勝: 本命◎
-    if top3:
-        confidence = top3[0].get("win_probability", 0.1) * 100
-        bets.append({
-            "ticket_type": "単勝",
-            "numbers": [top3[0]["horse_number"]],
-            "confidence": min(confidence * 2, 95.0),  # スケール調整
-        })
-
-    # 三連複: ◎○▲ボックス + ◎○-紐流し
-    if len(top3) >= 3:
-        # 本線: ◎○▲ボックス
-        nums = sorted([h["horse_number"] for h in top3])
-        bets.append({
-            "ticket_type": "三連複",
-            "numbers": nums,
-            "confidence": calc_confidence(top3),
-        })
-
-        # 紐流し: ◎○-△×（上位2頭固定 + 紐1頭）
-        if himo:
-            flow_targets = himo[:4]  # 最大4頭まで
-            for h in flow_targets:
-                flow_nums = sorted([top3[0]["horse_number"], top3[1]["horse_number"], h["horse_number"]])
-                flow_horses = [top3[0], top3[1], h]
-                bets.append({
-                    "ticket_type": "三連複",
-                    "numbers": flow_nums,
-                    "confidence": calc_confidence(flow_horses),
-                    })
-
-    return bets
 
 
 async def generate_prediction(
     race_id: str,
-    is_final: bool = False,
-    total_investment: int = 10000
+    is_final: bool = False
 ) -> PredictionResponse:
     """
     予想生成のメイン関数（MLモデルのみ使用、LLM不使用）
+    確率ベース・ランキング形式・順位分布・信頼度スコアを出力
 
     Args:
         race_id: レースID（16桁）
         is_final: 最終予想フラグ（馬体重後）
-        total_investment: 総投資額（円）
 
     Returns:
-        PredictionResponse: 予想結果
+        PredictionResponse: 予想結果（確率ベース・ランキング形式）
 
     Raises:
         PredictionError: 予想生成に失敗した場合
     """
-    logger.info(
-        f"Starting ML-only prediction: race_id={race_id}, "
-        f"is_final={is_final}, investment={total_investment}"
-    )
+    logger.info(f"Starting ML prediction: race_id={race_id}, is_final={is_final}")
 
     # モックモードの場合
     if _is_mock_mode():
-        return _generate_mock_prediction(race_id, total_investment, is_final)
+        return _generate_mock_prediction(race_id, is_final)
 
     try:
         # 遅延インポート（モック時は不要）
@@ -398,12 +372,11 @@ async def generate_prediction(
             logger.error(f"ML prediction failed: {e}")
             raise PredictionError(f"ML予測に失敗しました: {e}") from e
 
-        # 3. MLスコアから予想結果を生成（LLM不使用）
-        logger.debug("Generating prediction from ML scores only")
+        # 3. MLスコアから確率ベース・ランキング形式の予想結果を生成
+        logger.debug("Generating probability-based ranking prediction")
         ml_result = _generate_ml_only_prediction(
             race_data=race_data,
-            ml_scores=ml_scores,
-            total_investment=total_investment
+            ml_scores=ml_scores
         )
 
         # 4. 予想結果をPydanticモデルに変換
@@ -411,7 +384,6 @@ async def generate_prediction(
         prediction_response = _convert_to_prediction_response(
             race_data=race_data,
             ml_result=ml_result,
-            total_investment=total_investment,
             is_final=is_final
         )
 
@@ -419,9 +391,7 @@ async def generate_prediction(
         prediction_id = await save_prediction(prediction_response)
         prediction_response.prediction_id = prediction_id
 
-        logger.info(
-            f"ML-only prediction completed: prediction_id={prediction_id}"
-        )
+        logger.info(f"ML prediction completed: prediction_id={prediction_id}")
         return prediction_response
 
     except MissingDataError:
@@ -458,39 +428,45 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
         from src.db.async_connection import get_connection
 
         async with get_connection() as conn:
-            # predictions テーブルに保存
+            # predictions テーブルに保存（確率ベース形式）
             sql = """
                 INSERT INTO predictions (
                     prediction_id,
                     race_id,
                     race_date,
                     is_final,
-                    total_investment,
-                    expected_return,
-                    expected_roi,
                     prediction_result,
                     predicted_at
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING prediction_id;
             """
 
             # prediction_id を生成（UUIDベース）
             prediction_id = str(uuid.uuid4())
 
-            # prediction_result を辞書に変換
-            prediction_result_dict = prediction_data.prediction_result.model_dump()
+            # prediction_result をJSON文字列に変換（JSONB用）
+            import json
+            prediction_result_json = json.dumps(
+                prediction_data.prediction_result.model_dump(),
+                ensure_ascii=False,
+                default=str
+            )
+
+            # race_date を date型に変換
+            from datetime import date as date_type
+            if isinstance(prediction_data.race_date, str):
+                race_date = date_type.fromisoformat(prediction_data.race_date)
+            else:
+                race_date = prediction_data.race_date
 
             result = await conn.fetchrow(
                 sql,
                 prediction_id,
                 prediction_data.race_id,
-                prediction_data.race_date,
+                race_date,
                 prediction_data.is_final,
-                prediction_data.total_investment,
-                prediction_data.expected_return,
-                prediction_data.expected_roi,
-                prediction_result_dict,  # JSONB として保存
+                prediction_result_json,  # JSONB として保存
                 prediction_data.predicted_at,
             )
 
@@ -540,9 +516,6 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                     race_id,
                     race_date,
                     is_final,
-                    total_investment,
-                    expected_return,
-                    expected_roi,
                     prediction_result,
                     predicted_at
                 FROM predictions
@@ -575,7 +548,26 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                 race_time = race_info.get("hasso_jikoku", "00:00")
 
             # PredictionResponse に変換
-            prediction_result = PredictionResult(**row["prediction_result"])
+            prediction_result_data = row["prediction_result"]
+            # ランキングエントリを構築
+            ranked_horses = [
+                HorseRankingEntry(
+                    rank=h["rank"],
+                    horse_number=h["horse_number"],
+                    horse_name=h["horse_name"],
+                    win_probability=h["win_probability"],
+                    place_probability=h["place_probability"],
+                    position_distribution=PositionDistribution(**h["position_distribution"]),
+                    rank_score=h["rank_score"],
+                    confidence=h["confidence"],
+                )
+                for h in prediction_result_data.get("ranked_horses", [])
+            ]
+            prediction_result = PredictionResult(
+                ranked_horses=ranked_horses,
+                prediction_confidence=prediction_result_data.get("prediction_confidence", 0.5),
+                model_info=prediction_result_data.get("model_info", "unknown"),
+            )
 
             prediction_response = PredictionResponse(
                 prediction_id=row["prediction_id"],
@@ -586,9 +578,6 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                 race_number=race_number,
                 race_time=race_time,
                 prediction_result=prediction_result,
-                total_investment=row["total_investment"],
-                expected_return=row["expected_return"],
-                expected_roi=row["expected_roi"],
                 predicted_at=row["predicted_at"],
                 is_final=row["is_final"],
             )
@@ -638,7 +627,7 @@ async def get_predictions_by_race(
                         prediction_id,
                         predicted_at,
                         is_final,
-                        expected_roi
+                        prediction_result
                     FROM predictions
                     WHERE race_id = $1
                     ORDER BY predicted_at DESC;
@@ -650,7 +639,7 @@ async def get_predictions_by_race(
                         prediction_id,
                         predicted_at,
                         is_final,
-                        expected_roi
+                        prediction_result
                     FROM predictions
                     WHERE race_id = $1 AND is_final = $2
                     ORDER BY predicted_at DESC;
@@ -662,7 +651,7 @@ async def get_predictions_by_race(
                     prediction_id=row["prediction_id"],
                     predicted_at=row["predicted_at"],
                     is_final=row["is_final"],
-                    expected_roi=row["expected_roi"],
+                    prediction_confidence=row["prediction_result"].get("prediction_confidence", 0.5) if row["prediction_result"] else 0.5,
                 )
                 for row in rows
             ]
@@ -683,16 +672,14 @@ async def get_predictions_by_race(
 def _convert_to_prediction_response(
     race_data: Dict[str, Any],
     ml_result: Dict[str, Any],
-    total_investment: int,
     is_final: bool
 ) -> PredictionResponse:
     """
-    ML結果をPredictionResponseに変換
+    ML結果を確率ベース・ランキング形式のPredictionResponseに変換
 
     Args:
         race_data: レースデータ
-        ml_result: ML予想結果
-        total_investment: 総投資額
+        ml_result: ML予想結果（確率ベース・ランキング形式）
         is_final: 最終予想フラグ
 
     Returns:
@@ -716,52 +703,28 @@ def _convert_to_prediction_response(
     else:
         race_date = datetime.now().strftime("%Y-%m-%d")
 
-    # WinPrediction を構築
-    win_pred_data = ml_result.get("win_prediction", {})
-
-    def _build_horse_ranking(data: Dict[str, Any]) -> HorseRanking:
-        return HorseRanking(
-            horse_number=data.get("horse_number", 0),
-            horse_name=data.get("horse_name", "不明"),
-            expected_odds=data.get("expected_odds"),
-            confidence=data.get("confidence")
+    # ランキングエントリを構築
+    ranked_horses_data = ml_result.get("ranked_horses", [])
+    ranked_horses = [
+        HorseRankingEntry(
+            rank=h["rank"],
+            horse_number=h["horse_number"],
+            horse_name=h["horse_name"],
+            win_probability=h["win_probability"],
+            place_probability=h["place_probability"],
+            position_distribution=PositionDistribution(**h["position_distribution"]),
+            rank_score=h["rank_score"],
+            confidence=h["confidence"],
         )
-
-    win_prediction = WinPrediction(
-        first=_build_horse_ranking(win_pred_data.get("first", {})),
-        second=_build_horse_ranking(win_pred_data.get("second", {})),
-        third=_build_horse_ranking(win_pred_data.get("third", {})),
-        fourth=_build_horse_ranking(win_pred_data.get("fourth", {})) if "fourth" in win_pred_data else None,
-        fifth=_build_horse_ranking(win_pred_data.get("fifth", {})) if "fifth" in win_pred_data else None,
-        excluded=[
-            ExcludedHorse(**exc)
-            for exc in win_pred_data.get("excluded", [])
-        ] if "excluded" in win_pred_data else None
-    )
-
-    # BettingStrategy を構築
-    betting_data = ml_result.get("betting_strategy", {})
-    recommended_tickets = [
-        RecommendedTicket(**ticket)
-        for ticket in betting_data.get("recommended_tickets", [])
+        for h in ranked_horses_data
     ]
 
-    betting_strategy = BettingStrategy(
-        recommended_tickets=recommended_tickets
-    )
-
-    # PredictionResult を構築
+    # PredictionResult を構築（確率ベース・ランキング形式）
     prediction_result = PredictionResult(
-        win_prediction=win_prediction,
-        betting_strategy=betting_strategy
+        ranked_horses=ranked_horses,
+        prediction_confidence=ml_result.get("prediction_confidence", 0.5),
+        model_info=ml_result.get("model_info", "ensemble_model"),
     )
-
-    # 期待回収額・ROIを計算
-    expected_return = sum(
-        ticket.expected_payout or 0
-        for ticket in recommended_tickets
-    )
-    expected_roi = expected_return / total_investment if total_investment > 0 else 0.0
 
     # PredictionResponse を構築
     prediction_response = PredictionResponse(
@@ -773,9 +736,6 @@ def _convert_to_prediction_response(
         race_number=race_number,
         race_time=race_time,
         prediction_result=prediction_result,
-        total_investment=total_investment,
-        expected_return=expected_return,
-        expected_roi=expected_roi,
         predicted_at=datetime.now(),
         is_final=is_final,
     )
@@ -800,15 +760,17 @@ if __name__ == "__main__":
         try:
             prediction = await generate_prediction(
                 race_id=test_race_id,
-                is_final=False,
-                total_investment=10000
+                is_final=False
             )
 
-            print("\n予想結果:")
+            print("\n予想結果（確率ベース・ランキング形式）:")
             print(f"予想ID: {prediction.prediction_id}")
             print(f"レース: {prediction.race_name}")
-            print(f"本命: {prediction.prediction_result.win_prediction.first.horse_name}")
-            print(f"期待ROI: {prediction.expected_roi:.2f}")
+            print(f"予測信頼度: {prediction.prediction_result.prediction_confidence:.2%}")
+            print(f"\n全馬ランキング:")
+            for h in prediction.prediction_result.ranked_horses:
+                print(f"  {h.rank}位: {h.horse_number}番 {h.horse_name} "
+                      f"(勝率: {h.win_probability:.1%}, 複勝率: {h.place_probability:.1%})")
 
         except Exception as e:
             print(f"エラー: {e}")

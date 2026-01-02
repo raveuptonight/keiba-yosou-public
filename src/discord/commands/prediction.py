@@ -2,25 +2,25 @@
 Discord Bot 予想関連コマンド
 
 !predict, !today コマンドを提供
-MLモデルによる確率・ランキング・順位分布・信頼度を出力
+APIを呼び出してML予測結果を取得・表示
 """
 
 import os
 import logging
 from datetime import date
-from pathlib import Path
 from typing import Dict, Any, List, Optional
-import numpy as np
-import pandas as pd
-import joblib
+import requests
 from discord.ext import commands
 
 from src.db.connection import get_db
-from src.models.fast_train import FastFeatureExtractor
 from src.discord.formatters import format_ml_prediction, format_race_list
 from src.discord.decorators import handle_api_errors, log_command_execution
 
 logger = logging.getLogger(__name__)
+
+# API設定
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
+API_TIMEOUT = 120  # 予測に時間がかかる場合があるため長めに設定
 
 
 class PredictionCommands(commands.Cog):
@@ -28,7 +28,7 @@ class PredictionCommands(commands.Cog):
     予想関連コマンド
 
     !predict, !today コマンドを提供します。
-    MLモデルによる確率・ランキング・順位分布・信頼度を出力。
+    APIを呼び出してML予測結果を取得・表示します。
     """
 
     def __init__(self, bot: commands.Bot):
@@ -37,146 +37,7 @@ class PredictionCommands(commands.Cog):
             bot: Discordボットインスタンス
         """
         self.bot = bot
-        self.xgb_model = None
-        self.lgb_model = None
-        self.feature_names = []
-        self.is_ensemble = False
-        self._cache = {}  # 年ごとのデータキャッシュ
-        self._load_model()
         logger.info("PredictionCommands初期化完了")
-
-    def _load_model(self):
-        """最新のモデルをロード"""
-        try:
-            models_dir = Path("models")
-            if not models_dir.exists():
-                logger.warning("modelsディレクトリが存在しません")
-                return
-
-            # アンサンブルモデルを優先して探す
-            ensemble_models = list(models_dir.glob("ensemble_model_*.pkl"))
-            single_models = list(models_dir.glob("fast_model_*.pkl"))
-
-            if ensemble_models:
-                model_path = sorted(ensemble_models)[-1]
-                self.is_ensemble = True
-            elif single_models:
-                model_path = sorted(single_models)[-1]
-                self.is_ensemble = False
-            else:
-                logger.warning("モデルファイルが見つかりません")
-                return
-
-            model_data = joblib.load(model_path)
-
-            if self.is_ensemble and 'models' in model_data:
-                models = model_data['models']
-                self.xgb_model = models.get('xgboost')
-                self.lgb_model = models.get('lightgbm')
-            else:
-                self.xgb_model = model_data.get('model')
-                self.lgb_model = None
-
-            self.feature_names = model_data.get('feature_names', [])
-            logger.info(f"モデルロード完了: {model_path} (ensemble={self.is_ensemble}, features={len(self.feature_names)})")
-
-        except Exception as e:
-            logger.error(f"モデルロードエラー: {e}")
-
-    def _predict_scores(self, X: np.ndarray) -> np.ndarray:
-        """モデルで予測スコアを計算"""
-        if self.is_ensemble and self.lgb_model is not None:
-            xgb_pred = self.xgb_model.predict(X)
-            lgb_pred = self.lgb_model.predict(X)
-            return (xgb_pred + lgb_pred) / 2
-        else:
-            return self.xgb_model.predict(X)
-
-    def _get_year_data(self, year: int) -> pd.DataFrame:
-        """指定年のデータを取得（キャッシュ付き）"""
-        if year in self._cache:
-            return self._cache[year]
-
-        db = get_db()
-        conn = db.get_connection()
-
-        try:
-            if self.is_ensemble:
-                from src.models.advanced_train import AdvancedFeatureExtractor
-                extractor = AdvancedFeatureExtractor(conn)
-                df = extractor.extract_year_data_advanced(year, max_races=10000)
-            else:
-                extractor = FastFeatureExtractor(conn)
-                df = extractor.extract_year_data(year, max_races=10000)
-
-            self._cache[year] = df
-            return df
-        finally:
-            conn.close()
-
-    def _get_race_info(self, race_code: str) -> Dict[str, Any]:
-        """レース情報を取得"""
-        db = get_db()
-        conn = db.get_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT hondai, kaisai_gappi, keibajo_code
-                FROM race_shosai rs
-                LEFT JOIN race_info ri ON rs.race_code = ri.race_code
-                WHERE rs.race_code = %s
-                LIMIT 1
-            """, (race_code,))
-            row = cur.fetchone()
-            cur.close()
-
-            if row:
-                keibajo_map = {
-                    '01': '札幌', '02': '函館', '03': '福島', '04': '新潟',
-                    '05': '東京', '06': '中山', '07': '中京', '08': '京都',
-                    '09': '阪神', '10': '小倉'
-                }
-                keibajo = keibajo_map.get(row[2], '不明') if row[2] else '不明'
-                race_num = race_code[-2:] if len(race_code) >= 2 else '??'
-
-                return {
-                    'race_name': row[0].strip() if row[0] else f"レース{race_code}",
-                    'kaisai_gappi': row[1],
-                    'venue': keibajo,
-                    'race_number': f"{int(race_num)}R"
-                }
-            return {
-                'race_name': f"レース{race_code}",
-                'kaisai_gappi': None,
-                'venue': '不明',
-                'race_number': '??R'
-            }
-        finally:
-            conn.close()
-
-    def _get_race_horses_info(self, race_code: str) -> List[Dict]:
-        """レースの出走馬基本情報を取得"""
-        db = get_db()
-        conn = db.get_connection()
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT umaban, bamei
-                FROM race_uma
-                WHERE race_code = %s
-                ORDER BY umaban::int
-            """, (race_code,))
-            rows = cur.fetchall()
-            cur.close()
-            return [
-                {'umaban': int(r[0]), 'bamei': r[1].strip() if r[1] else '不明'}
-                for r in rows
-            ]
-        except Exception as e:
-            logger.error(f"馬情報取得エラー: {e}")
-            return []
-        finally:
-            conn.close()
 
     def _resolve_race_code(self, race_spec: str) -> Optional[str]:
         """レース指定をレースコードに解決"""
@@ -225,6 +86,66 @@ class PredictionCommands(commands.Cog):
         finally:
             conn.close()
 
+    def _get_race_info(self, race_code: str) -> Dict[str, Any]:
+        """レース情報を取得"""
+        db = get_db()
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT kyosomei_hondai, keibajo_code, kaisai_gappi
+                FROM race_shosai
+                WHERE race_code = %s
+            """, (race_code,))
+            row = cur.fetchone()
+            cur.close()
+
+            if row:
+                keibajo_map = {
+                    '01': '札幌', '02': '函館', '03': '福島', '04': '新潟',
+                    '05': '東京', '06': '中山', '07': '中京', '08': '京都',
+                    '09': '阪神', '10': '小倉'
+                }
+                race_num = race_code[-2:]
+                return {
+                    'race_name': row[0].strip() if row[0] else f'{race_num}R',
+                    'venue': keibajo_map.get(row[1], '不明'),
+                    'kaisai_gappi': row[2],
+                    'race_number': f'{int(race_num)}R'
+                }
+            return {
+                'race_name': '不明',
+                'kaisai_gappi': None,
+                'venue': '不明',
+                'race_number': '??R'
+            }
+        finally:
+            conn.close()
+
+    def _get_race_horses_info(self, race_code: str) -> List[Dict]:
+        """レースの出走馬基本情報を取得"""
+        db = get_db()
+        conn = db.get_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT umaban, bamei
+                FROM race_uma
+                WHERE race_code = %s
+                ORDER BY umaban::int
+            """, (race_code,))
+            rows = cur.fetchall()
+            cur.close()
+            return [
+                {'umaban': int(r[0]), 'bamei': r[1].strip() if r[1] else '不明'}
+                for r in rows
+            ]
+        except Exception as e:
+            logger.error(f"馬情報取得エラー: {e}")
+            return []
+        finally:
+            conn.close()
+
     @commands.command(name="predict")
     @handle_api_errors
     @log_command_execution
@@ -236,7 +157,7 @@ class PredictionCommands(commands.Cog):
         """
         予想実行コマンド
 
-        MLモデルによる確率・ランキング・順位分布・信頼度を出力
+        APIを呼び出してML予測結果を取得・表示
 
         Args:
             ctx: コマンドコンテキスト
@@ -247,70 +168,91 @@ class PredictionCommands(commands.Cog):
             !predict 中山11R
             !predict 202501050811
         """
-        if not self.xgb_model:
-            await ctx.send("❌ モデルがロードされていません。")
-            return
-
         await ctx.send(f"🔄 予想を実行中... ({race_spec})")
 
         try:
             # レースコードを解決
             race_code = self._resolve_race_code(race_spec)
             if not race_code:
-                # 直接レースコードとして試す
                 race_code = race_spec
-
-            # 年度を取得
-            year = int(race_code[:4])
 
             # レース情報を取得
             race_info = self._get_race_info(race_code)
             race_name = race_info['race_name']
 
-            # 馬情報を取得
+            # 馬情報を取得（表示用）
             horses_info = self._get_race_horses_info(race_code)
             if not horses_info:
                 await ctx.send(f"❌ レースコード {race_code} の出走馬情報が見つかりません。")
                 return
 
-            # 年間データを取得
-            await ctx.send(f"📊 {year}年のデータを準備中...")
-            df = self._get_year_data(year)
+            # API呼び出しで予測実行
+            await ctx.send(f"📊 APIで予測を実行中...")
 
-            if len(df) == 0:
-                await ctx.send(f"❌ {year}年のデータが取得できませんでした。")
-                return
-
-            # レースコードでフィルタ
-            race_df = df[df['race_code'] == race_code].copy()
-
-            if len(race_df) == 0:
-                await ctx.send(f"❌ レースコード {race_code} のデータが見つかりません。")
-                return
-
-            # 特徴量で予測
-            X = race_df[self.feature_names].fillna(0)
-            scores = self._predict_scores(X.values)
-
-            # 馬番リストを取得
-            horse_numbers = race_df['umaban'].astype(int).tolist()
-
-            # 馬名をマッピング
-            horse_name_map = {h['umaban']: h['bamei'] for h in horses_info}
-            horse_names = [horse_name_map.get(n, f'馬{n}') for n in horse_numbers]
-
-            # Discord用にフォーマット
-            message = format_ml_prediction(
-                race_code=race_code,
-                race_name=race_name,
-                horse_numbers=horse_numbers,
-                horse_names=horse_names,
-                model_scores=scores
+            response = requests.post(
+                f"{API_BASE_URL}/api/predictions/generate",
+                json={"race_id": race_code, "is_final": False},
+                timeout=API_TIMEOUT
             )
 
-            await ctx.send(message)
-            logger.info(f"予想コマンド完了: race_code={race_code}, horses={len(horse_numbers)}")
+            if response.status_code != 200:
+                error_detail = response.json().get('detail', {})
+                error_msg = error_detail.get('message', str(response.text))
+                await ctx.send(f"❌ 予測エラー: {error_msg}")
+                return
 
+            prediction = response.json()
+            pred_result = prediction.get('prediction_result', {})
+            ranked_horses = pred_result.get('ranked_horses', [])
+            pred_confidence = pred_result.get('prediction_confidence', 0)
+            model_info = pred_result.get('model_info', 'unknown')
+
+            # 予測結果をフォーマット（確率ベース・ランキング形式）
+            lines = [
+                f"🏇 **{race_info['venue']} {race_info['race_number']}** {race_name}",
+                f"📊 予測信頼度: {pred_confidence:.1%} | モデル: {model_info}",
+                ""
+            ]
+
+            # 全馬ランキング
+            marks = ['◎', '○', '▲', '△', '△', '×', '×', '☆', '☆', '☆']
+            lines.append("**予測ランキング**")
+            for h in ranked_horses:
+                rank = h.get('rank', 0)
+                num = h.get('horse_number', '?')
+                name = h.get('horse_name', '不明')
+                win_prob = h.get('win_probability', 0)
+                place_prob = h.get('place_probability', 0)
+                mark = marks[rank - 1] if rank <= len(marks) else '消'
+                lines.append(
+                    f"{mark} {rank}位 {num}番 {name} "
+                    f"(勝率{win_prob:.1%} 複勝{place_prob:.1%})"
+                )
+
+            # 順位分布（上位3頭のみ詳細表示）
+            if ranked_horses:
+                lines.append("")
+                lines.append("**順位分布（上位3頭）**")
+                for h in ranked_horses[:3]:
+                    num = h.get('horse_number', '?')
+                    name = h.get('horse_name', '不明')
+                    pos_dist = h.get('position_distribution', {})
+                    lines.append(
+                        f"  {num}番 {name}: "
+                        f"1着{pos_dist.get('first', 0):.1%} "
+                        f"2着{pos_dist.get('second', 0):.1%} "
+                        f"3着{pos_dist.get('third', 0):.1%}"
+                    )
+
+            message = "\n".join(lines)
+            await ctx.send(message)
+            logger.info(f"予想コマンド完了: race_code={race_code}")
+
+        except requests.Timeout:
+            await ctx.send("❌ APIタイムアウト: 予測に時間がかかりすぎています")
+        except requests.RequestException as e:
+            logger.exception(f"API通信エラー: {e}")
+            await ctx.send(f"❌ API通信エラー: {str(e)}")
         except Exception as e:
             logger.exception(f"予想エラー: {e}")
             await ctx.send(f"❌ 予想中にエラーが発生しました: {str(e)}")
@@ -334,13 +276,12 @@ class PredictionCommands(commands.Cog):
             today = date.today()
             cur = conn.cursor()
             cur.execute("""
-                SELECT rs.race_code, ri.hondai, rs.keibajo_code
+                SELECT rs.race_code, rs.kyosomei_hondai, rs.keibajo_code
                 FROM race_shosai rs
-                LEFT JOIN race_info ri ON rs.race_code = ri.race_code
                 WHERE rs.kaisai_gappi = %s
                   AND rs.data_kubun = '7'
                 ORDER BY rs.race_code
-            """, (today.strftime('%Y%m%d'),))
+            """, (today.strftime('%m%d'),))
             rows = cur.fetchall()
             cur.close()
 
@@ -350,54 +291,31 @@ class PredictionCommands(commands.Cog):
                 '09': '阪神', '10': '小倉'
             }
 
+            if not rows:
+                await ctx.send(f"📅 本日 ({today.strftime('%Y/%m/%d')}) のレースはありません。")
+                return
+
             races = []
             for row in rows:
                 race_code = row[0]
-                race_name = row[1].strip() if row[1] else 'レース名不明'
-                venue = keibajo_map.get(row[2], '不明') if row[2] else '不明'
-                race_num = int(race_code[-2:]) if len(race_code) >= 2 else 0
-
+                race_name = row[1].strip() if row[1] else f'{race_code[-2:]}R'
+                venue = keibajo_map.get(row[2], '不明')
+                race_num = int(race_code[-2:])
                 races.append({
-                    "race_id": race_code,
-                    "race_name": race_name,
-                    "venue": venue,
-                    "race_number": f"{race_num}R",
-                    "race_time": "",
+                    'race_code': race_code,
+                    'race_name': race_name,
+                    'venue': venue,
+                    'race_number': f'{race_num}R'
                 })
-
-            if not races:
-                await ctx.send(f"📅 本日({today})のレースはありません。")
-                return
 
             message = format_race_list(races)
             await ctx.send(message)
 
-        except Exception as e:
-            logger.exception(f"レース一覧取得エラー: {e}")
-            await ctx.send(f"❌ レース一覧取得中にエラーが発生しました: {str(e)}")
         finally:
             conn.close()
 
-    @commands.command(name="model-reload")
-    @commands.has_permissions(administrator=True)
-    async def reload_model(self, ctx: commands.Context):
-        """
-        モデルを再ロード（管理者のみ）
-        """
-        self._load_model()
-        self._cache.clear()
-        if self.xgb_model:
-            await ctx.send(f"✅ モデルを再ロードしました。(ensemble={self.is_ensemble}, features={len(self.feature_names)})")
-        else:
-            await ctx.send("❌ モデルのロードに失敗しました。")
-
 
 async def setup(bot: commands.Bot):
-    """
-    PredictionCommandsをBotに登録
-
-    Args:
-        bot: Discordボットインスタンス
-    """
+    """Cogをボットに登録"""
     await bot.add_cog(PredictionCommands(bot))
     logger.info("PredictionCommands登録完了")

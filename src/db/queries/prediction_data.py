@@ -22,6 +22,7 @@ from src.db.queries.horse_queries import (
 from src.db.queries.odds_queries import (
     get_race_odds,
 )
+from src.db.table_names import COL_KETTONUM, COL_RACE_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,6 @@ async def get_race_prediction_data(
     logger.debug(f"Found {len(horses)} horses")
 
     # 3. 血統登録番号リストを抽出
-    from src.db.table_names import COL_KETTONUM, COL_RACE_NAME
     kettonums = [horse[COL_KETTONUM] for horse in horses]
 
     logger.debug(f"Extracted {len(kettonums)} kettonums")
