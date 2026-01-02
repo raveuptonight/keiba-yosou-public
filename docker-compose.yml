@@ -30,13 +30,9 @@ services:
       - DB_NAME=keiba_db
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL}
-      - LLM_PROVIDER=${LLM_PROVIDER}
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       - ./src:/app/src:ro        # ソースコード（読み取り専用）
-      - ./prompts:/app/prompts:ro
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
@@ -77,9 +73,6 @@ services:
       - DISCORD_COMMAND_CHANNEL_ID=${DISCORD_COMMAND_CHANNEL_ID}
       - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
       - API_BASE_URL=http://api:8000
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL}
-      - LLM_PROVIDER=${LLM_PROVIDER}
     volumes:
       - ./src:/app/src:ro        # ソースコード（読み取り専用）
       - ./models:/app/models

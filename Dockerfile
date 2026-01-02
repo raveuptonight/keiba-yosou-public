@@ -24,7 +24,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # アプリケーションコード
 COPY src/ ./src/
-COPY prompts/ ./prompts/
 
 # モデルディレクトリ作成
 RUN mkdir -p /app/models /app/logs /app/backtest_results

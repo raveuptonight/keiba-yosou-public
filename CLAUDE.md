@@ -2,8 +2,8 @@
 
 ## プロジェクト概要
 
-JRA-VANの公式競馬データを活用し、LLM（Claude）による競馬予想システムを構築するプロジェクト。
-データ分析とLLMの推論能力を組み合わせたハイブリッド予想を目指す。
+JRA-VANの公式競馬データを活用し、機械学習（XGBoost + LightGBM）による競馬予想システム。
+データ分析と統計的手法を組み合わせた予想を提供する。
 
 ## リポジトリ情報
 
@@ -32,8 +32,8 @@ JRA-VANの公式競馬データを活用し、LLM（Claude）による競馬予�
 - **言語**: Python 3.11+
 - **DB**: PostgreSQL 18（ローカル）→ Neon（将来）
 - **データ**: JRA-VAN Data Lab. + mykeibadb
-- **LLM**: Claude API
-- **環境**: WSL2 + VS Code
+- **ML**: XGBoost + LightGBM（アンサンブル）
+- **環境**: WSL2 + VS Code + Docker
 
 ## ディレクトリ構成
 
@@ -44,8 +44,10 @@ keiba-yosou/
 ├── src/
 │   ├── db/              # DB接続、クエリ
 │   ├── features/        # 特徴量生成
-│   └── predict/         # 予想ロジック
-├── prompts/             # LLMプロンプト
+│   ├── models/          # 機械学習モデル
+│   ├── api/             # FastAPI
+│   └── discord/         # Discord Bot
+├── models/              # 学習済みモデル保存
 ├── scripts/             # ユーティリティ
 ├── tests/               # テスト
 ├── .env.example         # 環境変数テンプレート
@@ -95,7 +97,7 @@ from datetime import datetime
 
 # サードパーティ
 import pandas as pd
-from anthropic import Anthropic
+import xgboost as xgb
 
 # ローカル
 from src.db.connection import get_connection
