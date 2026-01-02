@@ -28,21 +28,23 @@ logger = logging.getLogger(__name__)
 
 
 class RacePredictor:
-    """レース予想クラス"""
+    """レース予想クラス（ensemble_model対応）"""
 
-    def __init__(self, model_path: str = "/app/models/xgboost_model_latest.pkl"):
+    def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl"):
         self.model_path = model_path
-        self.model = None
+        self.xgb_model = None
+        self.lgb_model = None
         self.feature_names = None
         self._load_model()
 
     def _load_model(self):
-        """モデルを読み込み"""
+        """ensemble_modelを読み込み"""
         try:
             model_data = joblib.load(self.model_path)
-            self.model = model_data['model']
+            self.xgb_model = model_data['xgb_model']
+            self.lgb_model = model_data['lgb_model']
             self.feature_names = model_data['feature_names']
-            logger.info(f"モデル読み込み完了: {len(self.feature_names)}特徴量")
+            logger.info(f"ensemble_model読み込み完了: {len(self.feature_names)}特徴量")
         except Exception as e:
             logger.error(f"モデル読み込み失敗: {e}")
             raise
@@ -232,10 +234,12 @@ class RacePredictor:
             if not features_list:
                 return []
 
-            # 予測
+            # 予測（ensemble: XGBoost + LightGBM の平均）
             df = pd.DataFrame(features_list)
             X = df[self.feature_names].fillna(0)
-            predictions = self.model.predict(X)
+            xgb_pred = self.xgb_model.predict(X)
+            lgb_pred = self.lgb_model.predict(X)
+            predictions = (xgb_pred + lgb_pred) / 2
 
             # 結果を整形
             results = []
@@ -360,7 +364,7 @@ def main():
     parser.add_argument("--date", "-d", help="対象日 (YYYY-MM-DD)")
     parser.add_argument("--tomorrow", "-t", action="store_true", help="明日のレースを予想")
     parser.add_argument("--output", "-o", default="/app/predictions", help="出力ディレクトリ")
-    parser.add_argument("--model", "-m", default="/app/models/xgboost_model_latest.pkl")
+    parser.add_argument("--model", "-m", default="/app/models/ensemble_model_latest.pkl")
 
     args = parser.parse_args()
 

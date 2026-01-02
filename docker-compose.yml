@@ -124,9 +124,9 @@ services:
       # 毎週日曜22:00 - 週次バックテスト・精度レポート
       ofelia.job-exec.weekly-backtest.schedule: "0 22 * * 0"
       ofelia.job-exec.weekly-backtest.command: "python -m src.scheduler.weekly_backtest"
-      # 毎月1日23:00 - モデル再学習
-      ofelia.job-exec.monthly-retrain.schedule: "0 23 1 * *"
-      ofelia.job-exec.monthly-retrain.command: "python -m src.scheduler.monthly_retrain"
+      # 毎週火曜23:00 - モデル再学習
+      ofelia.job-exec.weekly-retrain.schedule: "0 23 * * 2"
+      ofelia.job-exec.weekly-retrain.command: "python -m src.scheduler.weekly_retrain_model"
       # 開催前日(金曜)18:00 - 翌日の予想実行
       ofelia.job-exec.daily-predict.schedule: "0 18 * * 5"
       ofelia.job-exec.daily-predict.command: "python -m src.scheduler.daily_scheduler --days 1"
