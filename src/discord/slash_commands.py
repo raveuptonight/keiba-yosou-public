@@ -2207,40 +2207,8 @@ class SlashCommands(commands.Cog):
             await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
 
     # ========================================
-    # 馬券コマンド
+    # 結果コマンド
     # ========================================
-
-    @app_commands.command(name="odds", description="レースのオッズを表示します")
-    @app_commands.describe(race="レース指定（例: 京都2r）")
-    async def odds(self, interaction: discord.Interaction, race: str):
-        """オッズ表示"""
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            race_id = resolve_race_input(race, self.api_base_url)
-            response = requests.get(
-                f"{self.api_base_url}/api/races/{race_id}/odds",
-                timeout=DISCORD_REQUEST_TIMEOUT,
-            )
-
-            if response.status_code == 200:
-                data = response.json()
-                lines = [f"**{race} オッズ**\n"]
-                for horse in data.get("horses", [])[:10]:
-                    lines.append(
-                        f"{horse.get('umaban', '?')}. {horse.get('name', '?')}: "
-                        f"{horse.get('odds', '?.?')}倍"
-                    )
-                await interaction.followup.send("\n".join(lines), ephemeral=True)
-            else:
-                await interaction.followup.send(
-                    f"オッズ取得エラー (Status: {response.status_code})",
-                    ephemeral=True
-                )
-
-        except Exception as e:
-            logger.error(f"オッズ取得エラー: {e}", exc_info=True)
-            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
 
     @app_commands.command(name="result", description="レース結果と回収率を表示します")
     @app_commands.describe(race="レース指定（例: 京都2r）")
@@ -2309,11 +2277,8 @@ class SlashCommands(commands.Cog):
         )
 
         embed.add_field(
-            name="馬券",
-            value=(
-                "`/odds <レース>` - オッズを表示\n"
-                "`/result <レース>` - レース結果を表示"
-            ),
+            name="結果",
+            value="`/result <レース>` - レース結果を表示",
             inline=False
         )
 
