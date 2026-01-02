@@ -57,41 +57,6 @@ XGBOOST_REG_LAMBDA: Final[float] = 1.0
 XGBOOST_RANDOM_STATE: Final[int] = 42
 
 # =====================================
-# LLM設定
-# =====================================
-LLM_DEFAULT_TEMPERATURE: Final[float] = 0.3
-LLM_ANALYSIS_TEMPERATURE: Final[float] = 0.2  # Phase 1: データ分析
-LLM_PREDICTION_TEMPERATURE: Final[float] = 0.3  # Phase 2: 予想生成
-LLM_REFLECTION_TEMPERATURE: Final[float] = 0.2  # Phase 3: 失敗分析
-
-# トークン制限
-LLM_MAX_TOKENS: Final[int] = 8000
-
-# Gemini設定
-GEMINI_DEFAULT_MODEL: Final[str] = "gemini-2.0-flash-exp"
-GEMINI_API_TIMEOUT: Final[int] = 60  # 60秒
-
-# Claude設定
-CLAUDE_DEFAULT_MODEL: Final[str] = "claude-3-5-sonnet-20241022"
-CLAUDE_API_TIMEOUT: Final[int] = 60  # 60秒
-
-# リトライ設定
-LLM_MAX_RETRIES: Final[int] = 3
-LLM_RETRY_DELAY: Final[float] = 1.0  # 秒
-
-# =====================================
-# プロンプト設定
-# =====================================
-# 学習ポイント取得設定
-PROMPT_LEARNING_POINTS_LIMIT: Final[int] = 5  # 最大5レース分の学習ポイント
-PROMPT_LEARNING_POINTS_PER_RACE: Final[int] = 2  # 各レースから最大2ポイント
-PROMPT_LEARNING_POINTS_DAYS_BACK: Final[int] = 30  # 直近30日分
-
-# ML予想表示設定
-PROMPT_ML_TOP_HORSES_PHASE1: Final[int] = 3  # Phase 1で表示する上位頭数
-PROMPT_ML_TOP_HORSES_PHASE2: Final[int] = 5  # Phase 2で表示する上位頭数
-
-# =====================================
 # API設定
 # =====================================
 API_DEFAULT_HOST: Final[str] = "0.0.0.0"

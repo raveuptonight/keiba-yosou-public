@@ -47,34 +47,6 @@ class PredictionNotFoundException(HTTPException):
         )
 
 
-class RateLimitExceededException(HTTPException):
-    """レート制限超過の例外"""
-
-    def __init__(self, retry_after: int = 60):
-        super().__init__(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "code": "RATE_LIMIT_EXCEEDED",
-                "message": "リクエスト数が制限を超えています。しばらく待ってから再試行してください。",
-                "details": {"retry_after": retry_after},
-            },
-        )
-
-
-class ClaudeAPIUnavailableException(HTTPException):
-    """Claude APIが利用できない場合の例外"""
-
-    def __init__(self, message: str):
-        super().__init__(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={
-                "code": "CLAUDE_API_UNAVAILABLE",
-                "message": f"Claude APIが利用できません: {message}",
-                "details": {},
-            },
-        )
-
-
 class PredictionTimeoutException(HTTPException):
     """予想生成タイムアウトの例外"""
 

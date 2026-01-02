@@ -34,32 +34,6 @@ class DatabaseMigrationError(DatabaseError):
 
 
 # =====================================
-# LLM関連例外
-# =====================================
-class LLMError(KeibaYosouError):
-    """LLM関連のエラー"""
-    pass
-
-
-class LLMAPIError(LLMError):
-    """LLM API呼び出しエラー"""
-    def __init__(self, message: str, api_name: str = "Unknown", status_code: int = None):
-        self.api_name = api_name
-        self.status_code = status_code
-        super().__init__(f"[{api_name}] {message}" + (f" (status: {status_code})" if status_code else ""))
-
-
-class LLMResponseError(LLMError):
-    """LLMレスポンス解析エラー"""
-    pass
-
-
-class LLMTimeoutError(LLMError):
-    """LLMタイムアウトエラー"""
-    pass
-
-
-# =====================================
 # 機械学習関連例外
 # =====================================
 class MLError(KeibaYosouError):

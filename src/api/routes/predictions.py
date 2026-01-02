@@ -15,11 +15,9 @@ from src.api.schemas.prediction import (
 from src.api.exceptions import (
     RaceNotFoundException,
     PredictionNotFoundException,
-    RateLimitExceededException,
     DatabaseErrorException,
 )
 from src.services import prediction_service
-from src.services.rate_limiter import claude_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +29,7 @@ router = APIRouter()
     response_model=PredictionResponse,
     status_code=status.HTTP_200_OK,
     summary="予想生成",
-    description="LLMによる競馬予想を生成します。レート制限: 5リクエスト/分"
+    description="MLモデルによる競馬予想を生成します。"
 )
 async def generate_prediction(
     request: PredictionRequest
@@ -39,8 +37,8 @@ async def generate_prediction(
     """
     予想を生成
 
-    LLMを使用してレース予想を生成します。
-    データ集約、LLM推論、DB保存を実行します。
+    機械学習モデルを使用してレース予想を生成します。
+    データ集約、ML推論、DB保存を実行します。
 
     Args:
         request: 予想生成リクエスト
@@ -50,18 +48,12 @@ async def generate_prediction(
 
     Raises:
         RaceNotFoundException: レースが見つからない
-        RateLimitExceededException: レート制限超過
         DatabaseErrorException: DB接続エラー
     """
     logger.info(
         f"POST /predictions/generate: race_id={request.race_id}, "
         f"is_final={request.is_final}, total_investment={request.total_investment}"
     )
-
-    # レート制限チェック
-    if not claude_rate_limiter.is_allowed():
-        logger.warning("Rate limit exceeded")
-        raise RateLimitExceededException()
 
     try:
         response = await prediction_service.generate_prediction(request)

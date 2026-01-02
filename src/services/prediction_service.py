@@ -12,7 +12,6 @@ from pathlib import Path
 import asyncpg
 
 import os
-from src.services.rate_limiter import claude_rate_limiter
 
 # MLモデルパス
 ML_MODEL_PATH = Path("/app/models/xgboost_model_latest.pkl")
@@ -32,9 +31,6 @@ from src.api.schemas.prediction import (
 from src.exceptions import (
     PredictionError,
     DatabaseQueryError,
-    LLMAPIError,
-    LLMResponseError,
-    LLMTimeoutError,
     MissingDataError,
 )
 from src.db.table_names import (
@@ -414,7 +410,7 @@ async def generate_prediction(
         logger.debug("Converting ML result to PredictionResponse")
         prediction_response = _convert_to_prediction_response(
             race_data=race_data,
-            llm_result=ml_result,
+            ml_result=ml_result,
             total_investment=total_investment,
             is_final=is_final
         )
@@ -686,16 +682,16 @@ async def get_predictions_by_race(
 
 def _convert_to_prediction_response(
     race_data: Dict[str, Any],
-    llm_result: Dict[str, Any],
+    ml_result: Dict[str, Any],
     total_investment: int,
     is_final: bool
 ) -> PredictionResponse:
     """
-    LLM結果をPredictionResponseに変換
+    ML結果をPredictionResponseに変換
 
     Args:
         race_data: レースデータ
-        llm_result: LLM予想結果
+        ml_result: ML予想結果
         total_investment: 総投資額
         is_final: 最終予想フラグ
 
@@ -721,7 +717,7 @@ def _convert_to_prediction_response(
         race_date = datetime.now().strftime("%Y-%m-%d")
 
     # WinPrediction を構築
-    win_pred_data = llm_result.get("win_prediction", {})
+    win_pred_data = ml_result.get("win_prediction", {})
 
     def _build_horse_ranking(data: Dict[str, Any]) -> HorseRanking:
         return HorseRanking(
@@ -744,7 +740,7 @@ def _convert_to_prediction_response(
     )
 
     # BettingStrategy を構築
-    betting_data = llm_result.get("betting_strategy", {})
+    betting_data = ml_result.get("betting_strategy", {})
     recommended_tickets = [
         RecommendedTicket(**ticket)
         for ticket in betting_data.get("recommended_tickets", [])
