@@ -541,7 +541,7 @@ class HorseDetailButtonView(View):
         return True
 
     async def show_past_races(self, interaction: discord.Interaction):
-        """過去成績を表示"""
+        """過去成績を表示（詳細版）"""
         await interaction.response.defer(ephemeral=True)
 
         recent_races = self.horse_data.get("recent_races", [])[:10]
@@ -550,22 +550,54 @@ class HorseDetailButtonView(View):
             await interaction.followup.send("過去成績データがありません", ephemeral=True)
             return
 
-        lines = [f"**{self.horse_data.get('horse_name', '不明')} - 過去10走**\n"]
-        lines.append("```")
-        lines.append(f"{'日付':<12} {'着順':>4} {'競馬場':<6} {'距離':>6} {'タイム':>8}")
-        lines.append("-" * 50)
+        lines = [f"📋 **{self.horse_data.get('horse_name', '不明')} - 過去10走**\n"]
 
-        for race in recent_races:
+        for i, race in enumerate(recent_races, 1):
             race_date = str(race.get("race_date", ""))[:10]
             pos = race.get("finish_position", "?")
-            venue = race.get("venue", "?")[:4]
+            race_name = race.get("race_name", "不明")[:18]
+            venue = race.get("venue", "?")
             distance = race.get("distance", "?")
-            time_val = race.get("time", "?")
-            time_formatted = format_race_time(time_val)
+            time_val = race.get("time", "")
+            time_formatted = format_race_time(time_val) if time_val else "-"
+            jockey = race.get("jockey", "")[:6] if race.get("jockey") else "-"
+            odds = race.get("odds")
+            odds_str = f"{odds:.1f}倍" if odds else "-"
+            track_cond = race.get("track_condition", "")[:1] if race.get("track_condition") else ""
+            weight = race.get("weight", 0)
+            horse_weight = race.get("horse_weight")
+            winner_name = race.get("winner_name", "")[:8] if race.get("winner_name") else ""
 
-            lines.append(f"{race_date:<12} {pos:>4}着 {venue:<6} {distance:>6}m {time_formatted:>8}")
+            # レース情報行
+            lines.append(f"**{i}. {race_date}** {race_name}")
 
-        lines.append("```")
+            # 詳細行1: 着順、コース情報
+            detail1 = f"  **{pos}着** {venue}{distance}m"
+            if track_cond:
+                detail1 += f"({track_cond})"
+            if time_formatted != "-":
+                detail1 += f" {time_formatted}"
+            lines.append(detail1)
+
+            # 詳細行2: 騎手、斤量、オッズ
+            detail2_parts = []
+            if jockey != "-":
+                detail2_parts.append(f"騎手:{jockey}")
+            if weight:
+                detail2_parts.append(f"斤量:{weight:.0f}kg")
+            if horse_weight:
+                detail2_parts.append(f"馬体重:{horse_weight}kg")
+            if odds_str != "-":
+                detail2_parts.append(f"人気:{odds_str}")
+
+            if detail2_parts:
+                lines.append(f"  └ {' / '.join(detail2_parts)}")
+
+            # 1着馬（自分が1着でない場合）
+            if pos != 1 and winner_name:
+                lines.append(f"    (1着: {winner_name})")
+
+            lines.append("")  # 空行
 
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
@@ -817,36 +849,77 @@ def format_horse_detail(data: Dict[str, Any]) -> str:
     name = data.get("horse_name", "不明")
     sex = data.get("sex", "不明")
     birth = data.get("birth_date", "不明")
+    coat_color = data.get("coat_color", "")
     sire = data.get("sire", "不明")
     dam = data.get("dam", "不明")
     trainer = data.get("trainer", {})
     trainer_name = trainer.get("name", "不明") if isinstance(trainer, dict) else "不明"
+    trainer_affiliation = trainer.get("affiliation", "") if isinstance(trainer, dict) else ""
 
     total_races = data.get("total_races", 0)
     wins = data.get("wins", 0)
     win_rate = data.get("win_rate", 0) * 100
     prize = data.get("prize_money", 0)
 
+    # 血統情報
+    pedigree = data.get("pedigree", {})
+    dam_sire = pedigree.get("dam_sire", "不明") if pedigree else "不明"
+
+    # 基本情報
     lines = [
-        f"**{name}** ({sex})",
+        f"🐴 **{name}** ({sex})",
         f"生年月日: {birth}",
-        f"父: {sire} / 母: {dam}",
-        f"調教師: {trainer_name}",
-        "",
-        f"**成績**: {wins}勝 / {total_races}戦 (勝率 {win_rate:.1f}%)",
-        f"**獲得賞金**: {format_prize_money(prize)}",
     ]
 
-    # 直近レースがあれば表示
+    # 毛色があれば追加
+    if coat_color and coat_color != "不明":
+        lines.append(f"毛色: {coat_color}")
+
+    # 血統（父 / 母父 形式で表示）
+    lines.append(f"**血統**: 父 {sire} / 母父 {dam_sire}")
+    lines.append(f"母: {dam}")
+
+    # 調教師
+    if trainer_affiliation:
+        lines.append(f"調教師: {trainer_name}（{trainer_affiliation}）")
+    else:
+        lines.append(f"調教師: {trainer_name}")
+
+    lines.append("")
+
+    # 成績
+    lines.append(f"📊 **成績**: {wins}勝 / {total_races}戦 (勝率 {win_rate:.1f}%)")
+    lines.append(f"💰 **獲得賞金**: {format_prize_money(prize)}")
+
+    # 直近レースがあれば表示（詳細情報付き）
     recent = data.get("recent_races", [])
     if recent:
         lines.append("")
-        lines.append("**直近成績**")
+        lines.append("📋 **直近成績**")
         for r in recent[:5]:
             pos = r.get("finish_position", "?")
-            race_name = r.get("race_name", "?")[:15]
+            race_name = r.get("race_name", "不明")[:20]
             race_date = r.get("race_date", "?")
-            lines.append(f"  {race_date} {pos}着 {race_name}")
+            venue = r.get("venue", "")
+            distance = r.get("distance", 0)
+            time_str = r.get("time", "")
+            jockey = r.get("jockey", "")[:6] if r.get("jockey") else ""
+
+            # レース基本情報
+            race_info = f"  {race_date} **{pos}着** {race_name}"
+            lines.append(race_info)
+
+            # 詳細情報（距離、タイム、騎手）
+            details = []
+            if venue and distance:
+                details.append(f"{venue}{distance}m")
+            if time_str and time_str != "不明":
+                details.append(f"タイム{time_str}")
+            if jockey:
+                details.append(jockey)
+
+            if details:
+                lines.append(f"    └ {' / '.join(details)}")
 
     return "\n".join(lines)
 
