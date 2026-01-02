@@ -37,7 +37,10 @@ class HorseRankingEntry(BaseModel):
     )
     horse_name: str = Field(..., description="馬名")
     win_probability: float = Field(
-        ..., ge=0.0, le=1.0, description="勝率（1着確率）"
+        ..., ge=0.0, le=1.0, description="単勝率（1着確率）"
+    )
+    quinella_probability: float = Field(
+        ..., ge=0.0, le=1.0, description="連対率（2着以内確率）"
     )
     place_probability: float = Field(
         ..., ge=0.0, le=1.0, description="複勝率（3着以内確率）"

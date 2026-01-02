@@ -190,6 +190,7 @@ def _generate_mock_prediction(race_id: str, is_final: bool) -> PredictionRespons
             horse_number=h["horse_number"],
             horse_name=h["horse_name"],
             win_probability=h["win_prob"],
+            quinella_probability=min(h["win_prob"] * 1.8, 0.5),
             place_probability=min(h["win_prob"] * 2.5, 0.6),
             position_distribution=PositionDistribution(
                 first=h["win_prob"],
@@ -285,8 +286,10 @@ def _generate_ml_only_prediction(
         win_prob = h["win_probability"]
         pos_dist = calc_position_distribution(win_prob, rank, n_horses)
 
+        # 連対率（2着以内確率）
+        quinella_prob = pos_dist["first"] + pos_dist["second"]
         # 複勝率（3着以内確率）
-        place_prob = pos_dist["first"] + pos_dist["second"] + pos_dist["third"]
+        place_prob = quinella_prob + pos_dist["third"]
 
         # 個別の信頼度（データの完全性とスコアの分離度から算出）
         # スコアが他の馬と十分に離れているかで信頼度を評価
@@ -301,6 +304,7 @@ def _generate_ml_only_prediction(
             "horse_number": h["horse_number"],
             "horse_name": h["horse_name"],
             "win_probability": round(win_prob, 4),
+            "quinella_probability": round(quinella_prob, 4),
             "place_probability": round(place_prob, 4),
             "position_distribution": pos_dist,
             "rank_score": round(h["rank_score"], 4),
@@ -567,6 +571,7 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                     horse_number=h["horse_number"],
                     horse_name=h["horse_name"],
                     win_probability=h["win_probability"],
+                    quinella_probability=h.get("quinella_probability", h["win_probability"] + h.get("position_distribution", {}).get("second", 0)),
                     place_probability=h["place_probability"],
                     position_distribution=PositionDistribution(**h["position_distribution"]),
                     rank_score=h["rank_score"],
@@ -722,6 +727,7 @@ def _convert_to_prediction_response(
             horse_number=h["horse_number"],
             horse_name=h["horse_name"],
             win_probability=h["win_probability"],
+            quinella_probability=h["quinella_probability"],
             place_probability=h["place_probability"],
             position_distribution=PositionDistribution(**h["position_distribution"]),
             rank_score=h["rank_score"],

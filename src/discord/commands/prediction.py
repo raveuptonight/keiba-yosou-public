@@ -204,45 +204,27 @@ class PredictionCommands(commands.Cog):
             prediction = response.json()
             pred_result = prediction.get('prediction_result', {})
             ranked_horses = pred_result.get('ranked_horses', [])
-            pred_confidence = pred_result.get('prediction_confidence', 0)
-            model_info = pred_result.get('model_info', 'unknown')
 
-            # 予測結果をフォーマット（確率ベース・ランキング形式）
+            # 予測結果をフォーマット（全馬表示）
             lines = [
                 f"🏇 **{race_info['venue']} {race_info['race_number']}** {race_name}",
-                f"📊 予測信頼度: {pred_confidence:.1%} | モデル: {model_info}",
                 ""
             ]
 
-            # 全馬ランキング
-            marks = ['◎', '○', '▲', '△', '△', '×', '×', '☆', '☆', '☆']
-            lines.append("**予測ランキング**")
+            # 全馬ランキング（18頭まで対応）
+            marks = ['◎', '○', '▲', '△', '△', '×', '×', '×'] + ['☆'] * 10
             for h in ranked_horses:
                 rank = h.get('rank', 0)
                 num = h.get('horse_number', '?')
                 name = h.get('horse_name', '不明')
                 win_prob = h.get('win_probability', 0)
+                quinella_prob = h.get('quinella_probability', 0)
                 place_prob = h.get('place_probability', 0)
                 mark = marks[rank - 1] if rank <= len(marks) else '消'
                 lines.append(
                     f"{mark} {rank}位 {num}番 {name} "
-                    f"(勝率{win_prob:.1%} 複勝{place_prob:.1%})"
+                    f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
                 )
-
-            # 順位分布（上位3頭のみ詳細表示）
-            if ranked_horses:
-                lines.append("")
-                lines.append("**順位分布（上位3頭）**")
-                for h in ranked_horses[:3]:
-                    num = h.get('horse_number', '?')
-                    name = h.get('horse_name', '不明')
-                    pos_dist = h.get('position_distribution', {})
-                    lines.append(
-                        f"  {num}番 {name}: "
-                        f"1着{pos_dist.get('first', 0):.1%} "
-                        f"2着{pos_dist.get('second', 0):.1%} "
-                        f"3着{pos_dist.get('third', 0):.1%}"
-                    )
 
             message = "\n".join(lines)
             await ctx.send(message)
