@@ -13,6 +13,8 @@ from src.db.table_names import (
     TABLE_RACE,
     TABLE_UMA_RACE,
     TABLE_UMA,
+    TABLE_SANKU,
+    TABLE_HANSYOKU,
     TABLE_KISYU,
     TABLE_CHOKYOSI,
     TABLE_ODDS_TANSHO,
@@ -119,7 +121,7 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
 
 async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any]]:
     """
-    レースの出走馬一覧を取得
+    レースの出走馬一覧を取得（血統・前走情報含む）
 
     Args:
         conn: データベース接続
@@ -129,6 +131,19 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
         出走馬情報のリスト（馬番順）
     """
     sql = f"""
+        WITH last_race AS (
+            -- 各馬の前走情報を取得
+            SELECT DISTINCT ON (se2.{COL_KETTONUM})
+                se2.{COL_KETTONUM},
+                se2.{COL_JYOCD} AS last_venue_code,
+                se2.kakutei_chakujun AS last_finish
+            FROM {TABLE_UMA_RACE} se2
+            WHERE se2.{COL_RACE_ID} < $1
+              AND se2.{COL_DATA_KUBUN} = $2
+              AND se2.kakutei_chakujun IS NOT NULL
+              AND se2.kakutei_chakujun::integer > 0
+            ORDER BY se2.{COL_KETTONUM}, se2.{COL_RACE_ID} DESC
+        )
         SELECT
             se.{COL_UMABAN},
             se.{COL_KETTONUM},
@@ -143,11 +158,17 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
             se.{COL_WAKUBAN},
             se.{COL_SEX},
             se.{COL_BAREI},
-            se.{COL_TOZAI_CODE}
+            se.{COL_TOZAI_CODE},
+            hn_f.bamei AS sire_name,
+            lr.last_venue_code,
+            lr.last_finish
         FROM {TABLE_UMA_RACE} se
         INNER JOIN {TABLE_UMA} um ON se.{COL_KETTONUM} = um.{COL_KETTONUM}
         LEFT JOIN {TABLE_KISYU} ks ON se.{COL_KISYUCODE} = ks.{COL_KISYUCODE}
         LEFT JOIN {TABLE_CHOKYOSI} ch ON se.{COL_CHOKYOSICODE} = ch.{COL_CHOKYOSICODE}
+        LEFT JOIN {TABLE_SANKU} sk ON se.{COL_KETTONUM} = sk.{COL_KETTONUM}
+        LEFT JOIN {TABLE_HANSYOKU} hn_f ON sk.ketto1_hanshoku_toroku_bango = hn_f.hanshoku_toroku_bango
+        LEFT JOIN last_race lr ON se.{COL_KETTONUM} = lr.{COL_KETTONUM}
         WHERE se.{COL_RACE_ID} = $1
           AND se.{COL_DATA_KUBUN} = $2
         ORDER BY se.{COL_UMABAN}

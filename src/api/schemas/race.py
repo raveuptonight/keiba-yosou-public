@@ -36,6 +36,9 @@ class RaceEntry(BaseModel):
         ..., min_length=10, max_length=10, description="血統登録番号（10桁）"
     )
     horse_name: str = Field(..., description="馬名")
+    sex: Optional[str] = Field(None, description="性別（牡/牝/騙）")
+    age: Optional[int] = Field(None, description="馬齢")
+    sire: Optional[str] = Field(None, description="父馬名")
     jockey_code: str = Field(..., description="騎手コード")
     jockey_name: str = Field(..., description="騎手名")
     trainer_code: str = Field(..., description="調教師コード")
@@ -46,6 +49,9 @@ class RaceEntry(BaseModel):
     )
     odds: Optional[float] = Field(
         None, ge=0.1, description="単勝オッズ"
+    )
+    last_race: Optional[str] = Field(
+        None, description="前走情報（例: '中山2着'）"
     )
     finish_position: Optional[int] = Field(
         None, description="着順（レース終了後のみ）"

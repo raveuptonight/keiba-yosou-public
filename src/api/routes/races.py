@@ -50,6 +50,8 @@ from src.db.table_names import (
     COL_UMABAN,
     COL_KINRYO,
     COL_BATAIJU,
+    COL_SEX,
+    COL_BAREI,
     COL_KISYUCODE,
     COL_KISYU_NAME,
     COL_CHOKYOSICODE,
@@ -394,17 +396,32 @@ async def get_race(
             # 出走馬情報を変換
             entries = []
             for entry in entries_data:
+                # 性別変換
+                sex_map = {"1": "牡", "2": "牝", "3": "騙"}
+                sex = sex_map.get(entry.get(COL_SEX), None)
+
+                # 前走情報を構築
+                last_race_str = None
+                if entry.get("last_venue_code") and entry.get("last_finish"):
+                    last_venue = _get_venue_name(entry["last_venue_code"])
+                    last_finish = entry["last_finish"]
+                    last_race_str = f"{last_venue}{last_finish}着"
+
                 entries.append(RaceEntry(
                     horse_number=entry[COL_UMABAN],
                     kettonum=entry[COL_KETTONUM],
                     horse_name=entry[COL_BAMEI],
+                    sex=sex,
+                    age=entry.get(COL_BAREI),
+                    sire=entry.get("sire_name"),
                     jockey_code=entry[COL_KISYUCODE],
                     jockey_name=entry.get(COL_KISYU_NAME, "不明"),
                     trainer_code=entry[COL_CHOKYOSICODE],
                     trainer_name=entry.get(COL_CHOKYOSI_NAME, "不明"),
                     weight=float(entry.get(COL_KINRYO, 0)) / 10.0,
                     horse_weight=entry.get(COL_BATAIJU),
-                    odds=float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None
+                    odds=float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None,
+                    last_race=last_race_str
                 ))
 
             # 賞金情報

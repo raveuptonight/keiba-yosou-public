@@ -1835,27 +1835,73 @@ class SlashCommands(commands.Cog):
                         prize_text = f"1着: {prize.get('first', 0):,}万円"
                         embed.add_field(name="💰 賞金", value=prize_text, inline=False)
 
-                    # 出馬表をコンパクトな表形式で作成
+                    # 出馬表をリスト形式で作成（血統・前走情報含む）
                     entries = data.get("entries", [])
                     if entries:
-                        # ヘッダー
-                        table_text = "```\n"
-                        table_text += "馬番 馬名              騎手         斤量  オッズ\n"
-                        table_text += "─────────────────────────────────────────\n"
-
-                        # 各馬の情報
-                        for entry in entries[:16]:  # 最大16頭まで
+                        # 前半の馬（1-9番）
+                        lines1 = []
+                        for entry in entries[:9]:
                             num = entry.get('horse_number', 0)
-                            name = entry.get('horse_name', '不明')[:10]  # 10文字まで
-                            jockey = entry.get('jockey_name', '不明')[:8]  # 8文字まで
+                            name = entry.get('horse_name', '不明')[:8]
+                            sex = entry.get('sex', '')
+                            age = entry.get('age', '')
+                            sex_age = f"{sex}{age}" if sex and age else ""
+                            sire = entry.get('sire', '')[:6] if entry.get('sire') else ''
+                            jockey = entry.get('jockey_name', '不明')[:4]
                             weight = entry.get('weight', 0)
-                            odds = entry.get('odds', 0)
+                            last_race = entry.get('last_race', '') if entry.get('last_race') else ''
 
-                            # 等幅フォントで整形
-                            table_text += f"{num:>3} {name:<10} {jockey:<8} {weight:>5.1f} {odds:>6.1f}\n"
+                            line = f"**{num:>2}** {name}"
+                            if sex_age:
+                                line += f" ({sex_age})"
+                            details = []
+                            if sire:
+                                details.append(f"父:{sire}")
+                            if jockey:
+                                details.append(f"{jockey}")
+                            if weight:
+                                details.append(f"{weight:.0f}kg")
+                            if last_race:
+                                details.append(f"前:{last_race}")
+                            if details:
+                                line += f"\n└ {' / '.join(details)}"
+                            lines1.append(line)
 
-                        table_text += "```"
-                        embed.add_field(name="📋 出馬表", value=table_text, inline=False)
+                        if lines1:
+                            embed.add_field(name="📋 出馬表 (1-9番)", value="\n".join(lines1), inline=False)
+
+                        # 後半の馬（10番以降）
+                        if len(entries) > 9:
+                            lines2 = []
+                            for entry in entries[9:18]:
+                                num = entry.get('horse_number', 0)
+                                name = entry.get('horse_name', '不明')[:8]
+                                sex = entry.get('sex', '')
+                                age = entry.get('age', '')
+                                sex_age = f"{sex}{age}" if sex and age else ""
+                                sire = entry.get('sire', '')[:6] if entry.get('sire') else ''
+                                jockey = entry.get('jockey_name', '不明')[:4]
+                                weight = entry.get('weight', 0)
+                                last_race = entry.get('last_race', '') if entry.get('last_race') else ''
+
+                                line = f"**{num:>2}** {name}"
+                                if sex_age:
+                                    line += f" ({sex_age})"
+                                details = []
+                                if sire:
+                                    details.append(f"父:{sire}")
+                                if jockey:
+                                    details.append(f"{jockey}")
+                                if weight:
+                                    details.append(f"{weight:.0f}kg")
+                                if last_race:
+                                    details.append(f"前:{last_race}")
+                                if details:
+                                    line += f"\n└ {' / '.join(details)}"
+                                lines2.append(line)
+
+                            if lines2:
+                                embed.add_field(name="📋 出馬表 (10番〜)", value="\n".join(lines2), inline=False)
 
                     embed.set_footer(text=f"レースID: {resolved_id}")
 
