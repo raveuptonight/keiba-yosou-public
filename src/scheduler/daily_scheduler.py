@@ -3,19 +3,15 @@
 
 毎日実行して：
 1. 翌日の開催があるか確認
-2. 出馬表データがあれば予想実行
-3. 結果を保存・通知
+2. API経由で予想実行
+3. 結果を通知
 """
 
 import logging
-import json
 import os
+import requests
 from datetime import datetime, date, timedelta
-from pathlib import Path
-from typing import Optional
-
-from src.scheduler.race_predictor import RacePredictor, save_predictions, print_predictions
-from src.db.connection import get_db
+from typing import Optional, List, Dict, Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,60 +19,55 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# API設定
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_TIMEOUT = 120  # 予想には時間がかかる場合がある
 
-def check_race_schedule(target_date: date) -> bool:
-    """指定日に開催があるか確認"""
-    db = get_db()
-    conn = db.get_connection()
 
+def get_races_for_date(target_date: date) -> List[Dict[str, Any]]:
+    """指定日のレース一覧をAPIから取得"""
     try:
-        cur = conn.cursor()
-        kaisai_gappi = target_date.strftime("%m%d")
-        kaisai_nen = str(target_date.year)
-
-        cur.execute('''
-            SELECT COUNT(*)
-            FROM kaisai_schedule
-            WHERE kaisai_nen = %s AND kaisai_gappi = %s
-        ''', (kaisai_nen, kaisai_gappi))
-
-        count = cur.fetchone()[0]
-        cur.close()
-        return count > 0
-
-    finally:
-        conn.close()
+        response = requests.get(
+            f"{API_BASE_URL}/api/v1/races/date/{target_date.isoformat()}",
+            timeout=30
+        )
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("races", [])
+        else:
+            logger.error(f"レース一覧取得失敗: status={response.status_code}")
+            return []
+    except Exception as e:
+        logger.error(f"レース一覧取得エラー: {e}")
+        return []
 
 
-def check_entry_data(target_date: date) -> int:
-    """指定日の出馬表データ件数を確認"""
-    db = get_db()
-    conn = db.get_connection()
-
+def execute_prediction(race_id: str) -> Optional[Dict[str, Any]]:
+    """API経由で予想を実行"""
     try:
-        cur = conn.cursor()
-        kaisai_gappi = target_date.strftime("%m%d")
-        kaisai_nen = str(target_date.year)
-
-        # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前
-        # 未来のレースは1や2の状態で登録されている
-        cur.execute('''
-            SELECT COUNT(DISTINCT race_code)
-            FROM race_shosai
-            WHERE kaisai_nen = %s
-              AND kaisai_gappi = %s
-              AND data_kubun IN ('1', '2', '3', '4', '5', '6')
-        ''', (kaisai_nen, kaisai_gappi))
-
-        count = cur.fetchone()[0]
-        cur.close()
-        return count
-
-    finally:
-        conn.close()
+        response = requests.post(
+            f"{API_BASE_URL}/api/v1/predictions/generate",
+            json={"race_id": race_id},
+            timeout=API_TIMEOUT
+        )
+        if response.status_code in (200, 201):
+            return response.json()
+        else:
+            logger.error(f"予想失敗: race_id={race_id}, status={response.status_code}")
+            return None
+    except requests.exceptions.Timeout:
+        logger.error(f"予想タイムアウト: race_id={race_id}")
+        return None
+    except Exception as e:
+        logger.error(f"予想エラー: race_id={race_id}, error={e}")
+        return None
 
 
-def send_discord_notification(results: dict, webhook_url: Optional[str] = None):
+def send_discord_notification(
+    target_date: date,
+    predictions: List[Dict[str, Any]],
+    webhook_url: Optional[str] = None
+):
     """Discord通知を送信"""
     if not webhook_url:
         webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
@@ -86,19 +77,37 @@ def send_discord_notification(results: dict, webhook_url: Optional[str] = None):
         return
 
     try:
-        import requests
-
-        # メッセージ作成
-        if results['status'] == 'no_data':
-            content = f"📅 {results['date']}\n出馬表データがまだありません"
+        if not predictions:
+            content = f"📅 {target_date}\n予想データがありません"
         else:
-            lines = [f"🏇 **{results['date']} レース予想**\n"]
+            lines = [f"🏇 **{target_date} レース予想完了**\n"]
+            lines.append(f"予想レース数: {len(predictions)}件\n")
 
-            for race in results['races'][:10]:  # 最大10レース
-                lines.append(f"\n**{race['keibajo']} {race['race_number']}R** ({race['kyori']}m)")
-                for p in race['top3']:
-                    medal = ['🥇', '🥈', '🥉'][p['rank'] - 1]
-                    lines.append(f"{medal} {p['umaban']}番 {p['bamei']}")
+            # 重賞・OPを優先して表示
+            grade_priority = {"G1": 0, "G2": 1, "G3": 2, "L": 3, "OP": 4}
+            sorted_preds = sorted(
+                predictions,
+                key=lambda p: (
+                    grade_priority.get(p.get("prediction_result", {}).get("grade"), 99),
+                    p.get("venue", ""),
+                    p.get("race_number", "")
+                )
+            )
+
+            for pred in sorted_preds[:10]:  # 最大10レース
+                venue = pred.get("venue", "?")
+                race_num = pred.get("race_number", "?")
+                race_name = pred.get("race_name", "")[:15]
+                result = pred.get("prediction_result", {})
+                ranked = result.get("ranked_horses", [])[:3]
+
+                lines.append(f"\n**{venue} {race_num}R** {race_name}")
+                for i, h in enumerate(ranked):
+                    medal = ['🥇', '🥈', '🥉'][i]
+                    lines.append(
+                        f"{medal} {h.get('horse_number', '?')}番 {h.get('horse_name', '?')[:8]} "
+                        f"(単{h.get('win_probability', 0):.1%})"
+                    )
 
             content = "\n".join(lines)
 
@@ -124,57 +133,74 @@ def run_daily_job(days_ahead: int = 1):
     logger.info(f"対象日: {target_date}")
     logger.info("=" * 50)
 
-    # 1. 開催スケジュール確認
-    has_schedule = check_race_schedule(target_date)
-    if not has_schedule:
-        logger.info(f"{target_date}は開催予定なし")
+    # 1. レース一覧を取得
+    races = get_races_for_date(target_date)
+
+    if not races:
+        logger.info(f"{target_date}はレースなし、または取得失敗")
         return
 
-    logger.info(f"{target_date}は開催予定あり")
+    logger.info(f"{target_date}のレース: {len(races)}件")
 
-    # 2. 出馬表データ確認
-    race_count = check_entry_data(target_date)
-    if race_count == 0:
-        logger.info(f"{target_date}の出馬表データなし（まだ登録されていない可能性）")
-        return
+    # 2. 各レースの予想を実行
+    predictions = []
+    for race in races:
+        race_id = race.get("race_id")
+        venue = race.get("venue", "?")
+        race_num = race.get("race_number", "?")
 
-    logger.info(f"{target_date}の出馬表: {race_count}レース")
+        logger.info(f"予想中: {venue} {race_num} (race_id={race_id})")
 
-    # 3. 予想実行
-    try:
-        predictor = RacePredictor()
-        results = predictor.run_predictions(target_date)
+        result = execute_prediction(race_id)
+        if result:
+            predictions.append(result)
+            logger.info(f"  → 成功")
+        else:
+            logger.warning(f"  → 失敗")
 
-        # 結果表示
-        print_predictions(results)
+    logger.info(f"予想完了: {len(predictions)}/{len(races)}件")
 
-        # 結果保存
-        if results['status'] == 'success' and results['races']:
-            save_predictions(results)
+    # 3. Discord通知
+    if predictions:
+        send_discord_notification(target_date, predictions)
 
-            # Discord通知
-            send_discord_notification(results)
+    # 4. 結果サマリー
+    print("\n" + "=" * 50)
+    print(f"【{target_date} 予想結果サマリー】")
+    print(f"成功: {len(predictions)}/{len(races)}件")
+    print("=" * 50)
 
-    except Exception as e:
-        logger.error(f"予想実行エラー: {e}")
-        raise
+    for pred in predictions:
+        venue = pred.get("venue", "?")
+        race_num = pred.get("race_number", "?")
+        race_name = pred.get("race_name", "")[:20]
+        result = pred.get("prediction_result", {})
+        ranked = result.get("ranked_horses", [])[:3]
+
+        print(f"\n{venue} {race_num}R {race_name}")
+        for h in ranked:
+            print(f"  {h.get('rank')}位: {h.get('horse_number')}番 {h.get('horse_name')} "
+                  f"(単勝{h.get('win_probability', 0):.1%})")
 
 
 def main():
     """メイン実行"""
     import argparse
 
-    parser = argparse.ArgumentParser(description="日次スケジューラ")
+    parser = argparse.ArgumentParser(description="日次スケジューラ（API経由）")
     parser.add_argument("--days", "-d", type=int, default=1, help="何日後のレースを予想するか")
-    parser.add_argument("--check-only", action="store_true", help="データ確認のみ")
+    parser.add_argument("--check-only", action="store_true", help="レース確認のみ")
 
     args = parser.parse_args()
 
     if args.check_only:
         target_date = date.today() + timedelta(days=args.days)
+        races = get_races_for_date(target_date)
         print(f"対象日: {target_date}")
-        print(f"開催予定: {'あり' if check_race_schedule(target_date) else 'なし'}")
-        print(f"出馬表データ: {check_entry_data(target_date)}レース")
+        print(f"レース数: {len(races)}件")
+        for r in races:
+            grade = f"[{r.get('grade')}]" if r.get('grade') else ""
+            print(f"  {r.get('venue')} {r.get('race_number')} {r.get('race_name', '')[:20]} {grade}")
     else:
         run_daily_job(args.days)
 

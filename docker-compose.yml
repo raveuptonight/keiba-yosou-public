@@ -98,7 +98,11 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
       - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - API_BASE_URL=http://api:8000
       - NVIDIA_VISIBLE_DEVICES=all
+    depends_on:
+      api:
+        condition: service_healthy
     volumes:
       - ./src:/app/src:ro
       - ./models:/app/models

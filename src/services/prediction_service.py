@@ -83,6 +83,109 @@ def _is_mock_mode() -> bool:
     return os.getenv("DB_MODE", "local") == "mock"
 
 
+def _extract_future_race_features(conn, race_id: str, extractor, year: int):
+    """
+    未来レースの特徴量を抽出
+
+    確定データがない未来のレースに対して、登録済みの出走馬情報から特徴量を抽出する
+
+    Args:
+        conn: DB接続
+        race_id: レースID
+        extractor: FastFeatureExtractor
+        year: 対象年
+
+    Returns:
+        pd.DataFrame: 特徴量DataFrame
+    """
+    import pandas as pd
+
+    cur = conn.cursor()
+
+    # 1. レース情報を取得（登録済みデータ）
+    cur.execute('''
+        SELECT race_code, kaisai_nen, kaisai_gappi, keibajo_code,
+               kyori, track_code, grade_code,
+               shiba_babajotai_code, dirt_babajotai_code
+        FROM race_shosai
+        WHERE race_code = %s
+          AND data_kubun IN ('1', '2', '3', '4', '5', '6')
+        LIMIT 1
+    ''', (race_id,))
+
+    race_row = cur.fetchone()
+    if not race_row:
+        cur.close()
+        return pd.DataFrame()
+
+    race_cols = [d[0] for d in cur.description]
+    races = [dict(zip(race_cols, race_row))]
+
+    # 2. 出走馬データを取得
+    cur.execute('''
+        SELECT
+            race_code, umaban, wakuban, ketto_toroku_bango,
+            seibetsu_code, barei, futan_juryo,
+            blinker_shiyo_kubun, kishu_code, chokyoshi_code,
+            bataiju, zogen_sa, bamei
+        FROM umagoto_race_joho
+        WHERE race_code = %s
+          AND data_kubun IN ('1', '2', '3', '4', '5', '6')
+        ORDER BY umaban::int
+    ''', (race_id,))
+
+    cols = [d[0] for d in cur.description]
+    rows = cur.fetchall()
+    entries = [dict(zip(cols, row)) for row in rows]
+
+    if not entries:
+        cur.close()
+        return pd.DataFrame()
+
+    logger.info(f"Future race entries: {len(entries)} horses")
+
+    # 3. 過去成績を取得
+    kettonums = [e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')]
+    past_stats = extractor._get_past_stats_batch(kettonums)
+
+    # 4. 騎手・調教師キャッシュ
+    extractor._cache_jockey_trainer_stats(year)
+
+    # 5. 追加データ
+    jh_pairs = [(e.get('kishu_code', ''), e.get('ketto_toroku_bango', ''))
+                for e in entries if e.get('kishu_code') and e.get('ketto_toroku_bango')]
+    jockey_horse_stats = extractor._get_jockey_horse_combo_batch(jh_pairs)
+    surface_stats = extractor._get_surface_stats_batch(kettonums)
+    turn_stats = extractor._get_turn_rates_batch(kettonums)
+    for kettonum, stats in turn_stats.items():
+        if kettonum in past_stats:
+            past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
+            past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
+    training_stats = extractor._get_training_stats_batch(kettonums)
+
+    # 6. 特徴量生成（ダミーの着順を設定）
+    features_list = []
+    for entry in entries:
+        entry['kakutei_chakujun'] = '01'  # 予測用ダミー
+
+        features = extractor._build_features(
+            entry, races, past_stats,
+            jockey_horse_stats=jockey_horse_stats,
+            distance_stats=surface_stats,
+            training_stats=training_stats
+        )
+        if features:
+            features['bamei'] = entry.get('bamei', '')
+            features_list.append(features)
+
+    cur.close()
+
+    if not features_list:
+        return pd.DataFrame()
+
+    return pd.DataFrame(features_list)
+
+
 def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
     """
     機械学習による予測を計算
@@ -137,19 +240,17 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
         try:
             # 特徴量抽出（ML学習時と同じFastFeatureExtractorを使用）
             extractor = FastFeatureExtractor(conn)
-
-            # 年度を取得してデータ抽出
             year = int(race_id[:4])
-            logger.info(f"Extracting features for year {year}...")
+            logger.info(f"Extracting features for race {race_id}...")
 
+            # まず確定済みデータから試行（過去レース）
             df = extractor.extract_year_data(year, max_races=10000)
+            race_df = df[df['race_code'] == race_id].copy() if len(df) > 0 else pd.DataFrame()
 
-            if len(df) == 0:
-                logger.warning(f"No data for year {year}")
-                return {}
-
-            # レースコードでフィルタ
-            race_df = df[df['race_code'] == race_id].copy()
+            # 確定データがない場合、未来レースとして直接特徴量抽出
+            if len(race_df) == 0:
+                logger.info(f"No confirmed data, extracting features for future race: {race_id}")
+                race_df = _extract_future_race_features(conn, race_id, extractor, year)
 
             if len(race_df) == 0:
                 logger.warning(f"No data for race: {race_id}")

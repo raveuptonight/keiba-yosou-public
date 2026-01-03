@@ -84,6 +84,8 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
     Returns:
         レース情報のdict、見つからない場合はNone
     """
+    # 登録済みのレースをすべて取得（未来のレースも含む）
+    # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前, 7=確定
     sql = f"""
         SELECT
             {COL_RACE_ID},
@@ -108,11 +110,11 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
             {COL_KYOSO_SHUBETSU_CD}
         FROM {TABLE_RACE}
         WHERE {COL_RACE_ID} = $1
-          AND {COL_DATA_KUBUN} = $2
+          AND {COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')
     """
 
     try:
-        row = await conn.fetchrow(sql, race_id, DATA_KUBUN_KAKUTEI)
+        row = await conn.fetchrow(sql, race_id)
         return dict(row) if row else None
     except Exception as e:
         logger.error(f"Failed to get race info: race_id={race_id}, error={e}")
@@ -130,16 +132,18 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
     Returns:
         出走馬情報のリスト（馬番順）
     """
+    # 出走馬情報は登録済みのレースをすべて取得（未来のレースも含む）
+    # 前走情報は確定データのみ取得
     sql = f"""
         WITH last_race AS (
-            -- 各馬の前走情報を取得
+            -- 各馬の前走情報を取得（確定データのみ）
             SELECT DISTINCT ON (se2.{COL_KETTONUM})
                 se2.{COL_KETTONUM},
                 se2.{COL_JYOCD} AS last_venue_code,
                 se2.kakutei_chakujun AS last_finish
             FROM {TABLE_UMA_RACE} se2
             WHERE se2.{COL_RACE_ID} < $1
-              AND se2.{COL_DATA_KUBUN} = $2
+              AND se2.{COL_DATA_KUBUN} = '7'
               AND se2.kakutei_chakujun IS NOT NULL
               AND se2.kakutei_chakujun::integer > 0
             ORDER BY se2.{COL_KETTONUM}, se2.{COL_RACE_ID} DESC
@@ -170,12 +174,12 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
         LEFT JOIN {TABLE_HANSYOKU} hn_f ON sk.ketto1_hanshoku_toroku_bango = hn_f.hanshoku_toroku_bango
         LEFT JOIN last_race lr ON se.{COL_KETTONUM} = lr.{COL_KETTONUM}
         WHERE se.{COL_RACE_ID} = $1
-          AND se.{COL_DATA_KUBUN} = $2
+          AND se.{COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')
         ORDER BY se.{COL_UMABAN}
     """
 
     try:
-        rows = await conn.fetch(sql, race_id, DATA_KUBUN_KAKUTEI)
+        rows = await conn.fetch(sql, race_id)
         return [dict(row) for row in rows]
     except Exception as e:
         logger.error(f"Failed to get race entries: race_id={race_id}, error={e}")
@@ -202,6 +206,7 @@ async def get_races_by_date(
     """
     year = str(target_date.year)
     monthday = target_date.strftime("%m%d")
+    today = date.today()
 
     # 基本SQL
     sql = f"""
@@ -224,11 +229,19 @@ async def get_races_by_date(
         FROM {TABLE_RACE}
         WHERE {COL_KAISAI_YEAR} = $1
           AND {COL_KAISAI_MONTHDAY} = $2
-          AND {COL_DATA_KUBUN} = $3
     """
 
-    params = [year, monthday, DATA_KUBUN_KAKUTEI]
-    param_idx = 4
+    params = [year, monthday]
+    param_idx = 3
+
+    # 過去のレースは確定データのみ、未来のレースは登録済みデータを取得
+    if target_date < today:
+        sql += f" AND {COL_DATA_KUBUN} = ${param_idx}"
+        params.append(DATA_KUBUN_KAKUTEI)
+        param_idx += 1
+    else:
+        # 未来のレース: 登録('1'), 速報('2'), 枠順確定('3'), 出馬表('4'), 開催中('5'), 確定前('6')
+        sql += f" AND {COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')"
 
     # 競馬場フィルタ
     if venue_code:
@@ -283,15 +296,16 @@ async def get_race_entry_count(conn: Connection, race_id: str) -> int:
     Returns:
         出走頭数
     """
+    # 登録済みのレースをすべて取得（未来のレースも含む）
     sql = f"""
         SELECT COUNT(*) as entry_count
         FROM {TABLE_UMA_RACE}
         WHERE {COL_RACE_ID} = $1
-          AND {COL_DATA_KUBUN} = $2
+          AND {COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')
     """
 
     try:
-        row = await conn.fetchrow(sql, race_id, DATA_KUBUN_KAKUTEI)
+        row = await conn.fetchrow(sql, race_id)
         return row['entry_count'] if row else 0
     except Exception as e:
         logger.error(f"Failed to get race entry count: race_id={race_id}, error={e}")
@@ -399,16 +413,18 @@ async def check_race_exists(conn: Connection, race_id: str) -> bool:
     Returns:
         存在する場合True、しない場合False
     """
+    # 登録済みのレースをすべてチェック（未来のレースも含む）
+    # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前, 7=確定
     sql = f"""
         SELECT EXISTS(
             SELECT 1 FROM {TABLE_RACE}
             WHERE {COL_RACE_ID} = $1
-              AND {COL_DATA_KUBUN} = $2
+              AND {COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')
         ) AS exists
     """
 
     try:
-        row = await conn.fetchrow(sql, race_id, DATA_KUBUN_KAKUTEI)
+        row = await conn.fetchrow(sql, race_id)
         return row['exists'] if row else False
     except Exception as e:
         logger.error(f"Failed to check race exists: race_id={race_id}, error={e}")
