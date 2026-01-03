@@ -184,7 +184,7 @@ def send_discord_notification(
             honmei = ""
             if ranked:
                 top = ranked[0]
-                honmei = f"→ {top.get('horse_number', '?')}番 {top.get('horse_name', '')[:6]}"
+                honmei = f"→ {top.get('horse_number', '?')}番 {top.get('horse_name', '')}"
 
             lines.append(f"{header} {honmei}")
 

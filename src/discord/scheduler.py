@@ -260,14 +260,22 @@ class PredictionScheduler(commands.Cog):
                 sex = h.get('horse_sex') or ''
                 age = h.get('horse_age')
                 sex_age = f"{sex}{age}" if sex and age else ""
-                jockey = (h.get('jockey_name') or '').replace('　', ' ')  # 全角→半角スペース
-                jockey_str = f"/{jockey[:6]}" if jockey else ""
+                jockey = (h.get('jockey_name') or '').replace('　', ' ')[:6]  # 全角→半角スペース
+                # 性別年齢と騎手の組み合わせ
+                if sex_age and jockey:
+                    info_str = f"[{sex_age}/{jockey}]"
+                elif sex_age:
+                    info_str = f"[{sex_age}]"
+                elif jockey:
+                    info_str = f"[{jockey}]"
+                else:
+                    info_str = ""
                 win_prob = h.get('win_probability', 0)
                 quinella_prob = h.get('quinella_probability', 0)
                 place_prob = h.get('place_probability', 0)
 
                 lines.append(
-                    f"{rank}位 {num}番 {name} [{sex_age}{jockey_str}] "
+                    f"{rank}位 {num}番 {name} {info_str} "
                     f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
                 )
 
