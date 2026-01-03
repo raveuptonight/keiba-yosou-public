@@ -1506,7 +1506,59 @@ class SlashCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.api_base_url = os.getenv("API_BASE_URL", API_BASE_URL_DEFAULT)
+        self._race_cache = []  # レースキャッシュ
+        self._race_cache_time = None  # キャッシュ時刻
         logger.info(f"SlashCommands初期化: api_base_url={self.api_base_url}")
+
+    async def race_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> List[app_commands.Choice[str]]:
+        """レース名のオートコンプリート"""
+        from datetime import datetime, timedelta
+
+        # キャッシュが5分以上古い場合は更新
+        now = datetime.now()
+        if not self._race_cache or not self._race_cache_time or \
+           (now - self._race_cache_time) > timedelta(minutes=5):
+            try:
+                response = requests.get(
+                    f"{self.api_base_url}/api/races/upcoming",
+                    params={"days": 7},
+                    timeout=5,
+                )
+                if response.status_code == 200:
+                    self._race_cache = response.json().get("races", [])
+                    self._race_cache_time = now
+            except Exception:
+                pass
+
+        # 検索キーワードでフィルタ
+        current_lower = current.lower()
+        choices = []
+
+        for race in self._race_cache:
+            race_date = race.get("race_date", "")
+            venue = race.get("venue", "")
+            race_num = race.get("race_number", "")
+            race_name = race.get("race_name", "")
+            grade = race.get("grade", "")
+            race_id = race.get("race_id", "")
+
+            # 表示用ラベル
+            grade_str = f"[{grade}]" if grade else ""
+            label = f"{race_date} {venue}{race_num} {race_name}{grade_str}"[:100]
+
+            # 検索マッチング
+            search_text = f"{venue} {race_num} {race_name} {grade}".lower()
+            if current_lower in search_text or not current:
+                choices.append(app_commands.Choice(name=label, value=race_id))
+
+            if len(choices) >= 25:
+                break
+
+        return choices
 
     # ========================================
     # 予想コマンド
@@ -1754,6 +1806,7 @@ class SlashCommands(commands.Cog):
     @app_commands.describe(
         query="レース指定（例: 京都2r, 2025-12-28, 有馬記念, レースID）"
     )
+    @app_commands.autocomplete(query=race_autocomplete)
     async def race(self, interaction: discord.Interaction, query: str):
         """レース詳細（インタラクティブ出馬表）"""
         await interaction.response.defer(ephemeral=True)
