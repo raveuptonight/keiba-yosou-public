@@ -385,6 +385,7 @@ def _generate_ml_only_prediction(
         scored_horses.append({
             "horse_number": int(umaban) if umaban.isdigit() else 0,
             "horse_name": horse.get("bamei", "不明"),
+            "jockey_name": horse.get("kishumei", ""),
             "rank_score": score_data.get("rank_score", 999),
             "win_probability": score_data.get("win_probability", 0.0),
         })
@@ -451,6 +452,7 @@ def _generate_ml_only_prediction(
             "rank": rank,
             "horse_number": h["horse_number"],
             "horse_name": h["horse_name"],
+            "jockey_name": h.get("jockey_name", ""),
             "win_probability": round(win_prob, 4),
             "quinella_probability": round(quinella_prob, 4),
             "place_probability": round(place_prob, 4),
@@ -932,6 +934,7 @@ def _convert_to_prediction_response(
             rank=h["rank"],
             horse_number=h["horse_number"],
             horse_name=h["horse_name"],
+            jockey_name=h.get("jockey_name", ""),
             win_probability=h["win_probability"],
             quinella_probability=h["quinella_probability"],
             place_probability=h["place_probability"],

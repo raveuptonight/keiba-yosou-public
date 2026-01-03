@@ -184,7 +184,7 @@ def send_discord_notification(
             honmei = ""
             if ranked:
                 top = ranked[0]
-                honmei = f"→ ◎{top.get('horse_number', '?')}番 {top.get('horse_name', '')[:6]}"
+                honmei = f"→ {top.get('horse_number', '?')}番 {top.get('horse_name', '')[:6]}"
 
             lines.append(f"{header} {honmei}")
 
@@ -324,7 +324,9 @@ def run_daily_job(days_ahead: int = 1):
 
         print(f"\n{venue} {race_num}R {race_name}")
         for h in ranked:
-            print(f"  {h.get('rank')}位: {h.get('horse_number')}番 {h.get('horse_name')} "
+            jockey = h.get('jockey_name', '')[:6] if h.get('jockey_name') else ''
+            jockey_str = f" [{jockey}]" if jockey else ""
+            print(f"  {h.get('rank')}位: {h.get('horse_number')}番 {h.get('horse_name')}{jockey_str} "
                   f"(単勝{h.get('win_probability', 0):.1%})")
 
 
