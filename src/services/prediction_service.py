@@ -716,7 +716,7 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                         "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
                     }
                     shubetsu_map = {
-                        "11": "3歳", "12": "3歳以上", "13": "4歳以上", "14": "3歳以上"
+                        "11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"
                     }
                     shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
                     joken_name = joken_map.get(kyoso_joken, "条件戦")
@@ -908,7 +908,7 @@ def _convert_to_prediction_response(
             "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
         }
         shubetsu_map = {
-            "11": "3歳", "12": "3歳以上", "13": "4歳以上", "14": "3歳以上"
+            "11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"
         }
         shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
         joken_name = joken_map.get(kyoso_joken, "条件戦")
