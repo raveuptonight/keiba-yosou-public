@@ -287,7 +287,7 @@ class WeeklyRetrain:
         except Exception as e:
             logger.error(f"通知エラー: {e}")
 
-    def run_weekly_job(self, force_deploy: bool = False, notify: bool = True):
+    def run_weekly_job(self, force_deploy: bool = False, notify: bool = True, years: int = 3):
         """週次ジョブを実行"""
         logger.info("=" * 50)
         logger.info(f"週次モデル再学習開始: {datetime.now()}")
@@ -299,7 +299,7 @@ class WeeklyRetrain:
         }
 
         # 1. 新モデル学習
-        training_result = self.train_new_model(years=3)
+        training_result = self.train_new_model(years=years)
         result['training'] = training_result
 
         if training_result['status'] != 'success':
@@ -323,6 +323,11 @@ class WeeklyRetrain:
                     logger.info("改善なし、現行モデルを維持")
                     # 一時ファイル削除
                     Path(new_model_path).unlink()
+            elif force_deploy:
+                # 比較失敗でも強制デプロイ
+                self.deploy_new_model(new_model_path)
+                result['deployed'] = True
+                logger.info("強制デプロイしました（比較失敗）")
         else:
             # 現行モデルがない場合はそのままデプロイ
             shutil.move(new_model_path, self.current_model_path)
@@ -349,13 +354,15 @@ def main():
     parser = argparse.ArgumentParser(description="週次モデル再学習（ensemble_model）")
     parser.add_argument("--force", "-f", action="store_true", help="改善なしでもデプロイ")
     parser.add_argument("--no-notify", action="store_true", help="Discord通知しない")
+    parser.add_argument("--years", "-y", type=int, default=3, help="学習に使用する年数（デフォルト: 3年）")
 
     args = parser.parse_args()
 
     retrain = WeeklyRetrain()
     result = retrain.run_weekly_job(
         force_deploy=args.force,
-        notify=not args.no_notify
+        notify=not args.no_notify,
+        years=args.years
     )
 
     print("\n=== 再学習結果 ===")
