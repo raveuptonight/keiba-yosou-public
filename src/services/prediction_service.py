@@ -742,6 +742,7 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                     rank=h["rank"],
                     horse_number=h["horse_number"],
                     horse_name=h["horse_name"],
+                    jockey_name=h.get("jockey_name"),
                     win_probability=h["win_probability"],
                     quinella_probability=h.get("quinella_probability", h["win_probability"] + h.get("position_distribution", {}).get("second", 0)),
                     place_probability=h["place_probability"],
