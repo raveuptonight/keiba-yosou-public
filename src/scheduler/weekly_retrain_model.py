@@ -91,9 +91,11 @@ class WeeklyRetrain:
             df = pd.concat(all_data, ignore_index=True)
             logger.info(f"総サンプル数: {len(df)}")
 
-            # 特徴量とターゲット
-            exclude_cols = ['race_code', 'umaban', 'bamei', 'target', 'kakutei_chakujun']
-            feature_cols = [c for c in df.columns if c not in exclude_cols]
+            # 特徴量とターゲット（文字列型カラムを除外）
+            exclude_cols = ['race_code', 'umaban', 'bamei', 'target', 'kakutei_chakujun', 'kettonum']
+            # 数値型のみ抽出
+            numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+            feature_cols = [c for c in numeric_cols if c not in exclude_cols]
 
             X = df[feature_cols].fillna(0)
             y = df['target']
@@ -262,7 +264,6 @@ class WeeklyRetrain:
                 lines = [
                     "🔄 **週次モデル再学習完了**",
                     "",
-                    f"モデル: ensemble_model (XGBoost + LightGBM)",
                     f"学習サンプル数: {result['training'].get('samples', 0):,}",
                     f"新モデルRMSE: {result['comparison'].get('new_rmse', 0):.4f}",
                     f"改善率: {result['comparison'].get('improvement', 0):.2f}%",
@@ -273,7 +274,6 @@ class WeeklyRetrain:
                 lines = [
                     "🔄 **週次モデル再学習完了**",
                     "",
-                    f"モデル: ensemble_model (XGBoost + LightGBM)",
                     f"学習サンプル数: {result['training'].get('samples', 0):,}",
                     f"新モデルRMSE: {result['comparison'].get('new_rmse', 0):.4f}",
                     f"改善率: {result['comparison'].get('improvement', 0):.2f}%",

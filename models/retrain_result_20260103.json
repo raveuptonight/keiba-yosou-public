@@ -1,0 +1,13 @@
+{
+  "date": "2026-01-03",
+  "deployed": true,
+  "training": {
+    "status": "success",
+    "model_path": "/app/models/ensemble_model_new.pkl",
+    "rmse": 2.954193357304181,
+    "samples": 142737
+  },
+  "comparison": {
+    "note": "initial_deployment"
+  }
+}

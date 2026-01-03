@@ -211,8 +211,8 @@ results/
 
 # ===== プロジェクト固有 =====
 
-# モデルファイル（バイナリ）
-models/*.pkl
+# モデルファイル（git管理対象）
+# models/*.pkl  # 削除事故防止のためgit管理
 !models/.gitkeep
 
 # バックテスト結果

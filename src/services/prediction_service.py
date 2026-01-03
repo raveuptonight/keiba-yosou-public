@@ -471,7 +471,7 @@ def _generate_ml_only_prediction(
     return {
         "ranked_horses": ranked_horses,
         "prediction_confidence": round(prediction_confidence, 4),
-        "model_info": "ensemble_model (XGBoost + LightGBM)",
+        "model_info": "ensemble_model",
     }
 
 

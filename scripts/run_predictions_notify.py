@@ -111,7 +111,6 @@ def format_prediction_message(predictions: List[Dict[str, Any]], target_date: da
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
-    lines.append("※ ML予想（XGBoost + LightGBM アンサンブル）")
 
     return "\n".join(lines)
 
