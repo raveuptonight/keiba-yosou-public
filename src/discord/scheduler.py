@@ -20,7 +20,7 @@ from src.config import (
     SCHEDULER_EVENING_PREDICTION_HOUR,
     SCHEDULER_EVENING_PREDICTION_MINUTE,
     SCHEDULER_CHECK_INTERVAL_MINUTES,
-    SCHEDULER_FINAL_PREDICTION_HOURS_BEFORE,
+    SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE,
     SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES,
 )
 from src.discord.formatters import format_prediction_notification
@@ -395,11 +395,11 @@ class PredictionScheduler(commands.Cog):
                     logger.warning(f"レース時刻パース失敗: {race_time_str}")
                     continue
 
-                # レースN時間前（±M分の余裕）
-                hours_before = SCHEDULER_FINAL_PREDICTION_HOURS_BEFORE
+                # レースN分前（±M分の余裕）
+                minutes_before = SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE
                 tolerance_seconds = SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES * 60
 
-                target_time = race_datetime - timedelta(hours=hours_before)
+                target_time = race_datetime - timedelta(minutes=minutes_before)
                 time_diff = abs((now - target_time).total_seconds())
 
                 # 指定時刻の許容範囲内 かつ 未実行
