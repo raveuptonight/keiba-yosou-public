@@ -80,8 +80,8 @@ DISCORD_MAX_PREDICTIONS_DISPLAY: Final[int] = 5  # 予想表示最大件数
 DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # 統計表示最大件数
 
 # 自動予想スケジューラー設定
-SCHEDULER_MORNING_PREDICTION_HOUR: Final[int] = 9  # 朝予想の実行時刻（時）
-SCHEDULER_MORNING_PREDICTION_MINUTE: Final[int] = 0  # 朝予想の実行時刻（分）
+SCHEDULER_EVENING_PREDICTION_HOUR: Final[int] = 21  # 前日予想の実行時刻（時）
+SCHEDULER_EVENING_PREDICTION_MINUTE: Final[int] = 0  # 前日予想の実行時刻（分）
 SCHEDULER_CHECK_INTERVAL_MINUTES: Final[int] = 10  # レース時刻チェック間隔（分）
 SCHEDULER_FINAL_PREDICTION_HOURS_BEFORE: Final[int] = 1  # 最終予想のタイミング（レース何時間前）
 SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # 最終予想の時刻許容範囲（分）

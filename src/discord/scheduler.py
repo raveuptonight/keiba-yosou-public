@@ -17,8 +17,8 @@ import discord
 from src.config import (
     API_BASE_URL_DEFAULT,
     DISCORD_REQUEST_TIMEOUT,
-    SCHEDULER_MORNING_PREDICTION_HOUR,
-    SCHEDULER_MORNING_PREDICTION_MINUTE,
+    SCHEDULER_EVENING_PREDICTION_HOUR,
+    SCHEDULER_EVENING_PREDICTION_MINUTE,
     SCHEDULER_CHECK_INTERVAL_MINUTES,
     SCHEDULER_FINAL_PREDICTION_HOURS_BEFORE,
     SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES,
@@ -141,7 +141,7 @@ class PredictionScheduler(commands.Cog):
     """
     自動予想スケジューラー
 
-    1. 毎日9時: 当日開催レースの初回予想
+    1. 毎日21時: 翌日開催レースの初回予想
     2. レース1時間前: 馬体重発表後の再予想
     3. prediction_selectインタラクション処理
     """
@@ -159,7 +159,7 @@ class PredictionScheduler(commands.Cog):
         )
 
         # 実行済みレースID記録（重複予想防止）
-        self.predicted_race_ids_morning: set = set()  # 朝9時予想済み
+        self.predicted_race_ids_initial: set = set()  # 前日21時予想済み
         self.predicted_race_ids_final: set = set()    # 馬体重後予想済み
 
         logger.info(f"PredictionScheduler初期化: channel_id={self.notification_channel_id}")
@@ -286,13 +286,13 @@ class PredictionScheduler(commands.Cog):
     async def cog_load(self):
         """Cog読み込み時にタスク開始"""
         logger.info("自動予想スケジューラー開始")
-        self.morning_prediction_task.start()
+        self.evening_prediction_task.start()
         self.hourly_check_task.start()
 
     async def cog_unload(self):
         """Cog削除時にタスク停止"""
         logger.info("自動予想スケジューラー停止")
-        self.morning_prediction_task.cancel()
+        self.evening_prediction_task.cancel()
         self.hourly_check_task.cancel()
 
     def get_notification_channel(self) -> Optional[discord.TextChannel]:
@@ -308,44 +308,44 @@ class PredictionScheduler(commands.Cog):
 
         return channel
 
-    @tasks.loop(time=time(hour=SCHEDULER_MORNING_PREDICTION_HOUR, minute=SCHEDULER_MORNING_PREDICTION_MINUTE))
-    async def morning_prediction_task(self):
+    @tasks.loop(time=time(hour=SCHEDULER_EVENING_PREDICTION_HOUR, minute=SCHEDULER_EVENING_PREDICTION_MINUTE))
+    async def evening_prediction_task(self):
         """
-        毎朝9時に当日開催レースの予想を実行
+        毎日21時に翌日開催レースの予想を実行
 
-        開催日の朝、全レースの初回予想を実行します。
+        開催日前日の夜、全レースの初回予想を実行します。
         """
-        logger.info("朝9時予想タスク実行")
+        logger.info("21時予想タスク実行")
 
         try:
-            # 当日のレース一覧を取得
-            today = date.today()
-            races = await self._fetch_races_for_date(today)
+            # 翌日のレース一覧を取得
+            tomorrow = date.today() + timedelta(days=1)
+            races = await self._fetch_races_for_date(tomorrow)
 
             if not races:
-                logger.info(f"本日({today})はレース開催なし")
+                logger.info(f"明日({tomorrow})はレース開催なし")
                 return
 
-            logger.info(f"本日のレース数: {len(races)}")
+            logger.info(f"明日のレース数: {len(races)}")
             channel = self.get_notification_channel()
 
             if channel:
-                await channel.send(f"🌅 おはようございます！本日は{len(races)}レースの予想を開始します。")
+                await channel.send(f"🌙 明日は{len(races)}レースの予想を開始します。")
 
             # 各レースの予想を実行
             for race in races:
                 race_id = race.get("race_id")
 
                 # すでに予想済みならスキップ
-                if race_id in self.predicted_race_ids_morning:
-                    logger.debug(f"朝予想済みスキップ: {race_id}")
+                if race_id in self.predicted_race_ids_initial:
+                    logger.debug(f"前日予想済みスキップ: {race_id}")
                     continue
 
                 # 予想実行
                 success = await self._execute_prediction(race_id, is_final=False)
 
                 if success:
-                    self.predicted_race_ids_morning.add(race_id)
+                    self.predicted_race_ids_initial.add(race_id)
                     # レート制限対策で少し待機
                     await asyncio.sleep(2)
 
@@ -353,13 +353,13 @@ class PredictionScheduler(commands.Cog):
                 # 予想完了メッセージとレース選択ドロップダウンを送信
                 view = PredictionSummaryView(races, self.api_base_url, timeout=3600)
                 await channel.send(
-                    f"✅ 本日の初回予想が完了しました！（{len(races)}レース）\n"
+                    f"✅ 明日の初回予想が完了しました！（{len(races)}レース）\n"
                     "▼ レースを選択して詳細を確認できます",
                     view=view
                 )
 
         except Exception as e:
-            logger.exception(f"朝9時予想タスクエラー: {e}")
+            logger.exception(f"21時予想タスクエラー: {e}")
 
     @tasks.loop(minutes=SCHEDULER_CHECK_INTERVAL_MINUTES)
     async def hourly_check_task(self):
@@ -518,11 +518,11 @@ class PredictionScheduler(commands.Cog):
             logger.exception(f"予想実行エラー: race_id={race_id}, error={e}")
             return False
 
-    @morning_prediction_task.before_loop
-    async def before_morning_task(self):
-        """朝9時タスク開始前にBot準備完了を待つ"""
+    @evening_prediction_task.before_loop
+    async def before_evening_task(self):
+        """21時タスク開始前にBot準備完了を待つ"""
         await self.bot.wait_until_ready()
-        logger.info("朝9時予想タスク準備完了")
+        logger.info("21時予想タスク準備完了")
 
     @hourly_check_task.before_loop
     async def before_hourly_task(self):
@@ -539,18 +539,18 @@ class PredictionScheduler(commands.Cog):
         Args:
             ctx: コマンドコンテキスト
         """
-        morning_running = self.morning_prediction_task.is_running()
+        evening_running = self.evening_prediction_task.is_running()
         hourly_running = self.hourly_check_task.is_running()
 
-        morning_next = self.morning_prediction_task.next_iteration
-        morning_next_str = morning_next.strftime("%Y-%m-%d %H:%M:%S") if morning_next else "不明"
+        evening_next = self.evening_prediction_task.next_iteration
+        evening_next_str = evening_next.strftime("%Y-%m-%d %H:%M:%S") if evening_next else "不明"
 
         lines = [
             "⚙️ 自動予想スケジューラーステータス",
             "",
-            f"朝9時予想タスク: {'🟢 実行中' if morning_running else '🔴 停止中'}",
-            f"次回実行: {morning_next_str}",
-            f"本日予想済み: {len(self.predicted_race_ids_morning)}レース",
+            f"21時予想タスク: {'🟢 実行中' if evening_running else '🔴 停止中'}",
+            f"次回実行: {evening_next_str}",
+            f"前日予想済み: {len(self.predicted_race_ids_initial)}レース",
             "",
             f"レースチェックタスク: {'🟢 実行中' if hourly_running else '🔴 停止中'}",
             f"最終予想済み: {len(self.predicted_race_ids_final)}レース",
@@ -569,7 +569,7 @@ class PredictionScheduler(commands.Cog):
         Args:
             ctx: コマンドコンテキスト
         """
-        self.predicted_race_ids_morning.clear()
+        self.predicted_race_ids_initial.clear()
         self.predicted_race_ids_final.clear()
 
         logger.info("スケジューラーリセット完了")
