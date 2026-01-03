@@ -42,7 +42,7 @@ async def init_db_pool() -> None:
             password=DB_PASSWORD,
             min_size=DB_POOL_MIN_SIZE,
             max_size=DB_POOL_MAX_SIZE,
-            command_timeout=60,  # 60秒でタイムアウト
+            command_timeout=120,  # 120秒でタイムアウト
         )
         logger.info(
             f"Database pool initialized: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
