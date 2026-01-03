@@ -1722,7 +1722,22 @@ class SlashCommands(commands.Cog):
                     message = "\n".join(lines)
                     if len(message) > 1900:
                         message = message[:1900] + "\n... (省略)"
-                    await interaction.followup.send(message, ephemeral=True)
+
+                    # 重賞・OP・Lを優先してソート（最大25件）
+                    grade_priority = {"G1": 0, "G2": 1, "G3": 2, "L": 3, "OP": 4}
+                    sorted_races = sorted(
+                        races,
+                        key=lambda r: (
+                            grade_priority.get(r.get("grade"), 99),
+                            r.get("race_date", ""),
+                            r.get("venue_code", ""),
+                            r.get("race_number", "")
+                        )
+                    )[:25]
+
+                    # レース選択ビューを追加
+                    view = RaceSelectView(sorted_races, self.api_base_url, timeout=120)
+                    await interaction.followup.send(message, view=view, ephemeral=True)
                 else:
                     await interaction.followup.send("今後のレースは未登録です。", ephemeral=True)
             else:
