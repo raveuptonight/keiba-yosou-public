@@ -957,6 +957,8 @@ def _convert_to_prediction_response(
             rank=h["rank"],
             horse_number=h["horse_number"],
             horse_name=h["horse_name"],
+            horse_sex=h.get("horse_sex"),
+            horse_age=h.get("horse_age"),
             jockey_name=h.get("jockey_name", ""),
             win_probability=h["win_probability"],
             quinella_probability=h["quinella_probability"],
