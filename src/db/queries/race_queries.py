@@ -323,6 +323,8 @@ async def get_upcoming_races(
     end_date = today + timedelta(days=days_ahead)
     end_monthday = end_date.strftime("%m%d")
 
+    # 未来のレースは data_kubun が '1'(登録) や '2'(速報) の場合があるため
+    # 確定('7')に限定せず、登録済みのレースを全て取得
     sql = f"""
         SELECT
             {COL_RACE_ID},
@@ -341,14 +343,13 @@ async def get_upcoming_races(
         WHERE {COL_KAISAI_YEAR} = $1
           AND {COL_KAISAI_MONTHDAY} >= $2
           AND {COL_KAISAI_MONTHDAY} <= $3
-          AND {COL_DATA_KUBUN} = $4
     """
 
-    params = [year, start_monthday, end_monthday, DATA_KUBUN_KAKUTEI]
+    params = [year, start_monthday, end_monthday]
 
     # グレードフィルタ
     if grade_filter:
-        sql += f" AND {COL_GRADE_CD} = $5"
+        sql += f" AND {COL_GRADE_CD} = $4"
         params.append(grade_filter)
 
     sql += f" ORDER BY {COL_KAISAI_MONTHDAY}, {COL_RACE_NUM}"
