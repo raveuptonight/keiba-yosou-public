@@ -256,7 +256,7 @@ class PredictionScheduler(commands.Cog):
             for h in ranked:
                 rank = h.get('rank', 0)
                 num = h.get('horse_number', '?')
-                name = h.get('horse_name', '?')[:10]
+                name = h.get('horse_name', '?')
                 sex = h.get('horse_sex') or ''
                 age = h.get('horse_age')
                 sex_age = f"{sex}{age}" if sex and age else ""
