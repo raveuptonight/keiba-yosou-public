@@ -731,9 +731,11 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                         "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
                         "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
                     }
-                    shubetsu_map = {
-                        "11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"
-                    }
+                    # 新馬・未勝利は「以上」なし、クラス戦は「以上」あり
+                    if kyoso_joken in ("701", "702", "703"):
+                        shubetsu_map = {"11": "2歳", "12": "3歳", "13": "3歳", "14": "4歳"}
+                    else:
+                        shubetsu_map = {"11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"}
                     shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
                     joken_name = joken_map.get(kyoso_joken, "条件戦")
                     race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"
@@ -926,9 +928,11 @@ def _convert_to_prediction_response(
             "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
             "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
         }
-        shubetsu_map = {
-            "11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"
-        }
+        # 新馬・未勝利は「以上」なし、クラス戦は「以上」あり
+        if kyoso_joken in ("701", "702", "703"):
+            shubetsu_map = {"11": "2歳", "12": "3歳", "13": "3歳", "14": "4歳"}
+        else:
+            shubetsu_map = {"11": "2歳", "12": "3歳", "13": "3歳以上", "14": "4歳以上"}
         shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
         joken_name = joken_map.get(kyoso_joken, "条件戦")
         race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"

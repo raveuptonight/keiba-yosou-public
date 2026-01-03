@@ -111,7 +111,7 @@ def _format_race_header(pred: Dict[str, Any], races_info: Dict[str, Dict]) -> st
         time_str = f"{race_time[:2]}:{race_time[2:4]}発走"
 
     # ヘッダー構築
-    parts = [f"**{venue}{race_num}**"]
+    parts = [f"**{venue} {race_num}**"]
     if time_str:
         parts.append(time_str)
     if race_name:
