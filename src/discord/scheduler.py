@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional
 import asyncio
 import requests
 from discord.ext import tasks, commands
+from discord.ui import View, Select
 import discord
 
 from src.config import (
@@ -26,6 +27,114 @@ from src.discord.formatters import format_prediction_notification
 
 # ロガー設定
 logger = logging.getLogger(__name__)
+
+
+class PredictionSummaryView(View):
+    """予想完了後のレース選択ビュー"""
+
+    def __init__(self, races: List[Dict], api_base_url: str, timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.api_base_url = api_base_url
+        self.races = races
+
+        # 日付→競馬場→レース番号（降順）でソート
+        sorted_races = sorted(
+            races,
+            key=lambda r: (
+                r.get("race_date", ""),
+                r.get("venue", ""),
+                int(r.get("race_number", "0R").replace("R", "") or 0)
+            ),
+            reverse=True
+        )
+
+        options = []
+        for race in sorted_races[:25]:
+            race_date = race.get("race_date", "")
+            venue = race.get("venue", "")
+            race_num = race.get("race_number", "?R")
+            race_name = race.get("race_name", "")[:20]
+            race_id = race.get("race_id", "")
+            grade = race.get("grade", "")
+            grade_str = f" [{grade}]" if grade else ""
+
+            label = f"{race_date} {venue} {race_num} {race_name}{grade_str}"[:100]
+            description = f"{race.get('distance', '?')}m"[:100]
+
+            options.append(discord.SelectOption(
+                label=label,
+                value=race_id,
+                description=description
+            ))
+
+        if options:
+            select = Select(
+                placeholder="レースを選択して詳細を表示...",
+                options=options,
+                min_values=1,
+                max_values=1
+            )
+            select.callback = self.select_callback
+            self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        """レースが選択されたときのコールバック"""
+        race_id = interaction.data["values"][0]
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # 予想結果を取得
+            response = requests.get(
+                f"{self.api_base_url}/api/v1/predictions/race/{race_id}",
+                timeout=DISCORD_REQUEST_TIMEOUT,
+            )
+
+            if response.status_code == 200:
+                predictions = response.json()
+                if predictions:
+                    # 最新の予想を取得
+                    latest = predictions[0] if isinstance(predictions, list) else predictions
+
+                    # 予想詳細を取得
+                    pred_id = latest.get("prediction_id")
+                    detail_response = requests.get(
+                        f"{self.api_base_url}/api/v1/predictions/{pred_id}",
+                        timeout=DISCORD_REQUEST_TIMEOUT,
+                    )
+
+                    if detail_response.status_code == 200:
+                        data = detail_response.json()
+                        result = data.get("prediction_result", {})
+                        ranked = result.get("ranked_horses", [])
+
+                        # Embed作成
+                        embed = discord.Embed(
+                            title=f"🏇 {data.get('race_name', '?')}",
+                            description=f"{data.get('venue', '?')} {data.get('race_number', '?')}R | {data.get('race_date', '?')}",
+                            color=discord.Color.blue()
+                        )
+
+                        # 上位10頭を表示
+                        marks = ['◎', '○', '▲', '△', '△', '×', '×', '×', '☆', '☆']
+                        lines = []
+                        for h in ranked[:10]:
+                            rank = h.get('rank', 0)
+                            mark = marks[rank - 1] if rank <= len(marks) else '☆'
+                            lines.append(
+                                f"{mark} {rank}位 {h.get('horse_number', '?')}番 {h.get('horse_name', '?')[:8]} "
+                                f"(単{h.get('win_probability', 0):.1%} 連{h.get('quinella_probability', 0):.1%} 複{h.get('place_probability', 0):.1%})"
+                            )
+
+                        embed.add_field(name="予想順位", value="\n".join(lines), inline=False)
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+
+            await interaction.followup.send("予想データの取得に失敗しました", ephemeral=True)
+
+        except Exception as e:
+            logger.error(f"予想詳細取得エラー: {e}")
+            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
 
 
 class PredictionScheduler(commands.Cog):
@@ -121,7 +230,13 @@ class PredictionScheduler(commands.Cog):
                     await asyncio.sleep(2)
 
             if channel:
-                await channel.send("✅ 本日の初回予想が完了しました！")
+                # 予想完了メッセージとレース選択ドロップダウンを送信
+                view = PredictionSummaryView(races, self.api_base_url, timeout=3600)
+                await channel.send(
+                    f"✅ 本日の初回予想が完了しました！（{len(races)}レース）\n"
+                    "▼ レースを選択して詳細を確認できます",
+                    view=view
+                )
 
         except Exception as e:
             logger.exception(f"朝9時予想タスクエラー: {e}")

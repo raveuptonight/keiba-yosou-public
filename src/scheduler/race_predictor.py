@@ -41,9 +41,20 @@ class RacePredictor:
         """ensemble_modelを読み込み"""
         try:
             model_data = joblib.load(self.model_path)
-            self.xgb_model = model_data['xgb_model']
-            self.lgb_model = model_data['lgb_model']
-            self.feature_names = model_data['feature_names']
+
+            # 2つの形式に対応
+            # 形式1: xgb_model, lgb_model（weekly_retrain_model.py形式）
+            # 形式2: models.xgboost, models.lightgbm（旧形式）
+            if 'xgb_model' in model_data:
+                self.xgb_model = model_data['xgb_model']
+                self.lgb_model = model_data['lgb_model']
+            elif 'models' in model_data:
+                self.xgb_model = model_data['models'].get('xgboost')
+                self.lgb_model = model_data['models'].get('lightgbm')
+            else:
+                raise ValueError("Invalid model format: ensemble_model required")
+
+            self.feature_names = model_data.get('feature_names', [])
             logger.info(f"ensemble_model読み込み完了: {len(self.feature_names)}特徴量")
         except Exception as e:
             logger.error(f"モデル読み込み失敗: {e}")
@@ -65,13 +76,14 @@ class RacePredictor:
             kaisai_nen = str(target_date.year)
 
             # まず出馬表データがあるか確認
+            # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前
             cur.execute('''
                 SELECT DISTINCT r.race_code, r.keibajo_code, r.race_bango,
                        r.kyori, r.track_code, r.grade_code
                 FROM race_shosai r
                 WHERE r.kaisai_nen = %s
                   AND r.kaisai_gappi = %s
-                  AND r.data_kubun IN ('3', '4', '5', '6')
+                  AND r.data_kubun IN ('1', '2', '3', '4', '5', '6')
                 ORDER BY r.race_code
             ''', (kaisai_nen, kaisai_gappi))
 
@@ -111,7 +123,7 @@ class RacePredictor:
                     kishu_code, futan_juryo, barei, seibetsu_code
                 FROM umagoto_race_joho
                 WHERE race_code = %s
-                  AND data_kubun IN ('3', '4', '5', '6')
+                  AND data_kubun IN ('1', '2', '3', '4', '5', '6')
                 ORDER BY umaban::int
             ''', (race_code,))
 
@@ -172,7 +184,7 @@ class RacePredictor:
                     bataiju, zogen_sa, bamei
                 FROM umagoto_race_joho
                 WHERE race_code = %s
-                  AND data_kubun IN ('3', '4', '5', '6')
+                  AND data_kubun IN ('1', '2', '3', '4', '5', '6')
                 ORDER BY umaban::int
             ''', (race_code,))
 
@@ -315,7 +327,8 @@ class RacePredictor:
                         ]
                     }
                     results['races'].append(race_result)
-                    logger.info(f"  TOP3: {[f\"{p['umaban']}番{p['bamei']}\" for p in top3]}")
+                    top3_str = [f"{p['umaban']}番{p['bamei']}" for p in top3]
+                    logger.info(f"  TOP3: {top3_str}")
 
             except Exception as e:
                 logger.error(f"予想失敗 {race_code}: {e}")
