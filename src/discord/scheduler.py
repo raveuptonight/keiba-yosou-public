@@ -143,6 +143,7 @@ class PredictionScheduler(commands.Cog):
 
     1. 毎日9時: 当日開催レースの初回予想
     2. レース1時間前: 馬体重発表後の再予想
+    3. prediction_selectインタラクション処理
     """
 
     def __init__(self, bot: commands.Bot, notification_channel_id: Optional[int] = None):
@@ -162,6 +163,125 @@ class PredictionScheduler(commands.Cog):
         self.predicted_race_ids_final: set = set()    # 馬体重後予想済み
 
         logger.info(f"PredictionScheduler初期化: channel_id={self.notification_channel_id}")
+
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        """
+        インタラクションイベントハンドラ
+
+        daily_scheduler.pyから送信されたSelectメニューのインタラクションを処理
+        """
+        # Selectメニューのインタラクションのみ処理
+        if interaction.type != discord.InteractionType.component:
+            return
+
+        # prediction_selectのみ処理
+        custom_id = interaction.data.get("custom_id")
+        if custom_id != "prediction_select":
+            return
+
+        # 選択されたレースIDを取得
+        values = interaction.data.get("values", [])
+        if not values:
+            return
+
+        race_id = values[0]
+        logger.info(f"予想詳細リクエスト: race_id={race_id}, user={interaction.user}")
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # 予想履歴を取得
+            history_response = requests.get(
+                f"{self.api_base_url}/api/v1/predictions/race/{race_id}",
+                timeout=30,
+            )
+
+            if history_response.status_code != 200:
+                await interaction.followup.send("予想データが見つかりません", ephemeral=True)
+                return
+
+            history = history_response.json()
+            predictions = history.get("predictions", [])
+
+            if not predictions:
+                await interaction.followup.send("このレースの予想はまだありません", ephemeral=True)
+                return
+
+            # 最新の予想を取得
+            latest = predictions[0]
+            pred_id = latest.get("prediction_id")
+
+            # 予想詳細を取得
+            detail_response = requests.get(
+                f"{self.api_base_url}/api/v1/predictions/{pred_id}",
+                timeout=30,
+            )
+
+            if detail_response.status_code != 200:
+                await interaction.followup.send("予想詳細の取得に失敗しました", ephemeral=True)
+                return
+
+            data = detail_response.json()
+            result = data.get("prediction_result", {})
+            ranked = result.get("ranked_horses", [])
+
+            if not ranked:
+                await interaction.followup.send("予想データがありません", ephemeral=True)
+                return
+
+            # 予想詳細フォーマット
+            venue = data.get("venue", "?")
+            race_num = data.get("race_number", "?")
+            race_name = data.get("race_name", "")
+            race_time = data.get("race_time", "")
+
+            # 発走時刻フォーマット
+            time_str = ""
+            if race_time and len(race_time) >= 4:
+                time_str = f"{race_time[:2]}:{race_time[2:4]}発走"
+
+            # ヘッダー
+            header = f"**{venue}{race_num}** {time_str} {race_name}"
+            lines = [header, ""]
+
+            # 全馬表示
+            marks = ['◎', '○', '▲', '△', '△', '×', '×', '×'] + ['☆'] * 10
+            for h in ranked:
+                rank = h.get('rank', 0)
+                num = h.get('horse_number', '?')
+                name = h.get('horse_name', '?')[:10]
+                win_prob = h.get('win_probability', 0)
+                quinella_prob = h.get('quinella_probability', 0)
+                place_prob = h.get('place_probability', 0)
+                mark = marks[rank - 1] if rank <= len(marks) else '消'
+
+                lines.append(
+                    f"{mark} {rank}位 {num}番 {name} "
+                    f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
+                )
+
+            # モデル情報
+            model_info = result.get("model_info", "")
+            confidence = result.get("prediction_confidence", 0)
+            lines.append("")
+            lines.append(f"_{model_info} / 信頼度 {confidence:.1%}_")
+
+            message = "\n".join(lines)
+
+            # 2000文字を超える場合は分割
+            if len(message) > 2000:
+                message = message[:1950] + "\n...(省略)"
+
+            await interaction.followup.send(message, ephemeral=True)
+            logger.info(f"予想詳細送信完了: race_id={race_id}")
+
+        except requests.exceptions.Timeout:
+            logger.error(f"予想詳細取得タイムアウト: race_id={race_id}")
+            await interaction.followup.send("タイムアウト: APIの応答がありません", ephemeral=True)
+        except Exception as e:
+            logger.exception(f"予想詳細取得エラー: race_id={race_id}, error={e}")
+            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
 
     async def cog_load(self):
         """Cog読み込み時にタスク開始"""

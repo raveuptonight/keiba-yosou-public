@@ -151,21 +151,11 @@ async def get_race_predictions(
     logger.info(f"GET /predictions/race/{race_id}?is_final={is_final}")
 
     try:
-        predictions_data = await prediction_service.get_predictions_by_race(
+        # get_predictions_by_race は既に PredictionHistoryItem のリストを返す
+        predictions = await prediction_service.get_predictions_by_race(
             race_id,
             is_final=is_final
         )
-
-        # レスポンス形式に変換
-        predictions = [
-            PredictionHistoryItem(
-                prediction_id=p["prediction_id"],
-                predicted_at=p["predicted_at"],
-                is_final=p["is_final"],
-                expected_roi=p["expected_roi"]
-            )
-            for p in predictions_data
-        ]
 
         response = PredictionHistoryResponse(
             race_id=race_id,

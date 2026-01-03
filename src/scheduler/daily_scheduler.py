@@ -63,62 +63,197 @@ def execute_prediction(race_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def _format_track(track_code: str, distance: int) -> str:
+    """トラックコードと距離をフォーマット"""
+    if track_code and track_code.startswith("1"):
+        return f"芝{distance}m"
+    elif track_code and track_code.startswith("2"):
+        return f"ダ{distance}m"
+    return f"{distance}m"
+
+
+def _format_race_number(race_num: str) -> str:
+    """レース番号をフォーマット（"01" -> "1R", "11R" -> "11R"）"""
+    if not race_num or race_num == "?":
+        return "?R"
+    # 既に "R" が付いている場合はそのまま
+    if race_num.upper().endswith("R"):
+        return race_num
+    # 数字のみの場合は先頭のゼロを除去して"R"を付ける
+    try:
+        num = int(race_num)
+        return f"{num}R"
+    except ValueError:
+        return f"{race_num}R"
+
+
+def _format_race_header(pred: Dict[str, Any], races_info: Dict[str, Dict]) -> str:
+    """レースヘッダーをフォーマット（例: 中山1R 09:55発走 3歳未勝利 芝1200m 16頭）"""
+    venue = pred.get("venue", "?")
+    race_num_raw = pred.get("race_number", "?")
+    race_num = _format_race_number(race_num_raw)
+    race_time = pred.get("race_time", "")
+    race_name = pred.get("race_name", "")
+    race_id = pred.get("race_id", "")
+    result = pred.get("prediction_result", {})
+    ranked = result.get("ranked_horses", [])
+    entry_count = len(ranked)
+
+    # レース情報から距離・トラック取得
+    race_info = races_info.get(race_id, {})
+    distance = race_info.get("distance", 0)
+    track_code = race_info.get("track_code", "")
+    track_str = _format_track(track_code, distance) if distance else ""
+
+    # 発走時刻フォーマット（HHMM -> HH:MM）
+    time_str = ""
+    if race_time and len(race_time) >= 4:
+        time_str = f"{race_time[:2]}:{race_time[2:4]}発走"
+
+    # ヘッダー構築
+    parts = [f"**{venue}{race_num}**"]
+    if time_str:
+        parts.append(time_str)
+    if race_name:
+        parts.append(race_name[:20])
+    if track_str:
+        parts.append(track_str)
+    if entry_count:
+        parts.append(f"{entry_count}頭")
+
+    return " ".join(parts)
+
+
 def send_discord_notification(
     target_date: date,
     predictions: List[Dict[str, Any]],
-    webhook_url: Optional[str] = None
+    races_info: Dict[str, Dict] = None
 ):
-    """Discord通知を送信"""
-    if not webhook_url:
-        webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
+    """Discord Bot経由で通知を送信（インタラクティブ形式）"""
+    bot_token = os.getenv('DISCORD_BOT_TOKEN')
+    channel_id = os.getenv('DISCORD_NOTIFICATION_CHANNEL_ID')
 
-    if not webhook_url:
-        logger.info("Discord Webhook URLが設定されていません")
+    if not bot_token:
+        logger.warning("DISCORD_BOT_TOKEN が設定されていません")
         return
+
+    if not channel_id:
+        logger.warning("DISCORD_NOTIFICATION_CHANNEL_ID が設定されていません")
+        return
+
+    if races_info is None:
+        races_info = {}
+
+    # Discord REST API設定
+    url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+    headers = {
+        "Authorization": f"Bot {bot_token}",
+        "Content-Type": "application/json"
+    }
 
     try:
         if not predictions:
             content = f"📅 {target_date}\n予想データがありません"
-        else:
-            lines = [f"🏇 **{target_date} レース予想完了**\n"]
-            lines.append(f"予想レース数: {len(predictions)}件\n")
+            requests.post(url, headers=headers, json={"content": content}, timeout=10)
+            return
 
-            # 重賞・OPを優先して表示
-            grade_priority = {"G1": 0, "G2": 1, "G3": 2, "L": 3, "OP": 4}
-            sorted_preds = sorted(
-                predictions,
-                key=lambda p: (
-                    grade_priority.get(p.get("prediction_result", {}).get("grade"), 99),
-                    p.get("venue", ""),
-                    p.get("race_number", "")
-                )
+        # 重賞・OPを優先してソート
+        grade_priority = {"G1": 0, "G2": 1, "G3": 2, "L": 3, "OP": 4}
+        sorted_preds = sorted(
+            predictions,
+            key=lambda p: (
+                grade_priority.get(p.get("prediction_result", {}).get("grade"), 99),
+                p.get("venue", ""),
+                int(p.get("race_number", "0R").replace("R", "").replace("?", "0") or 0)
             )
+        )
 
-            for pred in sorted_preds[:10]:  # 最大10レース
-                venue = pred.get("venue", "?")
-                race_num = pred.get("race_number", "?")
-                race_name = pred.get("race_name", "")[:15]
-                result = pred.get("prediction_result", {})
-                ranked = result.get("ranked_horses", [])[:3]
+        # レースリスト作成
+        lines = [f"🏇 **{target_date} レース予想完了** ({len(predictions)}レース)\n"]
+        lines.append("▼ 詳細を見たいレースをドロップダウンから選択してください\n")
+        lines.append("━━━━━━━━━━━━━━━━")
 
-                lines.append(f"\n**{venue} {race_num}R** {race_name}")
-                for i, h in enumerate(ranked):
-                    medal = ['🥇', '🥈', '🥉'][i]
-                    lines.append(
-                        f"{medal} {h.get('horse_number', '?')}番 {h.get('horse_name', '?')[:8]} "
-                        f"(単{h.get('win_probability', 0):.1%})"
-                    )
+        for pred in sorted_preds:
+            result = pred.get("prediction_result", {})
+            ranked = result.get("ranked_horses", [])
 
-            content = "\n".join(lines)
+            # レースヘッダー（詳細形式）
+            header = _format_race_header(pred, races_info)
 
-        # 送信
-        payload = {"content": content}
-        response = requests.post(webhook_url, json=payload, timeout=10)
+            # 本命馬を簡潔に表示
+            honmei = ""
+            if ranked:
+                top = ranked[0]
+                honmei = f"→ ◎{top.get('horse_number', '?')}番 {top.get('horse_name', '')[:6]}"
 
-        if response.status_code == 204:
-            logger.info("Discord通知送信完了")
+            lines.append(f"{header} {honmei}")
+
+        content = "\n".join(lines)
+
+        # Selectメニュー用オプション作成（最大25個）
+        options = []
+        for i, pred in enumerate(sorted_preds[:25]):
+            venue = pred.get("venue", "?")
+            race_num = pred.get("race_number", "?")
+            race_name = pred.get("race_name", "")
+            race_time = pred.get("race_time", "")
+            race_id = pred.get("race_id", f"race_{i}")
+
+            # レース情報から距離・トラック取得
+            race_info = races_info.get(race_id, {})
+            distance = race_info.get("distance", 0)
+            track_code = race_info.get("track_code", "")
+            track_str = _format_track(track_code, distance) if distance else ""
+
+            # 発走時刻フォーマット
+            time_str = ""
+            if race_time and len(race_time) >= 4:
+                time_str = f"{race_time[:2]}:{race_time[2:]}"
+
+            # ラベル構築（最大100文字）
+            label_parts = [f"{venue}{race_num}"]
+            if time_str:
+                label_parts.append(time_str)
+            if race_name:
+                label_parts.append(race_name[:30])
+            label = " ".join(label_parts)[:100]
+
+            # 説明（最大100文字）
+            desc_parts = []
+            if track_str:
+                desc_parts.append(track_str)
+            desc_parts.append("詳細予想を表示")
+            description = " / ".join(desc_parts)[:100]
+
+            options.append({
+                "label": label,
+                "value": race_id,
+                "description": description
+            })
+
+        # Selectコンポーネント付きメッセージ送信
+        payload = {
+            "content": content,
+            "components": [
+                {
+                    "type": 1,  # Action Row
+                    "components": [
+                        {
+                            "type": 3,  # Select Menu
+                            "custom_id": "prediction_select",
+                            "placeholder": "レースを選択して詳細を見る",
+                            "options": options
+                        }
+                    ]
+                }
+            ]
+        }
+
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        if response.status_code in (200, 201):
+            logger.info(f"Discord通知送信成功: {len(predictions)}レース")
         else:
-            logger.warning(f"Discord通知失敗: {response.status_code}")
+            logger.warning(f"Discord通知失敗: {response.status_code} - {response.text[:200]}")
 
     except Exception as e:
         logger.error(f"Discord通知エラー: {e}")
@@ -142,6 +277,16 @@ def run_daily_job(days_ahead: int = 1):
 
     logger.info(f"{target_date}のレース: {len(races)}件")
 
+    # レース情報をマップに格納（通知用）
+    races_info = {}
+    for race in races:
+        race_id = race.get("race_id")
+        races_info[race_id] = {
+            "distance": race.get("distance", 0),
+            "track_code": race.get("track_code", ""),
+            "grade": race.get("grade"),
+        }
+
     # 2. 各レースの予想を実行
     predictions = []
     for race in races:
@@ -162,7 +307,7 @@ def run_daily_job(days_ahead: int = 1):
 
     # 3. Discord通知
     if predictions:
-        send_discord_notification(target_date, predictions)
+        send_discord_notification(target_date, predictions, races_info)
 
     # 4. 結果サマリー
     print("\n" + "=" * 50)

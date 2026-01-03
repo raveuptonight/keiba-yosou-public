@@ -608,13 +608,9 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
             # prediction_id を生成（UUIDベース）
             prediction_id = str(uuid.uuid4())
 
-            # prediction_result をJSON文字列に変換（JSONB用）
+            # prediction_result をdict形式で取得（asyncpgがJSONBに自動変換）
             import json
-            prediction_result_json = json.dumps(
-                prediction_data.prediction_result.model_dump(),
-                ensure_ascii=False,
-                default=str
-            )
+            prediction_result_dict = prediction_data.prediction_result.model_dump()
 
             # race_date を date型に変換
             from datetime import date as date_type
@@ -629,7 +625,7 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
                 prediction_data.race_id,
                 race_date,
                 prediction_data.is_final,
-                prediction_result_json,  # JSONB として保存
+                json.dumps(prediction_result_dict),  # asyncpg JSONB用にJSON文字列
                 prediction_data.predicted_at,
             )
 
@@ -704,14 +700,40 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                 race_number = "?"
                 race_time = "00:00"
             else:
-                race_name = race_info.get(COL_RACE_NAME, "不明")
+                race_name_raw = race_info.get(COL_RACE_NAME)
+                # レース名が空の場合は条件コードからフォールバック生成
+                if race_name_raw and race_name_raw.strip():
+                    race_name = race_name_raw.strip()
+                else:
+                    # 競走条件からレース名を推測
+                    kyoso_joken = race_info.get("kyoso_joken_code", "")
+                    kyoso_shubetsu = race_info.get("kyoso_shubetsu_code", "")
+                    # 簡易マッピング
+                    joken_map = {
+                        "005": "新馬", "010": "未勝利", "016": "1勝クラス",
+                        "017": "2勝クラス", "018": "3勝クラス", "701": "OP"
+                    }
+                    shubetsu_map = {
+                        "11": "3歳", "12": "3歳以上", "13": "4歳以上"
+                    }
+                    shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
+                    joken_name = joken_map.get(kyoso_joken, "条件戦")
+                    race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"
+
                 venue_code = race_info.get(COL_JYOCD, "00")
                 venue = VENUE_CODE_MAP.get(venue_code, f"競馬場{venue_code}")
-                race_number = str(race_info.get("race_num", "?"))
+                race_number = str(race_info.get("race_bango", "?"))
                 race_time = race_info.get("hasso_jikoku", "00:00")
 
             # PredictionResponse に変換
             prediction_result_data = row["prediction_result"]
+            # 文字列として保存されている場合はパース
+            if isinstance(prediction_result_data, str):
+                import json
+                try:
+                    prediction_result_data = json.loads(prediction_result_data)
+                except json.JSONDecodeError:
+                    prediction_result_data = {"ranked_horses": [], "prediction_confidence": 0.5, "model_info": "unknown"}
             # ランキングエントリを構築
             ranked_horses = [
                 HorseRankingEntry(
@@ -733,11 +755,18 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                 model_info=prediction_result_data.get("model_info", "unknown"),
             )
 
+            # race_dateを文字列に変換
+            race_date_raw = row["race_date"]
+            if hasattr(race_date_raw, 'isoformat'):
+                race_date_str = race_date_raw.isoformat()
+            else:
+                race_date_str = str(race_date_raw)
+
             prediction_response = PredictionResponse(
                 prediction_id=row["prediction_id"],
                 race_id=row["race_id"],
                 race_name=race_name,
-                race_date=row["race_date"],
+                race_date=race_date_str,
                 venue=venue,
                 race_number=race_number,
                 race_time=race_time,
@@ -810,15 +839,25 @@ async def get_predictions_by_race(
                 """
                 rows = await conn.fetch(sql, race_id, is_final)
 
-            predictions = [
-                PredictionHistoryItem(
-                    prediction_id=row["prediction_id"],
-                    predicted_at=row["predicted_at"],
-                    is_final=row["is_final"],
-                    prediction_confidence=row["prediction_result"].get("prediction_confidence", 0.5) if row["prediction_result"] else 0.5,
+            predictions = []
+            for row in rows:
+                pred_result = row["prediction_result"]
+                # 文字列として保存されている場合はパース
+                if isinstance(pred_result, str):
+                    import json
+                    try:
+                        pred_result = json.loads(pred_result)
+                    except json.JSONDecodeError:
+                        pred_result = {}
+                confidence = pred_result.get("prediction_confidence", 0.5) if pred_result else 0.5
+                predictions.append(
+                    PredictionHistoryItem(
+                        prediction_id=row["prediction_id"],
+                        predicted_at=row["predicted_at"],
+                        is_final=row["is_final"],
+                        prediction_confidence=confidence,
+                    )
                 )
-                for row in rows
-            ]
 
             logger.info(
                 f"Predictions fetched: race_id={race_id}, count={len(predictions)}"
@@ -853,10 +892,29 @@ def _convert_to_prediction_response(
 
     # レース情報を抽出
     race_id = race_info.get(COL_RACE_ID, "")
-    race_name = race_info.get(COL_RACE_NAME, "不明")
+    race_name_raw = race_info.get(COL_RACE_NAME)
+    # レース名が空の場合は条件コードからフォールバック生成
+    if race_name_raw and race_name_raw.strip():
+        race_name = race_name_raw.strip()
+    else:
+        # 競走条件からレース名を推測
+        kyoso_joken = race_info.get("kyoso_joken_code", "")
+        kyoso_shubetsu = race_info.get("kyoso_shubetsu_code", "")
+        # 簡易マッピング
+        joken_map = {
+            "005": "新馬", "010": "未勝利", "016": "1勝クラス",
+            "017": "2勝クラス", "018": "3勝クラス", "701": "OP"
+        }
+        shubetsu_map = {
+            "11": "3歳", "12": "3歳以上", "13": "4歳以上"
+        }
+        shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
+        joken_name = joken_map.get(kyoso_joken, "条件戦")
+        race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"
+
     venue_code = race_info.get(COL_JYOCD, "00")
     venue = VENUE_CODE_MAP.get(venue_code, f"競馬場{venue_code}")
-    race_number = str(race_info.get("race_num", "?"))
+    race_number = str(race_info.get("race_bango", "?"))
     race_time = race_info.get("hasso_jikoku", "00:00")
 
     # 開催日を計算
