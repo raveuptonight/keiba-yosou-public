@@ -131,28 +131,18 @@ class KeibaBot(commands.Bot):
                 activity=discord.Game(name="競馬予想 | /help でヘルプ")
             )
 
-            # 通知チャンネルに起動メッセージを送信
+            # チャンネル確認（起動メッセージは送信しない）
             if self.notification_channel_id:
                 channel = self.get_channel(self.notification_channel_id)
                 if channel:
-                    await channel.send(
-                        "🤖 競馬予想Botが起動しました！\n"
-                        "このチャンネルには出馬表や予想結果が自動通知されます。"
-                    )
-                    logger.info(f"通知チャンネルに起動メッセージ送信完了: channel_id={self.notification_channel_id}")
+                    logger.info(f"通知チャンネル確認完了: channel_id={self.notification_channel_id}")
                 else:
                     logger.warning(f"通知チャンネルが見つかりません: channel_id={self.notification_channel_id}")
 
-            # コマンド用チャンネルに起動メッセージを送信
             if self.command_channel_id:
                 channel = self.get_channel(self.command_channel_id)
                 if channel:
-                    await channel.send(
-                        "🤖 競馬予想Botが起動しました！\n"
-                        "スラッシュコマンド `/help` でコマンド一覧を確認できます。\n"
-                        "※コマンド結果はあなただけに表示されます。"
-                    )
-                    logger.info(f"コマンドチャンネルに起動メッセージ送信完了: channel_id={self.command_channel_id}")
+                    logger.info(f"コマンドチャンネル確認完了: channel_id={self.command_channel_id}")
                 else:
                     logger.warning(f"コマンドチャンネルが見つかりません: channel_id={self.command_channel_id}")
 
