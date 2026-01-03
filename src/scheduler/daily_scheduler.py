@@ -58,13 +58,14 @@ def check_entry_data(target_date: date) -> int:
         kaisai_gappi = target_date.strftime("%m%d")
         kaisai_nen = str(target_date.year)
 
-        # data_kubun: 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前
+        # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前
+        # 未来のレースは1や2の状態で登録されている
         cur.execute('''
             SELECT COUNT(DISTINCT race_code)
             FROM race_shosai
             WHERE kaisai_nen = %s
               AND kaisai_gappi = %s
-              AND data_kubun IN ('3', '4', '5', '6')
+              AND data_kubun IN ('1', '2', '3', '4', '5', '6')
         ''', (kaisai_nen, kaisai_gappi))
 
         count = cur.fetchone()[0]
