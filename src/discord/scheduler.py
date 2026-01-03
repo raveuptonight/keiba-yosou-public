@@ -257,7 +257,7 @@ class PredictionScheduler(commands.Cog):
                 rank = h.get('rank', 0)
                 num = h.get('horse_number', '?')
                 name = h.get('horse_name', '?')[:10]
-                jockey = h.get('jockey_name', '')
+                jockey = h.get('jockey_name', '').replace('　', ' ')  # 全角→半角スペース
                 jockey_str = f" [{jockey[:6]}]" if jockey else ""
                 win_prob = h.get('win_probability', 0)
                 quinella_prob = h.get('quinella_probability', 0)
