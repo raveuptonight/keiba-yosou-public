@@ -257,14 +257,17 @@ class PredictionScheduler(commands.Cog):
                 rank = h.get('rank', 0)
                 num = h.get('horse_number', '?')
                 name = h.get('horse_name', '?')[:10]
+                sex = h.get('horse_sex') or ''
+                age = h.get('horse_age')
+                sex_age = f"{sex}{age}" if sex and age else ""
                 jockey = (h.get('jockey_name') or '').replace('　', ' ')  # 全角→半角スペース
-                jockey_str = f" [{jockey[:6]}]" if jockey else ""
+                jockey_str = f"/{jockey[:6]}" if jockey else ""
                 win_prob = h.get('win_probability', 0)
                 quinella_prob = h.get('quinella_probability', 0)
                 place_prob = h.get('place_probability', 0)
 
                 lines.append(
-                    f"{rank}位 {num}番 {name}{jockey_str} "
+                    f"{rank}位 {num}番 {name} [{sex_age}{jockey_str}] "
                     f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
                 )
 

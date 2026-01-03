@@ -382,9 +382,23 @@ def _generate_ml_only_prediction(
         except (ValueError, TypeError):
             umaban = str(umaban_raw)
         score_data = ml_scores.get(umaban, {})
+        # 性別コード変換
+        sex_code = horse.get("seibetsu_code", "")
+        sex_map = {"1": "牡", "2": "牝", "3": "セ"}
+        horse_sex = sex_map.get(str(sex_code), "")
+
+        # 馬齢
+        barei = horse.get("barei", "")
+        try:
+            horse_age = int(barei) if barei else None
+        except (ValueError, TypeError):
+            horse_age = None
+
         scored_horses.append({
             "horse_number": int(umaban) if umaban.isdigit() else 0,
             "horse_name": horse.get("bamei", "不明"),
+            "horse_sex": horse_sex,
+            "horse_age": horse_age,
             "jockey_name": horse.get("kishumei", ""),
             "rank_score": score_data.get("rank_score", 999),
             "win_probability": score_data.get("win_probability", 0.0),
@@ -452,6 +466,8 @@ def _generate_ml_only_prediction(
             "rank": rank,
             "horse_number": h["horse_number"],
             "horse_name": h["horse_name"],
+            "horse_sex": h.get("horse_sex", ""),
+            "horse_age": h.get("horse_age"),
             "jockey_name": h.get("jockey_name", ""),
             "win_probability": round(win_prob, 4),
             "quinella_probability": round(quinella_prob, 4),
@@ -742,6 +758,8 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                     rank=h["rank"],
                     horse_number=h["horse_number"],
                     horse_name=h["horse_name"],
+                    horse_sex=h.get("horse_sex"),
+                    horse_age=h.get("horse_age"),
                     jockey_name=h.get("jockey_name"),
                     win_probability=h["win_probability"],
                     quinella_probability=h.get("quinella_probability", h["win_probability"] + h.get("position_distribution", {}).get("second", 0)),

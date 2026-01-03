@@ -36,6 +36,8 @@ class HorseRankingEntry(BaseModel):
         ..., ge=1, le=18, description="馬番（1-18）"
     )
     horse_name: str = Field(..., description="馬名")
+    horse_sex: Optional[str] = Field(None, description="性別（牡/牝/セ）")
+    horse_age: Optional[int] = Field(None, description="馬齢")
     jockey_name: Optional[str] = Field(None, description="騎手名")
     win_probability: float = Field(
         ..., ge=0.0, le=1.0, description="単勝率（1着確率）"
