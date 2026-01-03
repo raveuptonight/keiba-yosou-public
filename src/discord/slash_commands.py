@@ -2383,9 +2383,100 @@ class SlashCommands(commands.Cog):
             inline=False
         )
 
+        # 管理者権限がある場合のみ管理者コマンドを表示
+        if interaction.user.guild_permissions.administrator:
+            embed.add_field(
+                name="管理者",
+                value="`/purge [チャンネル]` - チャンネルのメッセージを全削除",
+                inline=False
+            )
+
         embed.set_footer(text="レース指定例: 京都2r, 中山11R")
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    # ========================================
+    # 管理者コマンド
+    # ========================================
+
+    @app_commands.command(name="purge", description="指定チャンネルのメッセージを全削除します（管理者専用）")
+    @app_commands.describe(channel="削除対象のチャンネル（省略時は現在のチャンネル）")
+    @app_commands.default_permissions(administrator=True)
+    async def purge(
+        self,
+        interaction: discord.Interaction,
+        channel: Optional[discord.TextChannel] = None
+    ):
+        """
+        チャンネルのメッセージを全削除（管理者専用）
+
+        Args:
+            interaction: Discordインタラクション
+            channel: 削除対象のチャンネル（省略時は現在のチャンネル）
+        """
+        # 管理者権限チェック
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "このコマンドは管理者のみ使用できます。",
+                ephemeral=True
+            )
+            return
+
+        target_channel = channel or interaction.channel
+
+        # 確認メッセージ
+        confirm_view = PurgeConfirmView(target_channel)
+        await interaction.response.send_message(
+            f"**⚠️ 確認**\n"
+            f"#{target_channel.name} の全メッセージを削除しますか？\n"
+            f"この操作は取り消せません。",
+            view=confirm_view,
+            ephemeral=True
+        )
+
+
+class PurgeConfirmView(View):
+    """メッセージ削除確認用ビュー"""
+
+    def __init__(self, channel: discord.TextChannel, timeout: float = 30):
+        super().__init__(timeout=timeout)
+        self.channel = channel
+
+    @discord.ui.button(label="削除する", style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction: discord.Interaction, button: Button):
+        """削除実行"""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # メッセージを全削除（14日以上古いメッセージは1件ずつ削除）
+            deleted_count = 0
+            while True:
+                # Discord APIの制限: 14日以内のメッセージは一括削除可能
+                deleted = await self.channel.purge(limit=100)
+                if not deleted:
+                    break
+                deleted_count += len(deleted)
+                logger.info(f"削除中... {deleted_count}件削除済み (#{self.channel.name})")
+
+            await interaction.followup.send(
+                f"✅ #{self.channel.name} のメッセージを全て削除しました（{deleted_count}件）",
+                ephemeral=True
+            )
+            logger.info(f"チャンネル #{self.channel.name} のメッセージ削除完了: {deleted_count}件")
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ メッセージ削除権限がありません。Botに「メッセージの管理」権限を付与してください。",
+                ephemeral=True
+            )
+        except Exception as e:
+            logger.error(f"メッセージ削除エラー: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ エラー: {str(e)}", ephemeral=True)
+
+    @discord.ui.button(label="キャンセル", style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction: discord.Interaction, button: Button):
+        """キャンセル"""
+        await interaction.response.edit_message(content="キャンセルしました。", view=None)
 
 
 async def setup(bot: commands.Bot):
