@@ -710,19 +710,16 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
                     # 競走条件からレース名を推測
                     kyoso_joken = race_info.get("kyoso_joken_code", "")
                     kyoso_shubetsu = race_info.get("kyoso_shubetsu_code", "")
-                    # 簡易マッピング
+                    # JRA-VANマスターに基づくマッピング
                     joken_map = {
-                        "005": "新馬", "010": "未勝利", "016": "1勝クラス",
-                        "017": "2勝クラス", "018": "3勝クラス", "701": "OP"
+                        "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
+                        "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
                     }
                     shubetsu_map = {
                         "11": "3歳", "12": "3歳以上", "13": "4歳以上", "14": "3歳以上"
                     }
                     shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
                     joken_name = joken_map.get(kyoso_joken, "条件戦")
-                    # 3歳以上/4歳以上で005の場合は新馬ではなく未勝利
-                    if kyoso_joken == "005" and kyoso_shubetsu in ("12", "13", "14"):
-                        joken_name = "未勝利"
                     race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"
 
                 venue_code = race_info.get(COL_JYOCD, "00")
@@ -905,19 +902,16 @@ def _convert_to_prediction_response(
         # 競走条件からレース名を推測
         kyoso_joken = race_info.get("kyoso_joken_code", "")
         kyoso_shubetsu = race_info.get("kyoso_shubetsu_code", "")
-        # 簡易マッピング
+        # JRA-VANマスターに基づくマッピング
         joken_map = {
-            "005": "新馬", "010": "未勝利", "016": "1勝クラス",
-            "017": "2勝クラス", "018": "3勝クラス", "701": "OP"
+            "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
+            "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
         }
         shubetsu_map = {
             "11": "3歳", "12": "3歳以上", "13": "4歳以上", "14": "3歳以上"
         }
         shubetsu_name = shubetsu_map.get(kyoso_shubetsu, "")
         joken_name = joken_map.get(kyoso_joken, "条件戦")
-        # 3歳以上/4歳以上で005の場合は新馬ではなく未勝利
-        if kyoso_joken == "005" and kyoso_shubetsu in ("12", "13", "14"):
-            joken_name = "未勝利"
         race_name = f"{shubetsu_name}{joken_name}".strip() or "条件戦"
 
     venue_code = race_info.get(COL_JYOCD, "00")
