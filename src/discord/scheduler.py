@@ -241,23 +241,30 @@ class PredictionScheduler(commands.Cog):
             if race_time and len(race_time) >= 4:
                 time_str = f"{race_time[:2]}:{race_time[2:4]}発走"
 
+            # レース番号フォーマット（"01" -> "1R"）
+            try:
+                race_num_int = int(race_num)
+                race_num_formatted = f"{race_num_int}R"
+            except (ValueError, TypeError):
+                race_num_formatted = f"{race_num}R" if not str(race_num).endswith("R") else race_num
+
             # ヘッダー
-            header = f"**{venue}{race_num}** {time_str} {race_name}"
+            header = f"**{venue} {race_num_formatted}** {time_str} {race_name}"
             lines = [header, ""]
 
-            # 全馬表示
-            marks = ['◎', '○', '▲', '△', '△', '×', '×', '×'] + ['☆'] * 10
+            # 全馬表示（印なし、騎手名あり）
             for h in ranked:
                 rank = h.get('rank', 0)
                 num = h.get('horse_number', '?')
                 name = h.get('horse_name', '?')[:10]
+                jockey = h.get('jockey_name', '')
+                jockey_str = f" [{jockey[:6]}]" if jockey else ""
                 win_prob = h.get('win_probability', 0)
                 quinella_prob = h.get('quinella_probability', 0)
                 place_prob = h.get('place_probability', 0)
-                mark = marks[rank - 1] if rank <= len(marks) else '消'
 
                 lines.append(
-                    f"{mark} {rank}位 {num}番 {name} "
+                    f"{rank}位 {num}番 {name}{jockey_str} "
                     f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
                 )
 
