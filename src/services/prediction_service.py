@@ -10,6 +10,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pathlib import Path
 import asyncpg
+import numpy as np
 
 import os
 
@@ -18,6 +19,35 @@ ML_MODEL_PATH = Path("/app/models/ensemble_model_latest.pkl")
 if not ML_MODEL_PATH.exists():
     # ローカル開発時のパス
     ML_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "ensemble_model_latest.pkl"
+
+# キャリブレーションファイルパス
+CALIBRATION_PATH = Path("/app/models/calibration.pkl")
+if not CALIBRATION_PATH.exists():
+    CALIBRATION_PATH = Path(__file__).parent.parent.parent / "models" / "calibration.pkl"
+
+# キャリブレーターをグローバルにキャッシュ
+_calibrators = None
+
+
+def _load_calibrators():
+    """キャリブレーターを読み込み（遅延読み込み）"""
+    global _calibrators
+    if _calibrators is not None:
+        return _calibrators
+
+    if not CALIBRATION_PATH.exists():
+        logger.warning(f"キャリブレーションファイルが見つかりません: {CALIBRATION_PATH}")
+        return None
+
+    try:
+        import joblib
+        calibration_data = joblib.load(CALIBRATION_PATH)
+        _calibrators = calibration_data.get('calibrators', {})
+        logger.info(f"キャリブレーター読み込み完了: {list(_calibrators.keys())}")
+        return _calibrators
+    except Exception as e:
+        logger.error(f"キャリブレーター読み込み失敗: {e}")
+        return None
 from src.api.schemas.prediction import (
     PredictionResponse,
     PredictionResult,
@@ -279,6 +309,9 @@ def _generate_ml_only_prediction(
             "out_of_place": round(out, 4),
         }
 
+    # キャリブレーターを読み込み
+    calibrators = _load_calibrators()
+
     # ランキングエントリを生成
     ranked_horses = []
     for i, h in enumerate(scored_horses):
@@ -290,6 +323,20 @@ def _generate_ml_only_prediction(
         quinella_prob = min(1.0, pos_dist["first"] + pos_dist["second"])
         # 複勝率（3着以内確率）- 上限1.0
         place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
+
+        # キャリブレーション適用（Isotonic Regressionで補正）
+        if calibrators:
+            if 'win' in calibrators:
+                win_prob = float(calibrators['win'].predict(np.array([[win_prob]]).ravel())[0])
+            if 'quinella' in calibrators:
+                quinella_prob = float(calibrators['quinella'].predict(np.array([[quinella_prob]]).ravel())[0])
+            if 'place' in calibrators:
+                place_prob = float(calibrators['place'].predict(np.array([[place_prob]]).ravel())[0])
+
+            # 確率の上下限を保証（0.0〜1.0）
+            win_prob = max(0.0, min(1.0, win_prob))
+            quinella_prob = max(0.0, min(1.0, quinella_prob))
+            place_prob = max(0.0, min(1.0, place_prob))
 
         # 個別の信頼度（データの完全性とスコアの分離度から算出）
         # スコアが他の馬と十分に離れているかで信頼度を評価
