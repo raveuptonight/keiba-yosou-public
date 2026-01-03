@@ -211,7 +211,8 @@ def send_discord_notification(
                 time_str = f"{race_time[:2]}:{race_time[2:]}"
 
             # ラベル構築（最大100文字）
-            label_parts = [f"{venue}{race_num}"]
+            race_num_formatted = _format_race_number(race_num)
+            label_parts = [f"{venue} {race_num_formatted}"]
             if time_str:
                 label_parts.append(time_str)
             if race_name:
