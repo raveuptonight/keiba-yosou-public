@@ -35,9 +35,17 @@ class WeeklyRetrain:
 
     def __init__(
         self,
-        model_dir: str = "/app/models",
-        backup_dir: str = "/app/models/backup"
+        model_dir: str = None,
+        backup_dir: str = None
     ):
+        # デフォルトパス: ローカル環境とDocker環境の両方に対応
+        if model_dir is None:
+            if Path("/app/models").exists():
+                model_dir = "/app/models"
+            else:
+                model_dir = str(Path(__file__).parent.parent.parent / "models")
+        if backup_dir is None:
+            backup_dir = str(Path(model_dir) / "backup")
         self.model_dir = Path(model_dir)
         self.backup_dir = Path(backup_dir)
         self.current_model_path = self.model_dir / "ensemble_model_latest.pkl"
@@ -188,6 +196,50 @@ class WeeklyRetrain:
             place_accuracy = ((ensemble_place_prob > 0.5) == y_place_val).mean()
             logger.info(f"複勝分類精度 (ensemble): {place_accuracy:.4f}")
 
+            # ===== 評価指標の計算 =====
+            from sklearn.metrics import roc_auc_score, brier_score_loss
+
+            # AUC-ROC
+            win_auc = roc_auc_score(y_win_val, ensemble_win_prob)
+            place_auc = roc_auc_score(y_place_val, ensemble_place_prob)
+
+            # Brier Score（勝利予測）
+            win_brier = brier_score_loss(y_win_val, ensemble_win_prob)
+
+            # Top-3カバー率（レースごとに勝ち馬が予測TOP3に入っているか）
+            val_df = df.iloc[split_idx:].copy()
+            val_df['pred_score'] = ensemble_pred
+            val_df['win_prob'] = ensemble_win_prob
+
+            top3_hits = 0
+            total_races = 0
+            for race_code, group in val_df.groupby('race_code'):
+                if len(group) < 3:
+                    continue
+                # 勝ち馬を特定
+                winner = group[group['target'] == 1]
+                if len(winner) == 0:
+                    continue
+                # 予測スコアでソート（低いほど上位）
+                sorted_group = group.sort_values('pred_score')
+                top3_horses = sorted_group.head(3).index.tolist()
+                # 勝ち馬がTOP3に含まれるか
+                if winner.index[0] in top3_horses:
+                    top3_hits += 1
+                total_races += 1
+
+            top3_coverage = top3_hits / total_races if total_races > 0 else 0
+
+            # 評価結果をログ出力
+            logger.info("=" * 50)
+            logger.info("📊 モデル評価指標")
+            logger.info("=" * 50)
+            logger.info(f"勝利AUC:      {win_auc:.4f}  {'✅ 良好' if win_auc >= 0.70 else '⚠️ 要改善'} {'🌟 優秀' if win_auc >= 0.80 else ''}")
+            logger.info(f"複勝AUC:      {place_auc:.4f}  {'✅ 良好' if place_auc >= 0.65 else '⚠️ 要改善'} {'🌟 優秀' if place_auc >= 0.75 else ''}")
+            logger.info(f"Brier(勝利):  {win_brier:.4f}  {'✅ 良好' if win_brier <= 0.07 else '⚠️ 要改善'} {'🌟 優秀' if win_brier <= 0.05 else ''}")
+            logger.info(f"Top-3カバー率: {top3_coverage*100:.1f}%  {'✅ 良好' if top3_coverage >= 0.55 else '⚠️ 要改善'} {'🌟 優秀' if top3_coverage >= 0.65 else ''}")
+            logger.info("=" * 50)
+
             # ===== 4. キャリブレーション =====
             logger.info("キャリブレーション学習中...")
             win_calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -216,6 +268,11 @@ class WeeklyRetrain:
                 'validation_rmse': float(rmse),
                 'win_accuracy': float(win_accuracy),
                 'place_accuracy': float(place_accuracy),
+                # 評価指標
+                'win_auc': float(win_auc),
+                'place_auc': float(place_auc),
+                'win_brier': float(win_brier),
+                'top3_coverage': float(top3_coverage),
                 'years': years,
                 'version': 'v2_enhanced_ensemble'
             }
@@ -227,6 +284,10 @@ class WeeklyRetrain:
                 'rmse': float(rmse),
                 'win_accuracy': float(win_accuracy),
                 'place_accuracy': float(place_accuracy),
+                'win_auc': float(win_auc),
+                'place_auc': float(place_auc),
+                'win_brier': float(win_brier),
+                'top3_coverage': float(top3_coverage),
                 'samples': len(df)
             }
 
@@ -323,13 +384,44 @@ class WeeklyRetrain:
         try:
             import requests
 
+            training = result.get('training', {})
+
+            # 評価指標を取得
+            win_auc = training.get('win_auc', 0)
+            place_auc = training.get('place_auc', 0)
+            win_brier = training.get('win_brier', 0)
+            top3_coverage = training.get('top3_coverage', 0)
+
+            # 評価アイコン
+            def get_icon(value, good, excellent, lower_is_better=False):
+                if lower_is_better:
+                    if value <= excellent:
+                        return "🌟"
+                    elif value <= good:
+                        return "✅"
+                    else:
+                        return "⚠️"
+                else:
+                    if value >= excellent:
+                        return "🌟"
+                    elif value >= good:
+                        return "✅"
+                    else:
+                        return "⚠️"
+
             if result.get('deployed'):
                 lines = [
                     "🔄 **週次モデル再学習完了**",
                     "",
-                    f"学習サンプル数: {result['training'].get('samples', 0):,}",
-                    f"新モデルRMSE: {result['comparison'].get('new_rmse', 0):.4f}",
-                    f"改善率: {result['comparison'].get('improvement', 0):.2f}%",
+                    f"学習サンプル数: {training.get('samples', 0):,}",
+                    "",
+                    "📊 **評価指標:**",
+                    f"```",
+                    f"勝利AUC:       {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
+                    f"複勝AUC:       {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
+                    f"Brier(勝利):   {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
+                    f"Top-3カバー率: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
+                    f"```",
                     "",
                     "✅ 新モデルをデプロイしました"
                 ]
@@ -337,9 +429,15 @@ class WeeklyRetrain:
                 lines = [
                     "🔄 **週次モデル再学習完了**",
                     "",
-                    f"学習サンプル数: {result['training'].get('samples', 0):,}",
-                    f"新モデルRMSE: {result['comparison'].get('new_rmse', 0):.4f}",
-                    f"改善率: {result['comparison'].get('improvement', 0):.2f}%",
+                    f"学習サンプル数: {training.get('samples', 0):,}",
+                    "",
+                    "📊 **評価指標:**",
+                    f"```",
+                    f"勝利AUC:       {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
+                    f"複勝AUC:       {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
+                    f"Brier(勝利):   {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
+                    f"Top-3カバー率: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
+                    f"```",
                     "",
                     "⚠️ 改善なしのため現行モデルを維持"
                 ]
