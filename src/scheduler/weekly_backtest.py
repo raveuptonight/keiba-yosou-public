@@ -29,14 +29,12 @@ class WeeklyBacktest:
 
     def __init__(
         self,
-        predictions_dir: str = "/app/predictions",
         analysis_dir: str = "/app/analysis",
         tracking_file: str = "/app/analysis/accuracy_tracking.json"
     ):
-        self.predictions_dir = Path(predictions_dir)
         self.analysis_dir = Path(analysis_dir)
         self.tracking_file = Path(tracking_file)
-        self.collector = ResultCollector(predictions_dir)
+        self.collector = ResultCollector(analysis_dir)
 
     def get_week_dates(self, end_date: date = None) -> List[date]:
         """今週の日付リストを取得（土日のレース日）"""
