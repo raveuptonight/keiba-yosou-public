@@ -247,6 +247,271 @@ VENUE_CODE_MAP = {
     "09": "阪神", "10": "小倉"
 }
 
+# 馬場状態コードマッピング
+BABA_CONDITION_MAP = {
+    "1": "良", "2": "稍重", "3": "重", "4": "不良"
+}
+
+# 天候コードマッピング
+WEATHER_CODE_MAP = {
+    "1": "晴", "2": "曇", "3": "雨", "4": "小雨", "5": "雪", "6": "小雪"
+}
+
+
+def _get_current_track_condition(conn, race_id: str) -> Optional[Dict]:
+    """
+    レースの現在の馬場状態・天候を取得
+
+    Args:
+        conn: DB接続
+        race_id: レースID
+
+    Returns:
+        {'track_type': 'shiba'|'dirt', 'condition': 1-4, 'condition_name': '良',
+         'weather': 1-6, 'weather_name': '晴'}
+    """
+    cur = conn.cursor()
+    try:
+        # 1. レースのトラック種別を取得
+        cur.execute('''
+            SELECT track_code
+            FROM race_shosai
+            WHERE race_code = %s
+              AND data_kubun IN ('1', '2', '3', '4', '5', '6')
+            LIMIT 1
+        ''', (race_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+
+        track_code = row[0] or ''
+        # track_code: 10-19=芝, 20-29=ダート
+        if track_code.startswith('1'):
+            track_type = 'shiba'
+        elif track_code.startswith('2'):
+            track_type = 'dirt'
+        else:
+            track_type = 'shiba'  # デフォルト
+
+        # 2. 現在の馬場状態・天候を取得
+        # race_id形式: YYYYMMDD(8) + keibajo(2) + kai(2) + nichime(2) + race(2) = 16桁
+        # tenko_baba_jotai.race_code形式: YYYYMMDD(8) + keibajo(2) + kai(2) + nichime(2) = 14桁
+        # 例: 2026010506010201 → 20260105060102
+        baba_race_code = race_id[:14]  # 最後の2桁（レース番号）を除去
+
+        cur.execute('''
+            SELECT
+                tenko_jotai_genzai,
+                baba_jotai_shiba_genzai,
+                baba_jotai_dirt_genzai
+            FROM tenko_baba_jotai
+            WHERE race_code = %s
+            ORDER BY insert_timestamp DESC
+            LIMIT 1
+        ''', (baba_race_code,))
+        baba_row = cur.fetchone()
+
+        if not baba_row:
+            logger.debug(f"馬場状態データなし: race_id={race_id}")
+            return None
+
+        weather_code = baba_row[0] or '0'
+        shiba_condition = baba_row[1] or '0'
+        dirt_condition = baba_row[2] or '0'
+
+        condition_code = shiba_condition if track_type == 'shiba' else dirt_condition
+
+        result = {
+            'track_type': track_type,
+            'condition': int(condition_code) if condition_code.isdigit() else 0,
+            'condition_name': BABA_CONDITION_MAP.get(condition_code, '不明'),
+            'weather': int(weather_code) if weather_code.isdigit() else 0,
+            'weather_name': WEATHER_CODE_MAP.get(weather_code, '不明'),
+        }
+
+        logger.info(f"馬場状態取得: {result['track_type']}・{result['condition_name']}, 天候: {result['weather_name']}")
+        return result
+
+    except Exception as e:
+        logger.error(f"馬場状態取得エラー: {e}")
+        return None
+    finally:
+        cur.close()
+
+
+def _get_horse_baba_performance(conn, kettonums: List[str], track_type: str, condition: int) -> Dict[str, Dict]:
+    """
+    各馬の馬場状態別成績を取得
+
+    Args:
+        conn: DB接続
+        kettonums: 血統登録番号リスト
+        track_type: 'shiba' or 'dirt'
+        condition: 1=良, 2=稍重, 3=重, 4=不良
+
+    Returns:
+        {kettonum: {'runs': N, 'wins': N, 'top3': N, 'win_rate': 0.xx, 'top3_rate': 0.xx}}
+    """
+    if not kettonums or condition == 0:
+        return {}
+
+    # カラム名マッピング
+    condition_map = {
+        1: 'ryo',       # 良
+        2: 'yayaomo',   # 稍重
+        3: 'omo',       # 重
+        4: 'furyo',     # 不良
+    }
+    condition_suffix = condition_map.get(condition, 'ryo')
+    prefix = f"{track_type}_{condition_suffix}"  # e.g., 'shiba_ryo', 'dirt_omo'
+
+    cur = conn.cursor()
+    try:
+        # shussobetsu_babaテーブルから成績を取得
+        placeholders = ','.join(['%s'] * len(kettonums))
+        cur.execute(f'''
+            SELECT
+                ketto_toroku_bango,
+                {prefix}_1chaku,
+                {prefix}_2chaku,
+                {prefix}_3chaku,
+                {prefix}_4chaku,
+                {prefix}_5chaku,
+                {prefix}_chakugai
+            FROM shussobetsu_baba
+            WHERE ketto_toroku_bango IN ({placeholders})
+              AND data_kubun IN ('1', '2', '3', '4', '5', '6')
+        ''', kettonums)
+
+        results = {}
+        for row in cur.fetchall():
+            kettonum = row[0]
+            wins = int(row[1] or 0)
+            sec = int(row[2] or 0)
+            third = int(row[3] or 0)
+            fourth = int(row[4] or 0)
+            fifth = int(row[5] or 0)
+            out = int(row[6] or 0)
+
+            runs = wins + sec + third + fourth + fifth + out
+            top3 = wins + sec + third
+
+            if runs > 0:
+                results[kettonum] = {
+                    'runs': runs,
+                    'wins': wins,
+                    'top3': top3,
+                    'win_rate': wins / runs,
+                    'top3_rate': top3 / runs,
+                }
+
+        logger.info(f"馬場別成績取得: {len(results)}/{len(kettonums)}頭 ({prefix})")
+        return results
+
+    except Exception as e:
+        logger.error(f"馬場別成績取得エラー: {e}")
+        return {}
+    finally:
+        cur.close()
+
+
+def _apply_track_condition_adjustment(
+    ml_scores: Dict[str, Any],
+    horses: List[Dict],
+    track_condition: Dict,
+    baba_performance: Dict[str, Dict]
+) -> Dict[str, Any]:
+    """
+    馬場状態に基づいてスコアを調整
+
+    Args:
+        ml_scores: 元のMLスコア
+        horses: 出走馬情報リスト
+        track_condition: 現在の馬場状態
+        baba_performance: 各馬の馬場別成績
+
+    Returns:
+        調整後のスコア
+    """
+    if not track_condition or not baba_performance:
+        return ml_scores
+
+    condition = track_condition.get('condition', 1)
+    condition_name = track_condition.get('condition_name', '良')
+
+    adjusted_scores = {}
+
+    for umaban_str, score_data in ml_scores.items():
+        adjustment = 0.0
+
+        # 馬情報を取得
+        horse_info = None
+        for h in horses:
+            if str(h.get('umaban', '')).zfill(2) == umaban_str.zfill(2):
+                horse_info = h
+                break
+
+        if horse_info:
+            kettonum = horse_info.get('ketto_toroku_bango', '')
+            if kettonum in baba_performance:
+                perf = baba_performance[kettonum]
+                runs = perf.get('runs', 0)
+                win_rate = perf.get('win_rate', 0)
+                top3_rate = perf.get('top3_rate', 0)
+
+                # 経験がある馬のみ調整
+                if runs >= 2:
+                    # 良馬場以外での実績を評価
+                    if condition >= 2:  # 稍重以上
+                        # 道悪実績があれば加点
+                        if win_rate > 0.15:  # 勝率15%以上
+                            adjustment += 0.03
+                        elif win_rate > 0.05:
+                            adjustment += 0.01
+
+                        if top3_rate > 0.4:  # 複勝率40%以上
+                            adjustment += 0.02
+                        elif top3_rate > 0.2:
+                            adjustment += 0.01
+
+                        # 経験豊富ならさらに加点
+                        if runs >= 5:
+                            adjustment += 0.01
+
+                    # 良馬場のみの馬は道悪で減点
+                    if condition >= 2 and runs == 0:
+                        # この馬場状態での出走がない
+                        adjustment -= 0.02
+
+        # スコア調整
+        new_rank_score = score_data.get('rank_score', 999) - adjustment
+        old_prob = score_data.get('win_probability', 0)
+        new_prob = old_prob * (1 + adjustment * 3)
+        new_prob = max(0.001, min(0.99, new_prob))
+
+        adjusted_scores[umaban_str] = {
+            'rank_score': new_rank_score,
+            'win_probability': new_prob,
+            'track_adjustment': adjustment,
+        }
+
+        # place_probabilityも調整
+        if 'place_probability' in score_data:
+            old_place = score_data['place_probability']
+            new_place = old_place * (1 + adjustment * 2)
+            new_place = max(0.01, min(0.99, new_place))
+            adjusted_scores[umaban_str]['place_probability'] = new_place
+
+    # 確率の正規化
+    total_prob = sum(s.get('win_probability', 0) for s in adjusted_scores.values())
+    if total_prob > 0:
+        for umaban_str in adjusted_scores:
+            adjusted_scores[umaban_str]['win_probability'] /= total_prob
+
+    logger.info(f"馬場状態調整完了: {condition_name}, 調整馬数={len([a for a in adjusted_scores.values() if a.get('track_adjustment', 0) != 0])}")
+
+    return adjusted_scores
+
 
 def _is_mock_mode() -> bool:
     """モックモードかどうかを判定"""
@@ -367,7 +632,12 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
     return pd.DataFrame(features_list)
 
 
-def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optional[str] = None) -> Dict[str, Any]:
+def _compute_ml_predictions(
+    race_id: str,
+    horses: List[Dict],
+    bias_date: Optional[str] = None,
+    is_final: bool = False
+) -> Dict[str, Any]:
     """
     機械学習による予測を計算
 
@@ -375,6 +645,7 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optiona
         race_id: レースID（16桁）
         horses: 出走馬リスト
         bias_date: バイアス適用日（YYYY-MM-DD形式、省略時は自動検出）
+        is_final: 最終予想かどうか（Trueなら馬場状態を反映）
 
     Returns:
         Dict[馬番, {"rank_score": float, "win_probability": float}]
@@ -563,6 +834,27 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optiona
                             )
                 except (ValueError, IndexError) as e:
                     logger.warning(f"バイアス適用スキップ: {e}")
+
+            # 最終予想時は馬場状態調整を適用
+            if is_final:
+                logger.info("最終予想: 馬場状態調整を適用")
+                track_condition = _get_current_track_condition(conn, race_id)
+                if track_condition and track_condition.get('condition', 0) > 0:
+                    # 出走馬の血統登録番号を取得
+                    kettonums = [h.get('ketto_toroku_bango', '') for h in horses if h.get('ketto_toroku_bango')]
+                    if kettonums:
+                        baba_performance = _get_horse_baba_performance(
+                            conn,
+                            kettonums,
+                            track_condition['track_type'],
+                            track_condition['condition']
+                        )
+                        if baba_performance:
+                            ml_scores = _apply_track_condition_adjustment(
+                                ml_scores, horses, track_condition, baba_performance
+                            )
+                else:
+                    logger.info("馬場状態データなし、調整スキップ")
 
             return ml_scores
 
@@ -858,7 +1150,9 @@ async def generate_prediction(
         # 2. ML予測を計算
         ml_scores = {}
         try:
-            ml_scores = _compute_ml_predictions(race_id, race_data.get("horses", []), bias_date)
+            ml_scores = _compute_ml_predictions(
+                race_id, race_data.get("horses", []), bias_date, is_final=is_final
+            )
             if ml_scores:
                 logger.info(f"ML predictions computed: {len(ml_scores)} horses")
             else:
