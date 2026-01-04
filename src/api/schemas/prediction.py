@@ -82,6 +82,9 @@ class PredictionRequest(BaseModel):
     is_final: bool = Field(
         False, description="最終予想フラグ（馬体重後）"
     )
+    bias_date: Optional[str] = Field(
+        None, description="バイアス適用日（YYYY-MM-DD形式）"
+    )
 
 
 class PredictionResponse(BaseModel):

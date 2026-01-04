@@ -57,7 +57,8 @@ async def generate_prediction(
     try:
         response = await prediction_service.generate_prediction(
             race_id=request.race_id,
-            is_final=request.is_final
+            is_final=request.is_final,
+            bias_date=request.bias_date
         )
         logger.info(f"Prediction generated successfully: {response.prediction_id}")
         return response

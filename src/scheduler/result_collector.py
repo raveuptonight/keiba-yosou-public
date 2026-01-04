@@ -165,7 +165,7 @@ class ResultCollector:
             conn.close()
 
     def compare_results(self, predictions: Dict, results: List[Dict]) -> Dict:
-        """予想と結果を比較"""
+        """予想と結果を比較（詳細分析付き）"""
         comparison = {
             'date': predictions['date'],
             'total_races': 0,
@@ -173,13 +173,24 @@ class ResultCollector:
             'stats': {
                 'top1_hit': 0,  # 1位予想が1着
                 'top1_in_top3': 0,  # 1位予想が3着以内
+                'top3_cover': 0,  # 上位3頭に勝ち馬含む
                 'top3_hit': 0,  # TOP3予想が1-2-3着
                 'tansho_hit': 0,  # 単勝的中
                 'fukusho_hit': 0,  # 複勝的中
                 'umaren_hit': 0,  # 馬連的中
                 'sanrenpuku_hit': 0,  # 三連複的中
+                'mrr_sum': 0.0,  # MRR計算用
             },
-            'races': []
+            'races': [],
+            'misses': [],  # 取りこぼしリスト
+            'by_venue': {},  # 競馬場別
+            'by_distance': {},  # 距離別
+            'by_field_size': {},  # 頭数別
+            'by_track': {},  # 芝/ダート別
+            'calibration': {  # キャリブレーション用
+                'win_prob_bins': {},  # 単勝確率帯別実績
+                'place_prob_bins': {},  # 複勝確率帯別実績
+            },
         }
 
         # レースコードでマッピング
@@ -195,22 +206,67 @@ class ResultCollector:
             actual = results_map[race_code]
             comparison['analyzed_races'] += 1
 
-            # 予想TOP3を取得
+            # 予想全体と上位3頭を取得
+            all_horses = pred_race.get('all_horses', [])
             pred_top3 = pred_race.get('top3', [])
             pred_top3_umaban = [str(int(p['umaban'])) for p in pred_top3]
 
             # 実際の着順（TOP3）
-            actual_top3 = [str(int(r['umaban'])) for r in actual['results'][:3] if r['chakujun'] <= 3]
+            actual_results = actual['results']
+            actual_top3 = [str(int(r['umaban'])) for r in actual_results[:3] if r['chakujun'] <= 3]
+            winner_umaban = actual_top3[0] if actual_top3 else None
+
+            # レース情報
+            keibajo = actual['keibajo']
+            kyori = actual.get('kyori', 0)
+            track = actual.get('track', '不明')
+            field_size = len(actual_results)
+
+            # 距離カテゴリ
+            try:
+                kyori_int = int(kyori) if kyori else 0
+            except:
+                kyori_int = 0
+            if kyori_int <= 1400:
+                distance_cat = '短距離'
+            elif kyori_int <= 1800:
+                distance_cat = 'マイル'
+            elif kyori_int <= 2200:
+                distance_cat = '中距離'
+            else:
+                distance_cat = '長距離'
+
+            # 頭数カテゴリ
+            if field_size <= 10:
+                field_cat = '少頭数(~10)'
+            elif field_size <= 14:
+                field_cat = '中頭数(11-14)'
+            else:
+                field_cat = '多頭数(15~)'
 
             # 統計計算
             race_result = {
                 'race_code': race_code,
-                'keibajo': actual['keibajo'],
+                'keibajo': keibajo,
                 'race_number': actual['race_number'],
+                'kyori': kyori,
+                'track': track,
+                'field_size': field_size,
                 'pred_top3': pred_top3_umaban,
                 'actual_top3': actual_top3,
-                'hits': {}
+                'hits': {},
+                'winner_rank': None,  # 勝ち馬の予測順位
             }
+
+            # 勝ち馬の予測順位を計算（MRR用）
+            if winner_umaban and all_horses:
+                for idx, h in enumerate(all_horses):
+                    h_umaban = str(h.get('horse_number', ''))
+                    if h_umaban == winner_umaban:
+                        winner_rank = idx + 1
+                        race_result['winner_rank'] = winner_rank
+                        comparison['stats']['mrr_sum'] += 1.0 / winner_rank
+                        break
 
             # 1位予想が1着
             if pred_top3_umaban and actual_top3:
@@ -224,6 +280,18 @@ class ResultCollector:
                     comparison['stats']['top1_in_top3'] += 1
                     comparison['stats']['fukusho_hit'] += 1
                     race_result['hits']['fukusho'] = True
+
+            # 上位3頭に勝ち馬が含まれるか
+            if winner_umaban and winner_umaban in pred_top3_umaban:
+                comparison['stats']['top3_cover'] += 1
+                race_result['hits']['top3_cover'] = True
+            elif winner_umaban and race_result['winner_rank'] and race_result['winner_rank'] > 3:
+                # 取りこぼし（勝ち馬を4位以下に評価）
+                comparison['misses'].append({
+                    'race': f"{keibajo}{actual['race_number']}R",
+                    'winner_rank': race_result['winner_rank'],
+                    'winner': winner_umaban,
+                })
 
             # TOP3予想が全て3着以内
             if len(pred_top3_umaban) >= 3 and len(actual_top3) >= 3:
@@ -240,15 +308,71 @@ class ResultCollector:
 
             comparison['races'].append(race_result)
 
+            # 条件別集計
+            for cat_name, cat_key, cat_val in [
+                ('by_venue', keibajo, keibajo),
+                ('by_distance', distance_cat, distance_cat),
+                ('by_field_size', field_cat, field_cat),
+                ('by_track', track, track),
+            ]:
+                if cat_val not in comparison[cat_name]:
+                    comparison[cat_name][cat_val] = {
+                        'races': 0, 'top1_hit': 0, 'top1_in_top3': 0, 'top3_cover': 0
+                    }
+                comparison[cat_name][cat_val]['races'] += 1
+                if race_result['hits'].get('tansho'):
+                    comparison[cat_name][cat_val]['top1_hit'] += 1
+                if race_result['hits'].get('fukusho'):
+                    comparison[cat_name][cat_val]['top1_in_top3'] += 1
+                if race_result['hits'].get('top3_cover'):
+                    comparison[cat_name][cat_val]['top3_cover'] += 1
+
+            # キャリブレーション用データ収集
+            if pred_top3 and len(pred_top3) > 0:
+                win_prob = pred_top3[0].get('win_prob', 0)
+                # 確率を10%刻みのビンに
+                win_bin = f"{int(win_prob * 10) * 10}%"
+                if win_bin not in comparison['calibration']['win_prob_bins']:
+                    comparison['calibration']['win_prob_bins'][win_bin] = {'count': 0, 'hit': 0}
+                comparison['calibration']['win_prob_bins'][win_bin]['count'] += 1
+                if race_result['hits'].get('tansho'):
+                    comparison['calibration']['win_prob_bins'][win_bin]['hit'] += 1
+
         return comparison
 
     def calculate_accuracy(self, comparison: Dict) -> Dict:
-        """精度指標を計算"""
+        """精度指標を計算（詳細版）"""
         n = comparison['analyzed_races']
         if n == 0:
             return {'error': 'no_data'}
 
         stats = comparison['stats']
+
+        # MRR計算
+        mrr = stats['mrr_sum'] / n if n > 0 else 0
+
+        # 条件別精度を計算
+        def calc_rates(data: Dict) -> Dict:
+            result = {}
+            for key, vals in data.items():
+                races = vals['races']
+                if races > 0:
+                    result[key] = {
+                        'races': races,
+                        'top1_rate': vals['top1_hit'] / races * 100,
+                        'top3_rate': vals['top1_in_top3'] / races * 100,
+                        'cover_rate': vals['top3_cover'] / races * 100,
+                    }
+            return result
+
+        # キャリブレーション計算
+        calibration = {}
+        for bin_name, data in comparison.get('calibration', {}).get('win_prob_bins', {}).items():
+            if data['count'] > 0:
+                calibration[bin_name] = {
+                    'count': data['count'],
+                    'actual_rate': data['hit'] / data['count'] * 100,
+                }
 
         return {
             'date': comparison['date'],
@@ -257,11 +381,19 @@ class ResultCollector:
             'accuracy': {
                 'top1_hit_rate': stats['top1_hit'] / n * 100,
                 'top1_in_top3_rate': stats['top1_in_top3'] / n * 100,
+                'top3_cover_rate': stats['top3_cover'] / n * 100,
+                'mrr': mrr,
                 'tansho_hit_rate': stats['tansho_hit'] / n * 100,
                 'fukusho_hit_rate': stats['fukusho_hit'] / n * 100,
                 'umaren_hit_rate': stats['umaren_hit'] / n * 100,
                 'sanrenpuku_hit_rate': stats['sanrenpuku_hit'] / n * 100,
             },
+            'by_venue': calc_rates(comparison.get('by_venue', {})),
+            'by_distance': calc_rates(comparison.get('by_distance', {})),
+            'by_field_size': calc_rates(comparison.get('by_field_size', {})),
+            'by_track': calc_rates(comparison.get('by_track', {})),
+            'calibration': calibration,
+            'misses': comparison.get('misses', []),
             'raw_stats': stats
         }
 
@@ -314,7 +446,7 @@ class ResultCollector:
         return str(output_path)
 
     def send_discord_notification(self, analysis: Dict):
-        """Discord通知を送信"""
+        """Discord通知を送信（詳細版）"""
         import os
         import requests
 
@@ -331,17 +463,55 @@ class ResultCollector:
 
         accuracy = acc.get('accuracy', {})
         date_str = acc.get('date', '不明')
+        n = acc.get('analyzed_races', 0)
+        raw_stats = acc.get('raw_stats', {})
 
-        message = f"""📊 **{date_str} 予想精度レポート**
+        # 基本メッセージ
+        lines = [
+            f"📊 **{date_str} 予想精度レポート**",
+            f"分析レース数: {n}R",
+            "",
+            "**【的中率】**",
+            f"1位予想 → 1着: {raw_stats.get('top1_hit', 0)}/{n} ({accuracy.get('top1_hit_rate', 0):.1f}%)",
+            f"1位予想 → 3着内: {raw_stats.get('top1_in_top3', 0)}/{n} ({accuracy.get('top1_in_top3_rate', 0):.1f}%)",
+            f"上位3頭に勝ち馬含む: {raw_stats.get('top3_cover', 0)}/{n} ({accuracy.get('top3_cover_rate', 0):.1f}%)",
+            f"MRR: {accuracy.get('mrr', 0):.3f}",
+        ]
 
-分析レース数: {acc.get('analyzed_races', 0)}R
+        # 取りこぼしリスト
+        misses = acc.get('misses', [])
+        if misses:
+            lines.append("")
+            lines.append("**【取りこぼし】**")
+            for miss in misses[:5]:  # 最大5件
+                lines.append(f"- {miss['race']}: 勝ち馬を{miss['winner_rank']}位評価")
 
-🎯 的中率:
-  単勝: {accuracy.get('tansho_hit_rate', 0):.1f}%
-  複勝: {accuracy.get('fukusho_hit_rate', 0):.1f}%
-  馬連: {accuracy.get('umaren_hit_rate', 0):.1f}%
-  三連複: {accuracy.get('sanrenpuku_hit_rate', 0):.1f}%
-"""
+        # 条件別（競馬場別）
+        by_venue = acc.get('by_venue', {})
+        if by_venue:
+            lines.append("")
+            lines.append("**【競馬場別】**")
+            for venue, data in sorted(by_venue.items()):
+                lines.append(f"  {venue}: {data['races']}R / 単勝{data['top1_rate']:.0f}% / カバー{data['cover_rate']:.0f}%")
+
+        # 条件別（トラック別）
+        by_track = acc.get('by_track', {})
+        if by_track:
+            lines.append("")
+            lines.append("**【トラック別】**")
+            for track, data in sorted(by_track.items()):
+                lines.append(f"  {track}: {data['races']}R / 単勝{data['top1_rate']:.0f}% / カバー{data['cover_rate']:.0f}%")
+
+        # キャリブレーション
+        calibration = acc.get('calibration', {})
+        if calibration:
+            lines.append("")
+            lines.append("**【キャリブレーション】**")
+            for bin_name in sorted(calibration.keys(), key=lambda x: int(x.replace('%', ''))):
+                data = calibration[bin_name]
+                lines.append(f"  予測{bin_name}: 実際{data['actual_rate']:.0f}% ({data['count']}件)")
+
+        message = "\n".join(lines)
 
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         headers = {

@@ -25,15 +25,22 @@ CALIBRATION_PATH = Path("/app/models/calibration.pkl")
 if not CALIBRATION_PATH.exists():
     CALIBRATION_PATH = Path(__file__).parent.parent.parent / "models" / "calibration.pkl"
 
-# キャリブレーターをグローバルにキャッシュ
-_calibrators = None
+# キャリブレーションデータをグローバルにキャッシュ
+_calibration_data = None
+
+# デフォルトの確率上限（キャリブレーションファイルに値がない場合のフォールバック）
+DEFAULT_MAX_PROBS = {
+    'win': 0.50,
+    'quinella': 0.65,
+    'place': 0.85,
+}
 
 
 def _load_calibrators():
     """キャリブレーターを読み込み（遅延読み込み）"""
-    global _calibrators
-    if _calibrators is not None:
-        return _calibrators
+    global _calibration_data
+    if _calibration_data is not None:
+        return _calibration_data.get('calibrators', {})
 
     if not CALIBRATION_PATH.exists():
         logger.warning(f"キャリブレーションファイルが見つかりません: {CALIBRATION_PATH}")
@@ -41,13 +48,27 @@ def _load_calibrators():
 
     try:
         import joblib
-        calibration_data = joblib.load(CALIBRATION_PATH)
-        _calibrators = calibration_data.get('calibrators', {})
-        logger.info(f"キャリブレーター読み込み完了: {list(_calibrators.keys())}")
-        return _calibrators
+        _calibration_data = joblib.load(CALIBRATION_PATH)
+        calibrators = _calibration_data.get('calibrators', {})
+        max_probs = _calibration_data.get('max_probs', DEFAULT_MAX_PROBS)
+        logger.info(f"キャリブレーター読み込み完了: {list(calibrators.keys())}")
+        logger.info(f"確率上限: 単勝{max_probs.get('win', 0.5)*100:.0f}%, "
+                    f"連対{max_probs.get('quinella', 0.65)*100:.0f}%, "
+                    f"複勝{max_probs.get('place', 0.85)*100:.0f}%")
+        return calibrators
     except Exception as e:
         logger.error(f"キャリブレーター読み込み失敗: {e}")
         return None
+
+
+def _get_max_probs():
+    """確率上限値を取得"""
+    global _calibration_data
+    if _calibration_data is None:
+        _load_calibrators()
+    if _calibration_data is not None:
+        return _calibration_data.get('max_probs', DEFAULT_MAX_PROBS)
+    return DEFAULT_MAX_PROBS
 from src.api.schemas.prediction import (
     PredictionResponse,
     PredictionResult,
@@ -69,6 +90,155 @@ from src.db.table_names import (
 )
 
 logger = logging.getLogger(__name__)
+
+# バイアスデータのキャッシュ
+_bias_cache = {}
+
+
+def _load_bias_for_date(target_date: str) -> Optional[Dict]:
+    """
+    指定日のバイアスデータを読み込む
+
+    Args:
+        target_date: YYYY-MM-DD形式の日付
+
+    Returns:
+        バイアスデータ辞書、または None
+    """
+    from pathlib import Path
+    import json
+
+    if target_date in _bias_cache:
+        return _bias_cache[target_date]
+
+    date_str = target_date.replace("-", "")
+
+    # 複数パスを試行
+    paths = [
+        Path(f"./analysis/bias_{date_str}.json"),
+        Path(f"/app/analysis/bias_{date_str}.json"),
+        Path(__file__).parent.parent.parent / "analysis" / f"bias_{date_str}.json",
+    ]
+
+    for path in paths:
+        if path.exists():
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                _bias_cache[target_date] = data
+                logger.info(f"バイアスデータ読み込み: {path}")
+                return data
+            except Exception as e:
+                logger.error(f"バイアスデータ読み込みエラー: {e}")
+
+    return None
+
+
+def _apply_bias_to_scores(
+    ml_scores: Dict[str, Any],
+    race_id: str,
+    horses: List[Dict],
+    bias_data: Dict
+) -> Dict[str, Any]:
+    """
+    MLスコアにバイアス調整を適用
+
+    Args:
+        ml_scores: 元のMLスコア {馬番: {rank_score, win_probability}}
+        race_id: レースID
+        horses: 出走馬情報リスト
+        bias_data: バイアスデータ
+
+    Returns:
+        調整後のスコア
+    """
+    venue_code = race_id[8:10]  # レースIDの9-10桁目が競馬場コード（年4+月2+回2+場2）
+
+    venue_biases = bias_data.get('venue_biases', {})
+    jockey_performances = bias_data.get('jockey_performances', {})
+
+    if venue_code not in venue_biases:
+        logger.info(f"競馬場バイアスなし: venue_code={venue_code}")
+        return ml_scores
+
+    vb = venue_biases[venue_code]
+    waku_bias = vb.get('waku_bias', 0)
+    pace_bias = vb.get('pace_bias', 0)
+
+    logger.info(f"バイアス適用: {vb.get('venue_name', venue_code)}, "
+                f"枠={waku_bias:.3f}, ペース={pace_bias:.3f}")
+
+    adjusted_scores = {}
+
+    for umaban_str, score_data in ml_scores.items():
+        try:
+            umaban = int(umaban_str)
+        except ValueError:
+            adjusted_scores[umaban_str] = score_data
+            continue
+
+        # 馬情報を検索
+        horse_info = None
+        for h in horses:
+            h_umaban = h.get('umaban', '')
+            try:
+                if int(h_umaban) == umaban:
+                    horse_info = h
+                    break
+            except (ValueError, TypeError):
+                pass
+
+        # 調整係数計算
+        adjustment = 0.0
+
+        # 1. 枠順バイアス
+        if horse_info:
+            wakuban = horse_info.get('wakuban', '')
+            try:
+                waku = int(wakuban)
+                if 1 <= waku <= 4:
+                    # 内枠: 内枠有利なら加点
+                    adjustment += waku_bias * 0.02
+                elif 5 <= waku <= 8:
+                    # 外枠: 外枠有利（=内枠不利）なら加点
+                    adjustment -= waku_bias * 0.02
+            except (ValueError, TypeError):
+                pass
+
+        # 2. 騎手当日成績バイアス
+        if horse_info:
+            kishu_code = horse_info.get('kishu_code', '')
+            if kishu_code and kishu_code in jockey_performances:
+                jp = jockey_performances[kishu_code]
+                jockey_win_rate = jp.get('win_rate', 0)
+                jockey_top3_rate = jp.get('top3_rate', 0)
+
+                # 当日好調な騎手は加点
+                adjustment += jockey_win_rate * 0.03
+                adjustment += jockey_top3_rate * 0.01
+
+        # スコア調整（rank_scoreは低いほど良い）
+        new_rank_score = score_data.get('rank_score', 999) - adjustment
+
+        # 確率調整（adjustmentが正なら確率上昇）
+        old_prob = score_data.get('win_probability', 0)
+        new_prob = old_prob * (1 + adjustment * 2)
+        new_prob = max(0.001, min(0.99, new_prob))  # 範囲制限
+
+        adjusted_scores[umaban_str] = {
+            'rank_score': new_rank_score,
+            'win_probability': new_prob,
+            'bias_adjustment': adjustment,
+        }
+
+    # 確率の正規化
+    total_prob = sum(s.get('win_probability', 0) for s in adjusted_scores.values())
+    if total_prob > 0:
+        for umaban_str in adjusted_scores:
+            adjusted_scores[umaban_str]['win_probability'] /= total_prob
+
+    return adjusted_scores
+
 
 # 競馬場コードマッピング
 VENUE_CODE_MAP = {
@@ -142,6 +312,17 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
         cur.close()
         return pd.DataFrame()
 
+    # 馬番0（取消馬・登録のみ）を除外
+    valid_entries = []
+    for e in entries:
+        umaban = e.get('umaban', '00')
+        try:
+            if int(umaban) >= 1:
+                valid_entries.append(e)
+        except (ValueError, TypeError):
+            pass
+    entries = valid_entries
+
     logger.info(f"Future race entries: {len(entries)} horses")
 
     # 3. 過去成績を取得
@@ -186,13 +367,14 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
     return pd.DataFrame(features_list)
 
 
-def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
+def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optional[str] = None) -> Dict[str, Any]:
     """
     機械学習による予測を計算
 
     Args:
         race_id: レースID（16桁）
         horses: 出走馬リスト
+        bias_date: バイアス適用日（YYYY-MM-DD形式、省略時は自動検出）
 
     Returns:
         Dict[馬番, {"rank_score": float, "win_probability": float}]
@@ -292,6 +474,46 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict]) -> Dict[str, Any]:
                 }
 
             logger.info(f"ML predictions computed: {len(ml_scores)} horses")
+
+            # バイアス適用
+            # 優先順位:
+            # 1. パラメータ bias_date が渡されていればそれを使用
+            # 2. 環境変数 KEIBA_BIAS_DATE が設定されていればそれを使用
+            # 3. なければ日曜レースの場合に前日土曜のバイアスを自動検索
+            import os
+            from datetime import date, timedelta
+
+            # パラメータ or 環境変数からバイアス日を決定
+            bias_date_str = bias_date or os.environ.get('KEIBA_BIAS_DATE')
+
+            if bias_date_str:
+                # 指定されたバイアスを使用
+                bias_data = _load_bias_for_date(bias_date_str)
+                if bias_data:
+                    logger.info(f"バイアス適用: {bias_date_str}")
+                    ml_scores = _apply_bias_to_scores(
+                        ml_scores, race_id, horses, bias_data
+                    )
+                else:
+                    logger.warning(f"バイアスファイル未発見: {bias_date_str}")
+            else:
+                # 自動検出モード（日曜レースなら前日土曜）
+                race_year = int(race_id[:4])
+                race_month = int(race_id[6:8])
+                race_day = int(race_id[8:10])
+                try:
+                    race_date = date(race_year, race_month, race_day)
+                    if race_date.weekday() == 6:  # Sunday
+                        saturday_date = race_date - timedelta(days=1)
+                        bias_data = _load_bias_for_date(saturday_date.isoformat())
+                        if bias_data:
+                            logger.info(f"自動検出バイアス適用: {saturday_date}")
+                            ml_scores = _apply_bias_to_scores(
+                                ml_scores, race_id, horses, bias_data
+                            )
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"バイアス適用スキップ: {e}")
+
             return ml_scores
 
         finally:
@@ -394,8 +616,13 @@ def _generate_ml_only_prediction(
         except (ValueError, TypeError):
             horse_age = None
 
+        # 馬番0は取消馬または登録のみなのでスキップ
+        horse_num = int(umaban) if umaban.isdigit() else 0
+        if horse_num < 1:
+            continue
+
         scored_horses.append({
-            "horse_number": int(umaban) if umaban.isdigit() else 0,
+            "horse_number": horse_num,
             "horse_name": horse.get("bamei", "不明"),
             "horse_sex": horse_sex,
             "horse_age": horse_age,
@@ -449,10 +676,16 @@ def _generate_ml_only_prediction(
             if 'place' in calibrators:
                 place_prob = float(calibrators['place'].predict(np.array([[place_prob]]).ravel())[0])
 
-            # 確率の上下限を保証（0.0〜1.0）
-            win_prob = max(0.0, min(1.0, win_prob))
-            quinella_prob = max(0.0, min(1.0, quinella_prob))
-            place_prob = max(0.0, min(1.0, place_prob))
+        # 保守的な確率上限（過信防止）
+        # キャリブレーションファイルから動的に取得、なければデフォルト値を使用
+        max_probs = _get_max_probs()
+        MAX_WIN_PROB = max_probs.get('win', 0.50)
+        MAX_QUINELLA_PROB = max_probs.get('quinella', 0.65)
+        MAX_PLACE_PROB = max_probs.get('place', 0.85)
+
+        win_prob = max(0.01, min(MAX_WIN_PROB, win_prob))
+        quinella_prob = max(0.02, min(MAX_QUINELLA_PROB, quinella_prob))
+        place_prob = max(0.05, min(MAX_PLACE_PROB, place_prob))
 
         # 個別の信頼度（データの完全性とスコアの分離度から算出）
         # スコアが他の馬と十分に離れているかで信頼度を評価
@@ -495,7 +728,8 @@ def _generate_ml_only_prediction(
 
 async def generate_prediction(
     race_id: str,
-    is_final: bool = False
+    is_final: bool = False,
+    bias_date: Optional[str] = None
 ) -> PredictionResponse:
     """
     予想生成のメイン関数（MLモデルのみ使用、LLM不使用）
@@ -504,6 +738,7 @@ async def generate_prediction(
     Args:
         race_id: レースID（16桁）
         is_final: 最終予想フラグ（馬体重後）
+        bias_date: バイアス適用日（YYYY-MM-DD形式、省略時は自動検出）
 
     Returns:
         PredictionResponse: 予想結果（確率ベース・ランキング形式）
@@ -544,7 +779,7 @@ async def generate_prediction(
         # 2. ML予測を計算
         ml_scores = {}
         try:
-            ml_scores = _compute_ml_predictions(race_id, race_data.get("horses", []))
+            ml_scores = _compute_ml_predictions(race_id, race_data.get("horses", []), bias_date)
             if ml_scores:
                 logger.info(f"ML predictions computed: {len(ml_scores)} horses")
             else:

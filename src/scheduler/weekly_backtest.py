@@ -233,6 +233,132 @@ class WeeklyBacktest:
         except Exception as e:
             logger.error(f"Discord通知エラー: {e}")
 
+    def retrain_calibration(self, days_back: int = 30) -> Optional[Dict]:
+        """キャリブレーションを再学習"""
+        logger.info(f"キャリブレーション再学習: 過去{days_back}日分")
+
+        try:
+            import numpy as np
+            import joblib
+            from sklearn.isotonic import IsotonicRegression
+
+            cutoff_date = date.today() - timedelta(days=days_back)
+
+            db = get_db()
+            conn = db.get_connection()
+            try:
+                cur = conn.cursor()
+                query = """
+                SELECT
+                    p.race_id,
+                    p.prediction_result,
+                    u.umaban,
+                    u.kakutei_chakujun
+                FROM predictions p
+                JOIN umagoto_race_joho u ON p.race_id = u.race_code
+                WHERE p.race_date >= %s
+                  AND p.race_date < CURRENT_DATE
+                  AND u.data_kubun IN ('6', '7')
+                  AND u.kakutei_chakujun IS NOT NULL
+                  AND u.kakutei_chakujun != ''
+                  AND u.kakutei_chakujun != '00'
+                """
+                cur.execute(query, (cutoff_date,))
+                rows = cur.fetchall()
+            finally:
+                conn.close()
+
+            if len(rows) < 100:
+                logger.warning(f"データ不足: {len(rows)}件 < 100件")
+                return None
+
+            # データ整理
+            results = []
+            for race_id, pred_result, umaban, chakujun in rows:
+                if not pred_result:
+                    continue
+                try:
+                    chakujun_int = int(chakujun) if chakujun.isdigit() else 99
+                    if chakujun_int == 0:
+                        continue
+                    umaban_int = int(umaban) if umaban.isdigit() else 0
+                    for horse in pred_result.get('ranked_horses', []):
+                        if horse.get('horse_number') == umaban_int:
+                            results.append({
+                                'win_prob': horse.get('win_probability', 0),
+                                'quinella_prob': horse.get('quinella_probability', 0),
+                                'place_prob': horse.get('place_probability', 0),
+                                'is_win': 1 if chakujun_int == 1 else 0,
+                                'is_quinella': 1 if chakujun_int <= 2 else 0,
+                                'is_place': 1 if chakujun_int <= 3 else 0,
+                            })
+                            break
+                except (ValueError, TypeError):
+                    continue
+
+            if len(results) < 100:
+                logger.warning(f"整理後データ不足: {len(results)}件")
+                return None
+
+            import pandas as pd
+            df = pd.DataFrame(results)
+
+            # キャリブレーター学習
+            calibrators = {}
+            stats = {}
+
+            for target, col in [('win', 'is_win'), ('quinella', 'is_quinella'), ('place', 'is_place')]:
+                X = df[f'{target}_prob'].values
+                y = df[col].values
+                iso = IsotonicRegression(out_of_bounds='clip')
+                iso.fit(X, y)
+                calibrators[target] = iso
+
+                # 確率上限を計算（95パーセンタイルの実績値）
+                high_prob_mask = X >= 0.3
+                if high_prob_mask.sum() > 10:
+                    max_prob = float(np.percentile(y[high_prob_mask], 95))
+                else:
+                    max_prob = float(y.mean() * 3)  # フォールバック
+
+                stats[target] = {
+                    'samples': len(df),
+                    'actual_rate': float(y.mean()),
+                    'calculated_max_prob': min(max_prob, 0.7),  # 上限70%
+                }
+
+            # 保存
+            output_path = Path(__file__).parent.parent.parent / "models" / "calibration.pkl"
+            backup_path = output_path.with_suffix('.backup.pkl')
+
+            if output_path.exists():
+                import shutil
+                shutil.copy(output_path, backup_path)
+
+            data = {
+                'created_at': datetime.now().isoformat(),
+                'calibrators': calibrators,
+                'win_stats': stats.get('win', {}),
+                'quinella_stats': stats.get('quinella', {}),
+                'place_stats': stats.get('place', {}),
+                'max_probs': {
+                    'win': stats['win']['calculated_max_prob'],
+                    'quinella': stats['quinella']['calculated_max_prob'],
+                    'place': stats['place']['calculated_max_prob'],
+                }
+            }
+            joblib.dump(data, output_path)
+            logger.info(f"キャリブレーション保存: {output_path}")
+            logger.info(f"  単勝上限: {data['max_probs']['win']*100:.1f}%")
+            logger.info(f"  連対上限: {data['max_probs']['quinella']*100:.1f}%")
+            logger.info(f"  複勝上限: {data['max_probs']['place']*100:.1f}%")
+
+            return data
+
+        except Exception as e:
+            logger.error(f"キャリブレーション再学習失敗: {e}")
+            return None
+
     def run_weekly_job(self, week_end: date = None, notify: bool = True):
         """週次ジョブを実行"""
         logger.info("=" * 50)
@@ -248,6 +374,14 @@ class WeeklyBacktest:
 
         # トラッキング更新
         tracking = self.update_tracking(weekly_stats)
+
+        # キャリブレーション再学習
+        logger.info("キャリブレーション再学習...")
+        calibration_result = self.retrain_calibration(days_back=30)
+        if calibration_result:
+            logger.info("キャリブレーション更新完了")
+        else:
+            logger.info("キャリブレーション更新スキップ（データ不足）")
 
         # レポート生成
         report = self.generate_report(weekly_stats, tracking)
