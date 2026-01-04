@@ -502,13 +502,12 @@ def _apply_track_condition_adjustment(
             new_place = max(0.01, min(0.99, new_place))
             adjusted_scores[umaban_str]['place_probability'] = new_place
 
-    # 確率の正規化
-    total_prob = sum(s.get('win_probability', 0) for s in adjusted_scores.values())
-    if total_prob > 0:
-        for umaban_str in adjusted_scores:
-            adjusted_scores[umaban_str]['win_probability'] /= total_prob
+    # 調整馬がいない場合は元のスコアをそのまま返す
+    adjusted_count = len([a for a in adjusted_scores.values() if a.get('track_adjustment', 0) != 0])
+    logger.info(f"馬場状態調整完了: {condition_name}, 調整馬数={adjusted_count}")
 
-    logger.info(f"馬場状態調整完了: {condition_name}, 調整馬数={len([a for a in adjusted_scores.values() if a.get('track_adjustment', 0) != 0])}")
+    if adjusted_count == 0:
+        return ml_scores
 
     return adjusted_scores
 
