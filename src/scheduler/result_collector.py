@@ -41,14 +41,15 @@ class ResultCollector:
             kaisai_gappi = target_date.strftime("%m%d")
             kaisai_nen = str(target_date.year)
 
-            # 確定結果のあるレースを取得
+            # 確定結果または速報成績のあるレースを取得
+            # data_kubun: 6=速報(全馬+通過順), 7=確定成績
             cur.execute('''
                 SELECT DISTINCT r.race_code, r.keibajo_code, r.race_bango,
                        r.kyori, r.track_code
                 FROM race_shosai r
                 WHERE r.kaisai_nen = %s
                   AND r.kaisai_gappi = %s
-                  AND r.data_kubun = '7'
+                  AND r.data_kubun IN ('6', '7')
                 ORDER BY r.race_code
             ''', (kaisai_nen, kaisai_gappi))
 
@@ -56,12 +57,12 @@ class ResultCollector:
             for row in cur.fetchall():
                 race_code = row[0]
 
-                # 各レースの着順を取得
+                # 各レースの着順を取得（速報または確定）
                 cur.execute('''
                     SELECT umaban, kakutei_chakujun, bamei
                     FROM umagoto_race_joho
                     WHERE race_code = %s
-                      AND data_kubun = '7'
+                      AND data_kubun IN ('6', '7')
                     ORDER BY kakutei_chakujun::int
                 ''', (race_code,))
 
