@@ -405,12 +405,18 @@ class PredictionScheduler(commands.Cog):
                 if not race_time_str:
                     continue
 
-                # レース時刻をパース
+                # レース時刻をパース（"HH:MM" または "HHMM" 形式に対応）
                 try:
-                    race_hour, race_minute = map(int, race_time_str.split(":"))
+                    if ":" in race_time_str:
+                        race_hour, race_minute = map(int, race_time_str.split(":"))
+                    elif len(race_time_str) == 4:
+                        race_hour = int(race_time_str[:2])
+                        race_minute = int(race_time_str[2:])
+                    else:
+                        raise ValueError(f"Unknown time format: {race_time_str}")
                     race_datetime = datetime.combine(today, time(hour=race_hour, minute=race_minute))
-                except ValueError:
-                    logger.warning(f"レース時刻パース失敗: {race_time_str}")
+                except (ValueError, IndexError) as e:
+                    logger.warning(f"レース時刻パース失敗: {race_time_str} ({e})")
                     continue
 
                 # レースN分前（±M分の余裕）
