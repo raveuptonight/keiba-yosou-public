@@ -31,10 +31,21 @@ logger = logging.getLogger(__name__)
 class FastFeatureExtractor:
     """高速バッチ特徴量抽出"""
 
+    # 競馬場コード → 名前マッピング
+    VENUE_CODES = {
+        '01': 'sapporo', '02': 'hakodate', '03': 'fukushima', '04': 'niigata',
+        '05': 'tokyo', '06': 'nakayama', '07': 'chukyo', '08': 'kyoto',
+        '09': 'hanshin', '10': 'kokura'
+    }
+    # 小回りコース
+    SMALL_TRACK_VENUES = {'01', '02', '03', '06', '10'}
+
     def __init__(self, conn):
         self.conn = conn
         self._jockey_cache = {}
         self._trainer_cache = {}
+        self._pedigree_cache = {}
+        self._sire_stats_cache = {}
 
     def extract_year_data(self, year: int, max_races: int = 5000) -> pd.DataFrame:
         """
@@ -101,6 +112,30 @@ class FastFeatureExtractor:
         interval_stats = self._get_interval_stats_batch(kettonums)
         logger.info(f"  間隔別成績: {len(interval_stats)}件")
 
+        # ===== 拡張特徴量（v2）=====
+        # 血統情報
+        pedigree_info = self._get_pedigree_batch(kettonums)
+        logger.info(f"  血統情報: {len(pedigree_info)}件")
+
+        # 競馬場別成績
+        venue_stats = self._get_venue_stats_batch(kettonums)
+        logger.info(f"  競馬場別成績: {len(venue_stats)}件")
+
+        # 前走詳細情報
+        zenso_info = self._get_zenso_batch(kettonums, race_codes)
+        logger.info(f"  前走詳細: {len(zenso_info)}件")
+
+        # 騎手直近成績
+        jockey_codes = list(set(e.get('kishu_code', '') for e in entries if e.get('kishu_code')))
+        jockey_recent = self._get_jockey_recent_batch(jockey_codes, year)
+        logger.info(f"  騎手直近成績: {len(jockey_recent)}件")
+
+        # 種牡馬成績（芝・ダート別）
+        sire_ids = [p.get('sire_id', '') for p in pedigree_info.values() if p.get('sire_id')]
+        sire_stats_turf = self._get_sire_stats_batch(sire_ids, year, is_turf=True)
+        sire_stats_dirt = self._get_sire_stats_batch(sire_ids, year, is_turf=False)
+        logger.info(f"  種牡馬成績（芝）: {len(sire_stats_turf)}件, （ダート）: {len(sire_stats_dirt)}件")
+
         # 6. レースごとにグループ化して展開予想を計算
         entries_by_race = {}
         for entry in entries:
@@ -124,7 +159,15 @@ class FastFeatureExtractor:
                 training_stats=training_stats,
                 interval_stats=interval_stats,
                 pace_predictions=pace_predictions,
-                entries_by_race=entries_by_race
+                entries_by_race=entries_by_race,
+                # 拡張特徴量用データ
+                pedigree_info=pedigree_info,
+                venue_stats=venue_stats,
+                zenso_info=zenso_info,
+                jockey_recent=jockey_recent,
+                sire_stats_turf=sire_stats_turf,
+                sire_stats_dirt=sire_stats_dirt,
+                year=year
             )
             if features:
                 features_list.append(features)
@@ -567,7 +610,15 @@ class FastFeatureExtractor:
         training_stats: Dict[str, Dict] = None,
         interval_stats: Dict[str, Dict] = None,
         pace_predictions: Dict[str, Dict] = None,
-        entries_by_race: Dict[str, List[Dict]] = None
+        entries_by_race: Dict[str, List[Dict]] = None,
+        # 拡張特徴量用データ
+        pedigree_info: Dict[str, Dict] = None,
+        venue_stats: Dict[str, Dict] = None,
+        zenso_info: Dict[str, Dict] = None,
+        jockey_recent: Dict[str, Dict] = None,
+        sire_stats_turf: Dict[str, Dict] = None,
+        sire_stats_dirt: Dict[str, Dict] = None,
+        year: int = None
     ) -> Optional[Dict]:
         """特徴量を構築（改善版）"""
         # 着順がないレコードはスキップ
@@ -756,9 +807,142 @@ class FastFeatureExtractor:
         pace_type = features['pace_type']
         features['style_pace_compatibility'] = self._calc_style_pace_compatibility(running_style, pace_type)
 
-        # メタ情報（血統特徴量用）
-        features['kettonum'] = kettonum
-        features['race_code'] = race_code
+        # ========================================
+        # 拡張特徴量 (v2)
+        # ========================================
+
+        # --- 1. 血統特徴量 ---
+        pedigree = pedigree_info.get(kettonum, {}) if pedigree_info else {}
+        sire_id = pedigree.get('sire_id', '')
+        broodmare_sire_id = pedigree.get('broodmare_sire_id', '')
+
+        # 種牡馬IDハッシュ（カテゴリ特徴量）
+        features['sire_id_hash'] = hash(sire_id) % 10000 if sire_id else 0
+        features['broodmare_sire_id_hash'] = hash(broodmare_sire_id) % 10000 if broodmare_sire_id else 0
+
+        # 種牡馬×芝/ダート成績
+        is_turf = track_code.startswith('1') if track_code else True
+        if is_turf and sire_stats_turf:
+            sire_key = f"{sire_id}_turf"
+            sire_stats = sire_stats_turf.get(sire_key, {'win_rate': 0.08, 'place_rate': 0.25, 'runs': 0})
+        elif sire_stats_dirt:
+            sire_key = f"{sire_id}_dirt"
+            sire_stats = sire_stats_dirt.get(sire_key, {'win_rate': 0.08, 'place_rate': 0.25, 'runs': 0})
+        else:
+            sire_stats = {'win_rate': 0.08, 'place_rate': 0.25, 'runs': 0}
+
+        features['sire_win_rate'] = sire_stats['win_rate']
+        features['sire_place_rate'] = sire_stats['place_rate']
+        features['sire_runs'] = min(sire_stats['runs'], 500)
+
+        # --- 2. 前走詳細特徴量 ---
+        zenso = zenso_info.get(kettonum, {}) if zenso_info else {}
+        features['zenso1_chakujun'] = zenso.get('zenso1_chakujun', 10)
+        features['zenso1_ninki'] = zenso.get('zenso1_ninki', 10)
+        features['zenso1_agari'] = zenso.get('zenso1_agari', 35.0)
+        features['zenso1_corner_avg'] = zenso.get('zenso1_corner_avg', 8.0)
+        features['zenso1_distance'] = zenso.get('zenso1_distance', 1600)
+        features['zenso1_grade'] = zenso.get('zenso1_grade', 3)
+        features['zenso2_chakujun'] = zenso.get('zenso2_chakujun', 10)
+        features['zenso3_chakujun'] = zenso.get('zenso3_chakujun', 10)
+        features['zenso_chakujun_trend'] = zenso.get('zenso_chakujun_trend', 0)
+        features['zenso_agari_trend'] = zenso.get('zenso_agari_trend', 0)
+
+        # 距離差（今回 - 前走）
+        current_distance = self._safe_int(race_info.get('kyori'), 1600)
+        features['zenso1_distance_diff'] = current_distance - features['zenso1_distance']
+
+        # クラス差（今回 - 前走）
+        current_grade = self._determine_class(race_info.get('grade_code', ''))
+        features['zenso1_class_diff'] = current_grade - features['zenso1_grade']
+
+        # --- 3. 競馬場別成績 ---
+        venue_code = race_info.get('keibajo_code', '')
+        surface_name = 'shiba' if is_turf else 'dirt'
+        venue_key = f"{kettonum}_{venue_code}_{surface_name}"
+        v_stats = venue_stats.get(venue_key, {}) if venue_stats else {}
+        features['venue_win_rate'] = v_stats.get('win_rate', 0.0)
+        features['venue_place_rate'] = v_stats.get('place_rate', 0.0)
+        features['venue_runs'] = min(v_stats.get('runs', 0), 50)
+
+        # 小回り/大回り適性
+        features['small_track_rate'] = zenso.get('small_track_rate', 0.25)
+        features['large_track_rate'] = zenso.get('large_track_rate', 0.25)
+
+        # 今回のコースタイプに応じた適性
+        is_small_track = venue_code in self.SMALL_TRACK_VENUES
+        features['track_type_fit'] = features['small_track_rate'] if is_small_track else features['large_track_rate']
+
+        # --- 4. 展開強化特徴量 ---
+        umaban = self._safe_int(entry.get('umaban'), 0)
+        my_style = running_style
+
+        # 自分より内枠の逃げ・先行馬数
+        inner_nige = 0
+        inner_senkou = 0
+        if entries_by_race and race_code in entries_by_race:
+            for e in entries_by_race[race_code]:
+                e_umaban = self._safe_int(e.get('umaban'), 0)
+                e_kettonum = e.get('ketto_toroku_bango', '')
+                e_past = past_stats.get(e_kettonum, {})
+                e_style = self._determine_style(e_past.get('avg_corner3', 8))
+                if e_umaban < umaban:
+                    if e_style == 1:
+                        inner_nige += 1
+                    elif e_style == 2:
+                        inner_senkou += 1
+
+        features['inner_nige_count'] = inner_nige
+        features['inner_senkou_count'] = inner_senkou
+
+        # 枠番×脚質の有利不利
+        waku_style_score = 0.0
+        if my_style in (1, 2):  # 逃げ・先行
+            if umaban <= 4:
+                waku_style_score = 0.1
+            elif umaban >= 13:
+                waku_style_score = -0.1
+        else:  # 差し・追込
+            if umaban <= 4:
+                waku_style_score = -0.05
+            elif umaban >= 13:
+                waku_style_score = 0.05
+        features['waku_style_advantage'] = waku_style_score
+
+        # --- 5. 騎手直近成績 ---
+        jockey_code = entry.get('kishu_code', '')
+        j_recent = jockey_recent.get(jockey_code, {}) if jockey_recent else {}
+        features['jockey_recent_win_rate'] = j_recent.get('win_rate', 0.08)
+        features['jockey_recent_place_rate'] = j_recent.get('place_rate', 0.25)
+        features['jockey_recent_runs'] = min(j_recent.get('runs', 0), 30)
+
+        # --- 6. 季節・時期特徴量 ---
+        gappi = race_info.get('kaisai_gappi', '0601')
+        month = self._safe_int(gappi[:2], 6)
+        features['race_month'] = month
+        features['month_sin'] = np.sin(2 * np.pi * month / 12)
+        features['month_cos'] = np.cos(2 * np.pi * month / 12)
+
+        # 開催週
+        nichime = self._safe_int(race_info.get('kaisai_nichiji', '01'), 1)
+        if nichime <= 2:
+            features['kaisai_week'] = 1
+        elif nichime >= 7:
+            features['kaisai_week'] = 3
+        else:
+            features['kaisai_week'] = 2
+
+        # 成長期判定
+        horse_age = features['age']
+        if horse_age == 3 and 3 <= month <= 8:
+            features['growth_period'] = 1
+        elif horse_age == 4 and 1 <= month <= 6:
+            features['growth_period'] = 1
+        else:
+            features['growth_period'] = 0
+
+        # 冬場フラグ
+        features['is_winter'] = 1 if month in (12, 1, 2) else 0
 
         # ターゲット
         features['target'] = chakujun
@@ -1020,6 +1204,313 @@ class FastFeatureExtractor:
             (4, 3): 0.8,   # 追込×ハイ = 有利
         }
         return compatibility_matrix.get((running_style, pace_type), 0.5)
+
+    # ===== 拡張特徴量バッチメソッド =====
+
+    def _get_pedigree_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
+        """血統情報をバッチ取得（父馬・母父馬ID）"""
+        if not kettonums:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(kettonums))
+        sql = f"""
+            SELECT
+                ketto_toroku_bango,
+                ketto1_hanshoku_toroku_bango as sire_id,
+                ketto3_hanshoku_toroku_bango as broodmare_sire_id
+            FROM kyosoba_master2
+            WHERE ketto_toroku_bango IN ({placeholders})
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, kettonums)
+            for row in cur.fetchall():
+                kettonum, sire_id, bms_id = row
+                result[kettonum] = {
+                    'sire_id': sire_id or '',
+                    'broodmare_sire_id': bms_id or ''
+                }
+            cur.close()
+            return result
+        except Exception as e:
+            logger.debug(f"Pedigree batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
+    def _get_sire_stats_batch(self, sire_ids: List[str], year: int, is_turf: bool = True) -> Dict[str, Dict]:
+        """種牡馬産駒成績をバッチ取得"""
+        if not sire_ids:
+            return {}
+
+        unique_ids = list(set(s for s in sire_ids if s))
+        if not unique_ids:
+            return {}
+
+        # 最大1000件に制限
+        unique_ids = unique_ids[:1000]
+        placeholders = ','.join(['%s'] * len(unique_ids))
+        year_from = str(year - 3)
+
+        # 芝/ダートを判定するためにレースコードから取得
+        # race_codeの11桁目がトラック種別（10=芝, 20=ダート等）
+        # 簡易版：全体成績を取得
+        sql = f"""
+            SELECT
+                k.ketto1_hanshoku_toroku_bango as sire_id,
+                COUNT(*) as runs,
+                SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+            FROM umagoto_race_joho u
+            JOIN kyosoba_master2 k ON u.ketto_toroku_bango = k.ketto_toroku_bango
+            WHERE k.ketto1_hanshoku_toroku_bango IN ({placeholders})
+              AND u.data_kubun = '7'
+              AND u.kakutei_chakujun ~ '^[0-9]+$'
+              AND u.kaisai_nen >= %s
+            GROUP BY k.ketto1_hanshoku_toroku_bango
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, unique_ids + [year_from])
+            for row in cur.fetchall():
+                sire_id, runs, wins, places = row
+                runs = int(runs or 0)
+                # 芝・ダート両方に同じ値を設定（簡易版）
+                for surface in ['turf', 'dirt']:
+                    key = f"{sire_id}_{surface}"
+                    result[key] = {
+                        'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
+                        'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
+                        'runs': runs
+                    }
+            cur.close()
+            return result
+        except Exception as e:
+            logger.debug(f"Sire stats batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
+    def _get_venue_stats_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
+        """競馬場別成績をバッチ取得（shussobetsu_keibajo）"""
+        if not kettonums:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(kettonums))
+        result = {}
+
+        # 各競馬場×芝/ダートの成績を取得
+        for venue_code, venue_name in self.VENUE_CODES.items():
+            for surface in ['shiba', 'dirt']:
+                col_prefix = f"{venue_name}_{surface}"
+                sql = f"""
+                    SELECT
+                        ketto_toroku_bango,
+                        COALESCE(NULLIF({col_prefix}_1chaku, '')::int, 0) as wins,
+                        COALESCE(NULLIF({col_prefix}_2chaku, '')::int, 0) as second,
+                        COALESCE(NULLIF({col_prefix}_3chaku, '')::int, 0) as third,
+                        COALESCE(NULLIF({col_prefix}_4chaku, '')::int, 0) +
+                        COALESCE(NULLIF({col_prefix}_5chaku, '')::int, 0) +
+                        COALESCE(NULLIF({col_prefix}_chakugai, '')::int, 0) as other
+                    FROM shussobetsu_keibajo
+                    WHERE ketto_toroku_bango IN ({placeholders})
+                """
+                try:
+                    cur = self.conn.cursor()
+                    cur.execute(sql, kettonums)
+                    for row in cur.fetchall():
+                        kettonum = row[0]
+                        wins = int(row[1] or 0)
+                        places = wins + int(row[2] or 0) + int(row[3] or 0)
+                        total = places + int(row[4] or 0)
+                        if total > 0:
+                            key = f"{kettonum}_{venue_code}_{surface}"
+                            result[key] = {
+                                'win_rate': wins / total,
+                                'place_rate': places / total,
+                                'runs': total
+                            }
+                    cur.close()
+                except Exception as e:
+                    logger.debug(f"Venue stats batch failed for {venue_name}_{surface}: {e}")
+                    self.conn.rollback()
+
+        return result
+
+    def _get_zenso_batch(self, kettonums: List[str], race_codes: List[str]) -> Dict[str, Dict]:
+        """前走情報をバッチ取得"""
+        if not kettonums:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(kettonums))
+        # 各馬の直近5走を取得
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    u.ketto_toroku_bango,
+                    u.race_code,
+                    u.kakutei_chakujun,
+                    u.tansho_ninkijun,
+                    u.kohan_3f,
+                    u.corner3_juni,
+                    u.corner4_juni,
+                    r.kyori,
+                    r.grade_code,
+                    r.keibajo_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY u.ketto_toroku_bango
+                        ORDER BY u.race_code DESC
+                    ) as rn
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+            )
+            SELECT * FROM ranked WHERE rn <= 5
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, kettonums)
+            rows = cur.fetchall()
+            cur.close()
+
+            # 馬ごとにグループ化
+            horse_races = {}
+            for row in rows:
+                kettonum = row[0]
+                if kettonum not in horse_races:
+                    horse_races[kettonum] = []
+                horse_races[kettonum].append({
+                    'race_code': row[1],
+                    'chakujun': self._safe_int(row[2], 10),
+                    'ninki': self._safe_int(row[3], 10),
+                    'kohan_3f': self._safe_int(row[4], 350) / 10.0,
+                    'corner3': self._safe_int(row[5], 8),
+                    'corner4': self._safe_int(row[6], 8),
+                    'kyori': self._safe_int(row[7], 1600),
+                    'grade_code': row[8] or '',
+                    'keibajo_code': row[9] or ''
+                })
+
+            # 特徴量を計算
+            for kettonum, races in horse_races.items():
+                # 1走前
+                z1 = races[0] if len(races) > 0 else {}
+                z2 = races[1] if len(races) > 1 else {}
+                z3 = races[2] if len(races) > 2 else {}
+
+                # 着順トレンド
+                if len(races) >= 3:
+                    c1 = z1.get('chakujun', 10)
+                    c3 = z3.get('chakujun', 10)
+                    if c1 < c3 - 2:
+                        trend = 1
+                    elif c1 > c3 + 2:
+                        trend = -1
+                    else:
+                        trend = 0
+                else:
+                    trend = 0
+
+                # 上がりトレンド
+                agaris = [r.get('kohan_3f', 35.0) for r in races[:3] if r.get('kohan_3f', 0) > 0]
+                if len(agaris) >= 3:
+                    if agaris[0] < agaris[2] - 0.3:
+                        agari_trend = 1
+                    elif agaris[0] > agaris[2] + 0.3:
+                        agari_trend = -1
+                    else:
+                        agari_trend = 0
+                else:
+                    agari_trend = 0
+
+                # 小回り/大回り別成績
+                small_places = 0
+                small_runs = 0
+                large_places = 0
+                large_runs = 0
+                for r in races:
+                    venue = r.get('keibajo_code', '')
+                    chaku = r.get('chakujun', 99)
+                    if venue in self.SMALL_TRACK_VENUES:
+                        small_runs += 1
+                        if chaku <= 3:
+                            small_places += 1
+                    else:
+                        large_runs += 1
+                        if chaku <= 3:
+                            large_places += 1
+
+                result[kettonum] = {
+                    'zenso1_chakujun': z1.get('chakujun', 10),
+                    'zenso1_ninki': z1.get('ninki', 10),
+                    'zenso1_agari': z1.get('kohan_3f', 35.0),
+                    'zenso1_corner_avg': (z1.get('corner3', 8) + z1.get('corner4', 8)) / 2.0,
+                    'zenso1_distance': z1.get('kyori', 1600),
+                    'zenso1_grade': self._grade_to_rank(z1.get('grade_code', '')),
+                    'zenso2_chakujun': z2.get('chakujun', 10),
+                    'zenso3_chakujun': z3.get('chakujun', 10),
+                    'zenso_chakujun_trend': trend,
+                    'zenso_agari_trend': agari_trend,
+                    'small_track_rate': small_places / small_runs if small_runs > 0 else 0.25,
+                    'large_track_rate': large_places / large_runs if large_runs > 0 else 0.25
+                }
+
+            return result
+        except Exception as e:
+            logger.debug(f"Zenso batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
+    def _get_jockey_recent_batch(self, jockey_codes: List[str], year: int) -> Dict[str, Dict]:
+        """騎手直近成績をバッチ取得"""
+        if not jockey_codes:
+            return {}
+
+        unique_codes = list(set(c for c in jockey_codes if c))
+        if not unique_codes:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(unique_codes))
+        # 直近14日間の成績
+        sql = f"""
+            SELECT
+                kishu_code,
+                COUNT(*) as runs,
+                SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+            FROM umagoto_race_joho
+            WHERE kishu_code IN ({placeholders})
+              AND data_kubun = '7'
+              AND kakutei_chakujun ~ '^[0-9]+$'
+              AND kaisai_nen = %s
+            GROUP BY kishu_code
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, unique_codes + [str(year)])
+            for row in cur.fetchall():
+                code, runs, wins, places = row
+                runs = int(runs or 0)
+                result[code] = {
+                    'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
+                    'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
+                    'runs': runs
+                }
+            cur.close()
+            return result
+        except Exception as e:
+            logger.debug(f"Jockey recent batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
+    def _grade_to_rank(self, grade_code: str) -> int:
+        """グレードコードをランクに変換"""
+        mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
+        return mapping.get(grade_code, 3)
 
 
 def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[xgb.XGBRegressor, Dict]:

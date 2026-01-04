@@ -2,12 +2,22 @@
 実データベースからの特徴量抽出モジュール
 
 JRA-VAN mykeibadb から特徴量を取得
+
+拡張特徴量（v2）:
+- 血統（父馬/母父馬の産駒成績）
+- 前走情報の詳細（着順、人気、上がり3F順位、コーナー通過）
+- 競馬場別成績
+- 展開予想の強化
+- トレンド系（着順推移、騎手の調子）
+- 季節・時期
 """
 
 import logging
 from typing import Dict, List, Optional, Any
 from datetime import date, timedelta
 import numpy as np
+
+from src.features.enhanced_features import EnhancedFeatureExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +32,7 @@ class RealFeatureExtractor:
         """
         self.conn = db_connection
         self._cache = {}  # キャッシュ用
+        self._enhanced_extractor = EnhancedFeatureExtractor(db_connection)
 
     def extract_features_for_race(
         self,
@@ -47,12 +58,21 @@ class RealFeatureExtractor:
         # レース情報を取得
         race_info = self._get_race_info(race_code, data_kubun)
 
+        # 全馬の脚質を事前計算（展開予想用）
+        running_styles = {}
+        for entry in entries:
+            kettonum = entry.get('ketto_toroku_bango', '')
+            past_races = self._get_past_races(kettonum, race_code)
+            running_styles[kettonum] = self._determine_running_style(past_races)
+
         # 展開予想を事前計算
         pace_info = self._calc_pace_prediction(entries, race_info)
 
         features_list = []
         for entry in entries:
-            features = self._extract_horse_features(entry, race_info, entries, pace_info)
+            features = self._extract_horse_features(
+                entry, race_info, entries, pace_info, running_styles
+            )
             features_list.append(features)
 
         return features_list
@@ -137,11 +157,16 @@ class RealFeatureExtractor:
         entry: Dict,
         race_info: Dict,
         all_entries: List[Dict],
-        pace_info: Dict = None
+        pace_info: Dict = None,
+        running_styles: Dict[str, int] = None
     ) -> Dict[str, Any]:
         """各馬の特徴量を抽出"""
         features = {}
         kettonum = entry.get('ketto_toroku_bango', '')
+
+        # 脚質辞書がない場合は空辞書
+        if running_styles is None:
+            running_styles = {}
 
         # ===== 基本情報 =====
         features['umaban'] = self._safe_int(entry.get('umaban'), 0)
@@ -308,7 +333,77 @@ class RealFeatureExtractor:
         pace_type = features['pace_type']
         features['style_pace_compatibility'] = self._calc_style_pace_compatibility(running_style, pace_type)
 
+        # ===== 拡張特徴量（v2）=====
+        try:
+            # 現在の人気（予想時は未確定なのでNone）
+            current_ninki = self._safe_int(entry.get('tansho_ninkijun'), None)
+
+            enhanced_features = self._enhanced_extractor.extract_all_enhanced_features(
+                entry=entry,
+                race_info=race_info,
+                all_entries=all_entries,
+                running_styles=running_styles,
+                current_ninki=current_ninki
+            )
+            features.update(enhanced_features)
+        except Exception as e:
+            logger.warning(f"Failed to extract enhanced features: {e}")
+            # 拡張特徴量が取得できなくてもデフォルト値で継続
+            features.update(self._get_default_enhanced_features())
+
         return features
+
+    def _get_default_enhanced_features(self) -> Dict[str, Any]:
+        """拡張特徴量のデフォルト値"""
+        return {
+            # 血統
+            'sire_id_hash': 0,
+            'broodmare_sire_id_hash': 0,
+            'sire_distance_win_rate': 0.08,
+            'sire_distance_place_rate': 0.25,
+            'sire_distance_runs': 0,
+            'sire_baba_win_rate': 0.08,
+            'sire_baba_place_rate': 0.25,
+            'sire_venue_win_rate': 0.08,
+            'sire_venue_place_rate': 0.25,
+            'broodmare_sire_win_rate': 0.08,
+            'broodmare_sire_place_rate': 0.25,
+            # 前走情報
+            'zenso1_chakujun': 10,
+            'zenso1_ninki': 10,
+            'zenso1_ninki_diff': 0,
+            'zenso1_class_diff': 0,
+            'zenso1_agari_rank': 9,
+            'zenso1_corner_avg': 8.0,
+            'zenso1_distance': 1600,
+            'zenso1_distance_diff': 0,
+            'zenso2_chakujun': 10,
+            'zenso3_chakujun': 10,
+            'zenso_chakujun_trend': 0,
+            'zenso_agari_trend': 0,
+            # 競馬場別
+            'venue_win_rate': 0.0,
+            'venue_place_rate': 0.0,
+            'venue_runs': 0,
+            'small_track_place_rate': 0.25,
+            'large_track_place_rate': 0.25,
+            'track_type_fit': 0.25,
+            # 展開強化
+            'inner_nige_count': 0,
+            'inner_senkou_count': 0,
+            'waku_style_advantage': 0.0,
+            # トレンド
+            'jockey_recent_win_rate': 0.08,
+            'jockey_recent_place_rate': 0.25,
+            'jockey_recent_runs': 0,
+            # 季節・時期
+            'race_month': 6,
+            'month_sin': 0.0,
+            'month_cos': 1.0,
+            'kaisai_week': 2,
+            'growth_period': 0,
+            'is_winter': 0,
+        }
 
     def _get_past_races(self, kettonum: str, current_race_code: str, limit: int = 10) -> List[Dict]:
         """過去レース成績を取得"""
@@ -1121,3 +1216,106 @@ class RealFeatureExtractor:
     def clear_cache(self):
         """キャッシュをクリア"""
         self._cache = {}
+        if self._enhanced_extractor:
+            self._enhanced_extractor.clear_cache()
+
+    def inject_bias_features(
+        self,
+        features_list: List[Dict[str, Any]],
+        bias_result: 'DailyBiasResult',
+        venue_code: str
+    ) -> List[Dict[str, Any]]:
+        """
+        バイアス特徴量を注入
+
+        Args:
+            features_list: 各馬の特徴量リスト
+            bias_result: 日次バイアス分析結果
+            venue_code: 競馬場コード
+
+        Returns:
+            バイアス特徴量が追加された特徴量リスト
+        """
+        from src.features.daily_bias import DailyBiasResult, VenueBias
+
+        if bias_result is None:
+            # バイアスデータがない場合はデフォルト値を設定
+            for features in features_list:
+                features['bias_waku'] = 0.0
+                features['bias_waku_adjusted'] = 0.0
+                features['bias_pace'] = 0.0
+                features['bias_pace_front'] = 0.0
+                features['bias_jockey_today_win'] = 0.0
+                features['bias_jockey_today_top3'] = 0.0
+            return features_list
+
+        # 競馬場バイアスを取得
+        venue_bias = bias_result.venue_biases.get(venue_code)
+
+        for features in features_list:
+            wakuban = features.get('wakuban', 0)
+            running_style = features.get('running_style', 2)
+
+            # 枠順バイアス
+            if venue_bias:
+                # 枠番に応じたバイアス値
+                if 1 <= wakuban <= 4:
+                    # 内枠の馬には内枠有利度を適用
+                    features['bias_waku'] = venue_bias.waku_bias
+                    features['bias_waku_adjusted'] = venue_bias.inner_waku_win_rate
+                else:
+                    # 外枠の馬には外枠有利度を適用
+                    features['bias_waku'] = -venue_bias.waku_bias
+                    features['bias_waku_adjusted'] = venue_bias.outer_waku_win_rate
+
+                # 脚質バイアス
+                features['bias_pace'] = venue_bias.pace_bias
+                if running_style in (1, 2):  # 逃げ・先行
+                    features['bias_pace_front'] = venue_bias.zenso_win_rate
+                else:  # 差し・追込
+                    features['bias_pace_front'] = venue_bias.koshi_win_rate
+            else:
+                features['bias_waku'] = 0.0
+                features['bias_waku_adjusted'] = 0.0
+                features['bias_pace'] = 0.0
+                features['bias_pace_front'] = 0.0
+
+            # 騎手当日成績
+            # 騎手コードはentryから取得する必要があるが、featuresに含まれていない
+            # ここでは別途対応が必要
+            features['bias_jockey_today_win'] = 0.0
+            features['bias_jockey_today_top3'] = 0.0
+
+        return features_list
+
+    def inject_jockey_bias(
+        self,
+        features: Dict[str, Any],
+        bias_result: 'DailyBiasResult',
+        kishu_code: str
+    ) -> Dict[str, Any]:
+        """
+        騎手バイアスを個別に注入
+
+        Args:
+            features: 馬の特徴量
+            bias_result: 日次バイアス分析結果
+            kishu_code: 騎手コード
+
+        Returns:
+            バイアスが追加された特徴量
+        """
+        if bias_result is None or not kishu_code:
+            features['bias_jockey_today_win'] = 0.0
+            features['bias_jockey_today_top3'] = 0.0
+            return features
+
+        jockey_perf = bias_result.jockey_performances.get(kishu_code)
+        if jockey_perf:
+            features['bias_jockey_today_win'] = jockey_perf.win_rate
+            features['bias_jockey_today_top3'] = jockey_perf.top3_rate
+        else:
+            features['bias_jockey_today_win'] = 0.0
+            features['bias_jockey_today_top3'] = 0.0
+
+        return features

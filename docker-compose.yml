@@ -8,6 +8,8 @@ services:
     depends_on:
       - api
     command: daemon --docker
+    environment:
+      - TZ=Asia/Tokyo
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     labels:
@@ -36,6 +38,7 @@ services:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
+      - ./analysis:/app/analysis:ro  # バイアスファイル（読み取り専用）
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     extra_hosts:
@@ -91,6 +94,7 @@ services:
       dockerfile: Dockerfile.ml
     container_name: keiba-ml-trainer
     environment:
+      - TZ=Asia/Tokyo
       - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal
       - DB_PORT=5432
@@ -132,8 +136,9 @@ services:
       # 毎週火曜23:00 - モデル再学習
       ofelia.job-exec.weekly-retrain.schedule: "0 23 * * 2"
       ofelia.job-exec.weekly-retrain.command: "python -m src.scheduler.weekly_retrain_model"
-      # 開催前日18:00 - 翌日の予想実行（金・土・日）
-      # 通常: 金曜→土日レース、変則開催: 土曜→日曜、日曜→月曜
-      ofelia.job-exec.daily-predict.schedule: "0 18 * * 5,6,0"
-      ofelia.job-exec.daily-predict.command: "python -m src.scheduler.daily_scheduler --days 1"
+      # 毎日21:00 - 統合ジョブ（当日バイアス分析 + 翌日予想）
+      # 当日レースがあれば → バイアス分析実行・保存
+      # 翌日レースがあれば → 適切なバイアスを適用して予想実行
+      ofelia.job-exec.nightly-predict.schedule: "0 21 * * *"
+      ofelia.job-exec.nightly-predict.command: "python -m src.scheduler.daily_scheduler --nightly"
     restart: "no"
