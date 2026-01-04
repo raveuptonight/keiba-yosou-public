@@ -468,6 +468,93 @@ def format_help_message() -> str:
     return message
 
 
+def format_final_prediction_notification(
+    venue: str,
+    race_number: str,
+    race_time: str,
+    race_name: str,
+    ranked_horses: List[Dict[str, Any]],
+) -> str:
+    """
+    最終予想通知をフォーマット（馬体重発表後の詳細形式）
+
+    前日予想と同じ形式で全馬のランキングを表示
+
+    Args:
+        venue: 競馬場名
+        race_number: レース番号（"01"形式または"1R"形式）
+        race_time: 発走時刻（"HHMM"形式または"HH:MM"形式）
+        race_name: レース名
+        ranked_horses: 予想順位順の馬リスト
+
+    Returns:
+        フォーマット済みメッセージ
+    """
+    try:
+        # レース番号フォーマット（"01" -> "1R"）
+        try:
+            race_num_int = int(race_number.replace("R", ""))
+            race_num_formatted = f"{race_num_int}R"
+        except (ValueError, TypeError):
+            race_num_formatted = f"{race_number}R" if not str(race_number).endswith("R") else race_number
+
+        # 発走時刻フォーマット（"1420" -> "14:20"）
+        if race_time and len(race_time) >= 4 and ":" not in race_time:
+            time_formatted = f"{race_time[:2]}:{race_time[2:4]}"
+        else:
+            time_formatted = race_time
+
+        # ヘッダー（2行）
+        lines = [
+            f"🔥 **{venue} {race_num_formatted} 最終予想を通知します**",
+            "",
+            f"{venue} {race_num_formatted} {time_formatted}発走 {race_name}",
+            "",
+        ]
+
+        # 全馬表示
+        for h in ranked_horses:
+            rank = h.get('rank', 0)
+            num = h.get('horse_number', '?')
+            name = h.get('horse_name', '?')
+
+            # 性別・年齢
+            sex = h.get('horse_sex') or ''
+            age = h.get('horse_age')
+            sex_age = f"{sex}{age}" if sex and age else ""
+
+            # 騎手名
+            jockey = (h.get('jockey_name') or '').replace('　', ' ')
+
+            # [性齢/騎手]形式
+            if sex_age and jockey:
+                info_str = f"[{sex_age}/{jockey}]"
+            elif sex_age:
+                info_str = f"[{sex_age}]"
+            elif jockey:
+                info_str = f"[{jockey}]"
+            else:
+                info_str = ""
+
+            # 確率
+            win_prob = h.get('win_probability', 0)
+            quinella_prob = h.get('quinella_probability', 0)
+            place_prob = h.get('place_probability', 0)
+
+            lines.append(
+                f"{rank}位 {num}番 {name} {info_str} "
+                f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
+            )
+
+        message = "\n".join(lines)
+        logger.debug(f"最終予想通知フォーマット完了: venue={venue}, race_number={race_number}")
+        return message
+
+    except Exception as e:
+        logger.error(f"最終予想通知フォーマットエラー: {e}")
+        return f"🔥 **{venue} {race_number}R 最終予想**\n\n❌ フォーマットエラーが発生しました"
+
+
 def format_ml_prediction(
     race_code: str,
     race_name: str,

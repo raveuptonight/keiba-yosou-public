@@ -23,7 +23,7 @@ from src.config import (
     SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE,
     SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES,
 )
-from src.discord.formatters import format_prediction_notification
+from src.discord.formatters import format_prediction_notification, format_final_prediction_notification
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -428,16 +428,11 @@ class PredictionScheduler(commands.Cog):
 
                 # 指定時刻の許容範囲内 かつ 未実行
                 if time_diff <= tolerance_seconds and race_id not in self.predicted_race_ids_final:
-                    logger.info(f"馬体重発表後の再予想実行: race_id={race_id}, race_time={race_time_str}")
+                    venue = race.get("venue", "?")
+                    race_num = race.get("race_number", "?")
+                    logger.info(f"馬体重発表後の再予想実行: race_id={race_id}, venue={venue}, race_num={race_num}")
 
-                    channel = self.get_notification_channel()
-                    if channel:
-                        race_name = race.get("race_name", "不明")
-                        await channel.send(
-                            f"🐴 馬体重発表！{race_name}の最終予想を実行します。"
-                        )
-
-                    # 再予想実行
+                    # 再予想実行（通知は_execute_prediction内で行う）
                     success = await self._execute_prediction(race_id, is_final=True)
 
                     if success:
@@ -503,29 +498,55 @@ class PredictionScheduler(commands.Cog):
 
             if response.status_code == 201:
                 prediction = response.json()
-                logger.info(f"予想成功: prediction_id={prediction.get('id')}")
+                pred_id = prediction.get('id')
+                logger.info(f"予想成功: prediction_id={pred_id}")
 
                 # 通知チャンネルに送信
                 channel = self.get_notification_channel()
                 if channel:
-                    message = format_prediction_notification(
-                        race_name=prediction.get("race_name", "不明"),
-                        race_date=date.fromisoformat(prediction.get("race_date")),
-                        venue=prediction.get("venue", "不明"),
-                        race_time=prediction.get("race_time", "不明"),
-                        race_number=prediction.get("race_number", "不明"),
-                        prediction_result=prediction.get("prediction_result", {}),
-                        total_investment=prediction.get("total_investment", 0),
-                        expected_return=prediction.get("expected_return", 0),
-                        expected_roi=prediction.get("expected_roi", 0.0) * 100,
-                        prediction_url=f"{self.api_base_url}/predictions/{prediction.get('id')}",
-                    )
-
-                    # 最終予想の場合は強調
                     if is_final:
-                        await channel.send("🔥 **【最終予想】馬体重反映済み**")
+                        # 最終予想: 詳細フォーマットで通知
+                        # 予想詳細を取得
+                        detail_response = requests.get(
+                            f"{self.api_base_url}/api/v1/predictions/{pred_id}",
+                            timeout=DISCORD_REQUEST_TIMEOUT,
+                        )
 
-                    await channel.send(message)
+                        if detail_response.status_code == 200:
+                            data = detail_response.json()
+                            result = data.get("prediction_result", {})
+                            ranked = result.get("ranked_horses", [])
+
+                            # 最終予想通知フォーマット
+                            message = format_final_prediction_notification(
+                                venue=data.get("venue", "不明"),
+                                race_number=data.get("race_number", "?"),
+                                race_time=data.get("race_time", ""),
+                                race_name=data.get("race_name", ""),
+                                ranked_horses=ranked,
+                            )
+                            await channel.send(message)
+                        else:
+                            # 詳細取得失敗時はシンプルな通知
+                            logger.warning(f"最終予想詳細取得失敗: {detail_response.status_code}")
+                            await channel.send(
+                                f"🔥 **{prediction.get('venue', '?')} {prediction.get('race_number', '?')}R 最終予想完了**"
+                            )
+                    else:
+                        # 前日予想: 従来のフォーマット
+                        message = format_prediction_notification(
+                            race_name=prediction.get("race_name", "不明"),
+                            race_date=date.fromisoformat(prediction.get("race_date")),
+                            venue=prediction.get("venue", "不明"),
+                            race_time=prediction.get("race_time", "不明"),
+                            race_number=prediction.get("race_number", "不明"),
+                            prediction_result=prediction.get("prediction_result", {}),
+                            total_investment=prediction.get("total_investment", 0),
+                            expected_return=prediction.get("expected_return", 0),
+                            expected_roi=prediction.get("expected_roi", 0.0) * 100,
+                            prediction_url=f"{self.api_base_url}/predictions/{pred_id}",
+                        )
+                        await channel.send(message)
 
                 return True
             else:
