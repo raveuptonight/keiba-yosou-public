@@ -3,8 +3,9 @@
 
 毎週火曜23:00に実行して：
 1. 最新データでensemble_model（XGBoost + LightGBM）を再学習
-2. 新旧モデルのバックテスト比較
-3. 改善があれば新モデルをデプロイ
+2. 分類モデル（勝利/複勝）+ キャリブレーション
+3. 新旧モデルのバックテスト比較
+4. 改善があれば新モデルをデプロイ
 """
 
 import logging
@@ -17,6 +18,7 @@ from typing import Dict, Optional
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.isotonic import IsotonicRegression
 
 from src.db.connection import get_db
 from src.models.fast_train import FastFeatureExtractor
@@ -57,7 +59,7 @@ class WeeklyRetrain:
         return str(backup_path)
 
     def train_new_model(self, years: int = 3) -> Dict:
-        """新しいensemble_modelを学習"""
+        """新しいensemble_modelを学習（回帰 + 分類 + キャリブレーション）"""
         import xgboost as xgb
         import lightgbm as lgb
 
@@ -100,63 +102,122 @@ class WeeklyRetrain:
             X = df[feature_cols].fillna(0)
             y = df['target']
 
+            # 分類用ターゲット
+            y_win = (y == 1).astype(int)
+            y_place = (y <= 3).astype(int)
+
             # 時系列分割
             split_idx = int(len(df) * 0.8)
             X_train, X_val = X[:split_idx], X[split_idx:]
             y_train, y_val = y[:split_idx], y[split_idx:]
+            y_win_train, y_win_val = y_win[:split_idx], y_win[split_idx:]
+            y_place_train, y_place_val = y_place[:split_idx], y_place[split_idx:]
 
-            # XGBoostモデル
-            logger.info("XGBoostモデル学習中...")
-            xgb_model = xgb.XGBRegressor(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1
-            )
-            xgb_model.fit(
-                X_train, y_train,
-                eval_set=[(X_val, y_val)],
-                verbose=False
-            )
+            logger.info(f"訓練: {len(X_train)}, 検証: {len(X_val)}")
 
-            # LightGBMモデル
-            logger.info("LightGBMモデル学習中...")
-            lgb_model = lgb.LGBMRegressor(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.1,
-                subsample=0.8,
-                colsample_bytree=0.8,
-                random_state=42,
-                n_jobs=-1,
-                verbose=-1
-            )
-            lgb_model.fit(
-                X_train, y_train,
-                eval_set=[(X_val, y_val)],
-            )
+            # 共通パラメータ
+            base_params = {
+                'n_estimators': 500,
+                'max_depth': 7,
+                'learning_rate': 0.05,
+                'subsample': 0.8,
+                'colsample_bytree': 0.8,
+                'random_state': 42,
+                'n_jobs': -1
+            }
+
+            models = {}
+
+            # ===== 1. 回帰モデル =====
+            # XGBoost回帰
+            logger.info("XGBoost回帰モデル学習中...")
+            xgb_reg = xgb.XGBRegressor(**base_params)
+            xgb_reg.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+            models['xgb_regressor'] = xgb_reg
+
+            # LightGBM回帰
+            logger.info("LightGBM回帰モデル学習中...")
+            lgb_reg = lgb.LGBMRegressor(**base_params, verbose=-1)
+            lgb_reg.fit(X_train, y_train, eval_set=[(X_val, y_val)])
+            models['lgb_regressor'] = lgb_reg
 
             # アンサンブル評価
-            xgb_pred = xgb_model.predict(X_val)
-            lgb_pred = lgb_model.predict(X_val)
+            xgb_pred = xgb_reg.predict(X_val)
+            lgb_pred = lgb_reg.predict(X_val)
             ensemble_pred = (xgb_pred + lgb_pred) / 2
-
             rmse = np.sqrt(np.mean((ensemble_pred - y_val) ** 2))
-            logger.info(f"検証RMSE (ensemble): {rmse:.4f}")
+            logger.info(f"回帰RMSE (ensemble): {rmse:.4f}")
+
+            # ===== 2. 勝利分類モデル =====
+            win_weight = len(y_win_train[y_win_train == 0]) / max(len(y_win_train[y_win_train == 1]), 1)
+
+            logger.info("XGBoost勝利分類モデル学習中...")
+            xgb_win = xgb.XGBClassifier(**base_params, scale_pos_weight=win_weight)
+            xgb_win.fit(X_train, y_win_train, eval_set=[(X_val, y_win_val)], verbose=False)
+            models['xgb_win'] = xgb_win
+
+            logger.info("LightGBM勝利分類モデル学習中...")
+            lgb_win = lgb.LGBMClassifier(**base_params, scale_pos_weight=win_weight, verbose=-1)
+            lgb_win.fit(X_train, y_win_train, eval_set=[(X_val, y_win_val)])
+            models['lgb_win'] = lgb_win
+
+            # 勝利アンサンブル確率
+            xgb_win_prob = xgb_win.predict_proba(X_val)[:, 1]
+            lgb_win_prob = lgb_win.predict_proba(X_val)[:, 1]
+            ensemble_win_prob = (xgb_win_prob + lgb_win_prob) / 2
+            win_accuracy = ((ensemble_win_prob > 0.5) == y_win_val).mean()
+            logger.info(f"勝利分類精度 (ensemble): {win_accuracy:.4f}")
+
+            # ===== 3. 複勝分類モデル =====
+            place_weight = len(y_place_train[y_place_train == 0]) / max(len(y_place_train[y_place_train == 1]), 1)
+
+            logger.info("XGBoost複勝分類モデル学習中...")
+            xgb_place = xgb.XGBClassifier(**base_params, scale_pos_weight=place_weight)
+            xgb_place.fit(X_train, y_place_train, eval_set=[(X_val, y_place_val)], verbose=False)
+            models['xgb_place'] = xgb_place
+
+            logger.info("LightGBM複勝分類モデル学習中...")
+            lgb_place = lgb.LGBMClassifier(**base_params, scale_pos_weight=place_weight, verbose=-1)
+            lgb_place.fit(X_train, y_place_train, eval_set=[(X_val, y_place_val)])
+            models['lgb_place'] = lgb_place
+
+            # 複勝アンサンブル確率
+            xgb_place_prob = xgb_place.predict_proba(X_val)[:, 1]
+            lgb_place_prob = lgb_place.predict_proba(X_val)[:, 1]
+            ensemble_place_prob = (xgb_place_prob + lgb_place_prob) / 2
+            place_accuracy = ((ensemble_place_prob > 0.5) == y_place_val).mean()
+            logger.info(f"複勝分類精度 (ensemble): {place_accuracy:.4f}")
+
+            # ===== 4. キャリブレーション =====
+            logger.info("キャリブレーション学習中...")
+            win_calibrator = IsotonicRegression(out_of_bounds='clip')
+            win_calibrator.fit(ensemble_win_prob, y_win_val)
+            models['win_calibrator'] = win_calibrator
+
+            place_calibrator = IsotonicRegression(out_of_bounds='clip')
+            place_calibrator.fit(ensemble_place_prob, y_place_val)
+            models['place_calibrator'] = place_calibrator
+
+            calibrated_win = win_calibrator.predict(ensemble_win_prob)
+            calibrated_place = place_calibrator.predict(ensemble_place_prob)
+            logger.info(f"キャリブレーション後 - 勝率平均: {calibrated_win.mean():.4f}, 複勝率平均: {calibrated_place.mean():.4f}")
 
             # 一時保存
             temp_model_path = self.model_dir / "ensemble_model_new.pkl"
             model_data = {
-                'xgb_model': xgb_model,
-                'lgb_model': lgb_model,
+                # 後方互換性
+                'xgb_model': xgb_reg,
+                'lgb_model': lgb_reg,
+                # 新しいモデル群
+                'models': models,
                 'feature_names': feature_cols,
                 'trained_at': datetime.now().isoformat(),
                 'training_samples': len(df),
                 'validation_rmse': float(rmse),
-                'years': years
+                'win_accuracy': float(win_accuracy),
+                'place_accuracy': float(place_accuracy),
+                'years': years,
+                'version': 'v2_enhanced_ensemble'
             }
             joblib.dump(model_data, temp_model_path)
 
@@ -164,6 +225,8 @@ class WeeklyRetrain:
                 'status': 'success',
                 'model_path': str(temp_model_path),
                 'rmse': float(rmse),
+                'win_accuracy': float(win_accuracy),
+                'place_accuracy': float(place_accuracy),
                 'samples': len(df)
             }
 

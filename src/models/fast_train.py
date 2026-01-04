@@ -8,6 +8,7 @@ DBクエリをバッチ化して大量データを効率的に処理
 """
 
 import argparse
+import hashlib
 import logging
 import os
 from datetime import datetime
@@ -16,6 +17,7 @@ from typing import Dict, List, Tuple, Any, Optional, Set
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from sklearn.isotonic import IsotonicRegression
 import xgboost as xgb
 import joblib
 
@@ -816,9 +818,9 @@ class FastFeatureExtractor:
         sire_id = pedigree.get('sire_id', '')
         broodmare_sire_id = pedigree.get('broodmare_sire_id', '')
 
-        # 種牡馬IDハッシュ（カテゴリ特徴量）
-        features['sire_id_hash'] = hash(sire_id) % 10000 if sire_id else 0
-        features['broodmare_sire_id_hash'] = hash(broodmare_sire_id) % 10000 if broodmare_sire_id else 0
+        # 種牡馬IDハッシュ（カテゴリ特徴量）- 安定ハッシュ使用
+        features['sire_id_hash'] = self._stable_hash(sire_id) if sire_id else 0
+        features['broodmare_sire_id_hash'] = self._stable_hash(broodmare_sire_id) if broodmare_sire_id else 0
 
         # 種牡馬×芝/ダート成績
         is_turf = track_code.startswith('1') if track_code else True
@@ -1512,17 +1514,21 @@ class FastFeatureExtractor:
         mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
         return mapping.get(grade_code, 3)
 
+    def _stable_hash(self, s: str, mod: int = 10000) -> int:
+        """安定したハッシュ値を生成（Python実行間で一貫性を保つ）"""
+        return int(hashlib.md5(s.encode()).hexdigest(), 16) % mod
 
-def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[xgb.XGBRegressor, Dict]:
+
+def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
     """
-    モデルを学習
+    モデルを学習（回帰 + 分類 + キャリブレーション）
 
     Args:
         df: 特徴量DataFrame（target列含む）
         use_gpu: GPU使用フラグ
 
     Returns:
-        (学習済みモデル, 学習結果)
+        (モデル辞書, 学習結果)
     """
     logger.info(f"モデル学習開始: {len(df)}サンプル")
 
@@ -1533,15 +1539,21 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[xgb.XGBRegresso
     X = df[feature_cols].fillna(0)
     y = df[target_col]
 
+    # 分類用ターゲット
+    y_win = (y == 1).astype(int)  # 1着かどうか
+    y_place = (y <= 3).astype(int)  # 3着以内かどうか
+
     # 訓練/検証分割（時系列を考慮して後ろ20%を検証用）
     split_idx = int(len(X) * 0.8)
     X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
+    y_win_train, y_win_val = y_win.iloc[:split_idx], y_win.iloc[split_idx:]
+    y_place_train, y_place_val = y_place.iloc[:split_idx], y_place.iloc[split_idx:]
 
     logger.info(f"訓練データ: {len(X_train)}, 検証データ: {len(X_val)}")
 
-    # XGBoostパラメータ
-    params = {
+    # 共通パラメータ
+    base_params = {
         'n_estimators': 800,
         'max_depth': 7,
         'learning_rate': 0.03,
@@ -1555,58 +1567,129 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[xgb.XGBRegresso
 
     # GPU使用設定
     if use_gpu:
-        params['tree_method'] = 'hist'
-        params['device'] = 'cuda'
+        base_params['tree_method'] = 'hist'
+        base_params['device'] = 'cuda'
         logger.info("GPU学習モード")
     else:
         logger.info("CPU学習モード")
 
-    model = xgb.XGBRegressor(
+    models = {}
+
+    # ===== 1. 回帰モデル（着順予測）=====
+    logger.info("回帰モデル学習中...")
+    reg_model = xgb.XGBRegressor(
         objective='reg:squarederror',
         early_stopping_rounds=50,
-        **params
+        **base_params
     )
-
-    # 学習
-    model.fit(
+    reg_model.fit(
         X_train, y_train,
         eval_set=[(X_val, y_val)],
         verbose=100
     )
+    models['regressor'] = reg_model
 
-    # 検証
-    pred = model.predict(X_val)
-    rmse = np.sqrt(np.mean((pred - y_val) ** 2))
-    logger.info(f"検証RMSE: {rmse:.4f}")
+    # 回帰モデル検証
+    pred_reg = reg_model.predict(X_val)
+    rmse = np.sqrt(np.mean((pred_reg - y_val) ** 2))
+    logger.info(f"回帰モデル検証RMSE: {rmse:.4f}")
 
-    # 特徴量重要度
+    # ===== 2. 勝利分類モデル =====
+    logger.info("勝利分類モデル学習中...")
+    win_params = base_params.copy()
+    win_params['scale_pos_weight'] = len(y_win_train[y_win_train == 0]) / max(len(y_win_train[y_win_train == 1]), 1)
+    win_model = xgb.XGBClassifier(
+        objective='binary:logistic',
+        early_stopping_rounds=50,
+        **win_params
+    )
+    win_model.fit(
+        X_train, y_win_train,
+        eval_set=[(X_val, y_win_val)],
+        verbose=100
+    )
+    models['win_classifier'] = win_model
+
+    # 勝利モデル検証
+    pred_win_prob = win_model.predict_proba(X_val)[:, 1]
+    win_accuracy = ((pred_win_prob > 0.5) == y_win_val).mean()
+    logger.info(f"勝利分類モデル精度: {win_accuracy:.4f}")
+
+    # ===== 3. 複勝分類モデル =====
+    logger.info("複勝分類モデル学習中...")
+    place_params = base_params.copy()
+    place_params['scale_pos_weight'] = len(y_place_train[y_place_train == 0]) / max(len(y_place_train[y_place_train == 1]), 1)
+    place_model = xgb.XGBClassifier(
+        objective='binary:logistic',
+        early_stopping_rounds=50,
+        **place_params
+    )
+    place_model.fit(
+        X_train, y_place_train,
+        eval_set=[(X_val, y_place_val)],
+        verbose=100
+    )
+    models['place_classifier'] = place_model
+
+    # 複勝モデル検証
+    pred_place_prob = place_model.predict_proba(X_val)[:, 1]
+    place_accuracy = ((pred_place_prob > 0.5) == y_place_val).mean()
+    logger.info(f"複勝分類モデル精度: {place_accuracy:.4f}")
+
+    # ===== 4. キャリブレーション =====
+    logger.info("キャリブレーション学習中...")
+
+    # 勝利確率のキャリブレーション
+    win_calibrator = IsotonicRegression(out_of_bounds='clip')
+    win_calibrator.fit(pred_win_prob, y_win_val)
+    models['win_calibrator'] = win_calibrator
+
+    # 複勝確率のキャリブレーション
+    place_calibrator = IsotonicRegression(out_of_bounds='clip')
+    place_calibrator.fit(pred_place_prob, y_place_val)
+    models['place_calibrator'] = place_calibrator
+
+    # キャリブレーション後の確率
+    calibrated_win = win_calibrator.predict(pred_win_prob)
+    calibrated_place = place_calibrator.predict(pred_place_prob)
+    logger.info(f"キャリブレーション後 - 勝利確率平均: {calibrated_win.mean():.4f}, 複勝確率平均: {calibrated_place.mean():.4f}")
+
+    # 特徴量重要度（回帰モデルから）
     importance = dict(sorted(
-        zip(feature_cols, model.feature_importances_),
+        zip(feature_cols, reg_model.feature_importances_),
         key=lambda x: x[1],
         reverse=True
     ))
 
-    return model, {
+    return models, {
         'feature_names': feature_cols,
         'rmse': rmse,
+        'win_accuracy': win_accuracy,
+        'place_accuracy': place_accuracy,
         'importance': importance,
         'train_size': len(X_train),
         'val_size': len(X_val)
     }
 
 
-def save_model(model: xgb.XGBRegressor, results: Dict, output_dir: str) -> str:
+def save_model(models: Dict, results: Dict, output_dir: str) -> str:
     """モデルを保存"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_path = Path(output_dir) / f"xgboost_model_{timestamp}.pkl"
     latest_path = Path(output_dir) / "xgboost_model_latest.pkl"
 
     model_data = {
-        'model': model,
+        # 後方互換性のため'model'キーにも回帰モデルを保存
+        'model': models['regressor'],
+        # 新しいモデル群
+        'models': models,
         'feature_names': results['feature_names'],
         'feature_importance': results['importance'],
         'trained_at': timestamp,
-        'rmse': results['rmse']
+        'rmse': results['rmse'],
+        'win_accuracy': results.get('win_accuracy'),
+        'place_accuracy': results.get('place_accuracy'),
+        'version': 'v2_enhanced'
     }
 
     joblib.dump(model_data, model_path)
@@ -1661,17 +1744,20 @@ def main():
         logger.info(f"全データ: {len(full_df)}サンプル")
 
         # 学習
-        model, results = train_model(full_df, use_gpu=not args.no_gpu)
+        models, results = train_model(full_df, use_gpu=not args.no_gpu)
 
         # 保存
-        model_path = save_model(model, results, args.output)
+        model_path = save_model(models, results, args.output)
 
         # 結果表示
         print("\n" + "=" * 60)
         print("学習完了")
         print("=" * 60)
         print(f"サンプル数: {len(full_df)}")
+        print(f"特徴量数: {len(results['feature_names'])}")
         print(f"検証RMSE: {results['rmse']:.4f}")
+        print(f"勝利分類精度: {results['win_accuracy']:.4f}")
+        print(f"複勝分類精度: {results['place_accuracy']:.4f}")
         print(f"モデル: {model_path}")
 
         print("\n特徴量重要度 TOP15:")

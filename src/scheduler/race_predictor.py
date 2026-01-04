@@ -28,34 +28,63 @@ logger = logging.getLogger(__name__)
 
 
 class RacePredictor:
-    """レース予想クラス（ensemble_model対応）"""
+    """レース予想クラス（ensemble_model対応 - 分類モデル+キャリブレーション）"""
 
     def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl"):
         self.model_path = model_path
+        # 回帰モデル
         self.xgb_model = None
         self.lgb_model = None
+        # 分類モデル（新形式）
+        self.xgb_win = None
+        self.lgb_win = None
+        self.xgb_place = None
+        self.lgb_place = None
+        # キャリブレーター（新形式）
+        self.win_calibrator = None
+        self.place_calibrator = None
+        # 特徴量
         self.feature_names = None
+        self.has_classifiers = False
         self._load_model()
 
     def _load_model(self):
-        """ensemble_modelを読み込み"""
+        """ensemble_modelを読み込み（新旧形式対応）"""
         try:
             model_data = joblib.load(self.model_path)
+            version = model_data.get('version', '')
+            models_dict = model_data.get('models', {})
 
-            # 2つの形式に対応
-            # 形式1: xgb_model, lgb_model（weekly_retrain_model.py形式）
-            # 形式2: models.xgboost, models.lightgbm（旧形式）
-            if 'xgb_model' in model_data:
+            # 回帰モデル取得（複数形式に対応）
+            if 'xgb_regressor' in models_dict:
+                # 新形式: v2_enhanced_ensemble
+                self.xgb_model = models_dict['xgb_regressor']
+                self.lgb_model = models_dict.get('lgb_regressor')
+            elif 'xgb_model' in model_data:
+                # 旧形式: weekly_retrain_model.py
                 self.xgb_model = model_data['xgb_model']
-                self.lgb_model = model_data['lgb_model']
-            elif 'models' in model_data:
-                self.xgb_model = model_data['models'].get('xgboost')
-                self.lgb_model = model_data['models'].get('lightgbm')
+                self.lgb_model = model_data.get('lgb_model')
+            elif 'xgboost' in models_dict:
+                # 旧形式: models.xgboost
+                self.xgb_model = models_dict.get('xgboost')
+                self.lgb_model = models_dict.get('lightgbm')
             else:
                 raise ValueError("Invalid model format: ensemble_model required")
 
+            # 分類モデル・キャリブレーター取得（新形式のみ）
+            self.xgb_win = models_dict.get('xgb_win')
+            self.lgb_win = models_dict.get('lgb_win')
+            self.xgb_place = models_dict.get('xgb_place')
+            self.lgb_place = models_dict.get('lgb_place')
+            self.win_calibrator = models_dict.get('win_calibrator')
+            self.place_calibrator = models_dict.get('place_calibrator')
+
+            self.has_classifiers = self.xgb_win is not None and self.lgb_win is not None
+
             self.feature_names = model_data.get('feature_names', [])
-            logger.info(f"ensemble_model読み込み完了: {len(self.feature_names)}特徴量")
+            logger.info(f"ensemble_model読み込み完了: {len(self.feature_names)}特徴量, "
+                       f"分類モデル={'あり' if self.has_classifiers else 'なし'}, "
+                       f"version={version}")
         except Exception as e:
             logger.error(f"モデル読み込み失敗: {e}")
             raise
@@ -249,19 +278,53 @@ class RacePredictor:
             # 予測（ensemble: XGBoost + LightGBM の平均）
             df = pd.DataFrame(features_list)
             X = df[self.feature_names].fillna(0)
+
+            # 回帰予測（着順スコア）
             xgb_pred = self.xgb_model.predict(X)
             lgb_pred = self.lgb_model.predict(X)
-            predictions = (xgb_pred + lgb_pred) / 2
+            rank_scores = (xgb_pred + lgb_pred) / 2
+
+            # 分類モデルによる確率予測
+            if self.has_classifiers:
+                # 勝利確率
+                xgb_win_prob = self.xgb_win.predict_proba(X)[:, 1]
+                lgb_win_prob = self.lgb_win.predict_proba(X)[:, 1]
+                win_probs = (xgb_win_prob + lgb_win_prob) / 2
+
+                # 複勝確率
+                xgb_place_prob = self.xgb_place.predict_proba(X)[:, 1]
+                lgb_place_prob = self.lgb_place.predict_proba(X)[:, 1]
+                place_probs = (xgb_place_prob + lgb_place_prob) / 2
+
+                # キャリブレーション適用
+                if self.win_calibrator is not None:
+                    win_probs = self.win_calibrator.predict(win_probs)
+                if self.place_calibrator is not None:
+                    place_probs = self.place_calibrator.predict(place_probs)
+
+                # 正規化（勝率の合計を1に）
+                win_sum = win_probs.sum()
+                if win_sum > 0:
+                    win_probs = win_probs / win_sum
+            else:
+                # 旧形式: スコアから確率を推定
+                scores_exp = np.exp(-rank_scores)
+                win_probs = scores_exp / scores_exp.sum()
+                place_probs = None
 
             # 結果を整形
             results = []
-            for i, pred in enumerate(predictions):
-                results.append({
+            for i, score in enumerate(rank_scores):
+                result = {
                     'umaban': features_list[i]['umaban'],
                     'bamei': features_list[i].get('bamei', ''),
-                    'pred_score': float(pred),
+                    'pred_score': float(score),
+                    'win_prob': float(win_probs[i]),
                     'pred_rank': 0  # 後で設定
-                })
+                }
+                if place_probs is not None:
+                    result['place_prob'] = float(place_probs[i])
+                results.append(result)
 
             # 予測順位を設定（スコアが低いほど上位）
             results.sort(key=lambda x: x['pred_score'])
@@ -322,12 +385,18 @@ class RacePredictor:
                         'kyori': race['kyori'],
                         'predictions': predictions,
                         'top3': [
-                            {'rank': p['pred_rank'], 'umaban': p['umaban'], 'bamei': p['bamei']}
+                            {
+                                'rank': p['pred_rank'],
+                                'umaban': p['umaban'],
+                                'bamei': p['bamei'],
+                                'win_prob': p.get('win_prob', 0),
+                                'place_prob': p.get('place_prob')
+                            }
                             for p in top3
                         ]
                     }
                     results['races'].append(race_result)
-                    top3_str = [f"{p['umaban']}番{p['bamei']}" for p in top3]
+                    top3_str = [f"{p['umaban']}番{p['bamei']}({p.get('win_prob', 0)*100:.1f}%)" for p in top3]
                     logger.info(f"  TOP3: {top3_str}")
 
             except Exception as e:
@@ -365,7 +434,13 @@ def print_predictions(results: Dict):
         print("-" * 40)
         print("予想順位:")
         for p in race['top3']:
-            print(f"  {p['rank']}位: {p['umaban']}番 {p['bamei']}")
+            win_pct = p.get('win_prob', 0) * 100
+            place_prob = p.get('place_prob')
+            if place_prob is not None:
+                place_pct = place_prob * 100
+                print(f"  {p['rank']}位: {p['umaban']}番 {p['bamei']} (勝率{win_pct:.1f}%, 複勝{place_pct:.1f}%)")
+            else:
+                print(f"  {p['rank']}位: {p['umaban']}番 {p['bamei']} (勝率{win_pct:.1f}%)")
 
     print("\n" + "=" * 60)
     print(f"生成日時: {results['generated_at']}")

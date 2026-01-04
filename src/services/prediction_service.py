@@ -395,18 +395,36 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optiona
 
         model_data = joblib.load(ML_MODEL_PATH)
 
-        # ensemble_modelのキーを取得（2つの形式に対応）
-        # 形式1: xgb_model, lgb_model（weekly_retrain_model.py形式）
-        # 形式2: models.xgboost, models.lightgbm（旧形式）
-        if 'xgb_model' in model_data:
+        # ensemble_modelのキーを取得（複数形式に対応）
+        # 形式1: v2_enhanced_ensemble（新形式: 分類モデル+キャリブレーション）
+        # 形式2: xgb_model, lgb_model（週次再学習形式）
+        # 形式3: models.xgboost, models.lightgbm（旧形式）
+        models_dict = model_data.get('models', {})
+        version = model_data.get('version', '')
+
+        # 回帰モデル取得
+        if 'xgb_regressor' in models_dict:
+            xgb_model = models_dict['xgb_regressor']
+            lgb_model = models_dict.get('lgb_regressor')
+        elif 'xgb_model' in model_data:
             xgb_model = model_data['xgb_model']
-            lgb_model = model_data['lgb_model']
-        elif 'models' in model_data:
-            xgb_model = model_data['models'].get('xgboost')
-            lgb_model = model_data['models'].get('lightgbm')
+            lgb_model = model_data.get('lgb_model')
+        elif 'xgboost' in models_dict:
+            xgb_model = models_dict.get('xgboost')
+            lgb_model = models_dict.get('lightgbm')
         else:
             logger.error(f"Invalid model format: ensemble_model required")
             return {}
+
+        # 分類モデル・キャリブレーター取得（新形式のみ）
+        xgb_win = models_dict.get('xgb_win')
+        lgb_win = models_dict.get('lgb_win')
+        xgb_place = models_dict.get('xgb_place')
+        lgb_place = models_dict.get('lgb_place')
+        win_calibrator = models_dict.get('win_calibrator')
+        place_calibrator = models_dict.get('place_calibrator')
+
+        has_classifiers = xgb_win is not None and lgb_win is not None
 
         feature_names = model_data.get('feature_names', [])
         logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}")
@@ -456,22 +474,54 @@ def _compute_ml_predictions(race_id: str, horses: List[Dict], bias_date: Optiona
                 logger.error("Ensemble model requires both XGBoost and LightGBM")
                 return {}
 
+            # 回帰予測（着順スコア）
             xgb_pred = xgb_model.predict(X)
             lgb_pred = lgb_model.predict(X)
             rank_scores = (xgb_pred + lgb_pred) / 2
 
-            # スコアを確率に変換（softmax風）
-            scores_exp = np.exp(-rank_scores)
-            win_probs = scores_exp / scores_exp.sum()
+            # 分類モデルがある場合は確率を直接予測
+            if has_classifiers:
+                logger.info("Using classification models for probability prediction")
+                # 勝利確率
+                xgb_win_prob = xgb_win.predict_proba(X)[:, 1]
+                lgb_win_prob = lgb_win.predict_proba(X)[:, 1]
+                win_probs = (xgb_win_prob + lgb_win_prob) / 2
+
+                # 複勝確率
+                xgb_place_prob = xgb_place.predict_proba(X)[:, 1]
+                lgb_place_prob = lgb_place.predict_proba(X)[:, 1]
+                place_probs = (xgb_place_prob + lgb_place_prob) / 2
+
+                # キャリブレーション適用（モデル内蔵キャリブレーター）
+                if win_calibrator is not None:
+                    win_probs = win_calibrator.predict(win_probs)
+                    logger.info("Applied win_calibrator")
+                if place_calibrator is not None:
+                    place_probs = place_calibrator.predict(place_probs)
+                    logger.info("Applied place_calibrator")
+
+                # 確率の正規化（勝率の合計を1に）
+                win_sum = win_probs.sum()
+                if win_sum > 0:
+                    win_probs = win_probs / win_sum
+            else:
+                # 旧形式: スコアを確率に変換（softmax風）
+                logger.info("Using regression scores for probability (legacy mode)")
+                scores_exp = np.exp(-rank_scores)
+                win_probs = scores_exp / scores_exp.sum()
+                place_probs = None  # 旧形式では複勝確率なし
 
             # 結果を辞書形式に変換
             ml_scores = {}
             for i, features in enumerate(features_list):
                 horse_num = features.get('umaban', i + 1)
-                ml_scores[str(horse_num)] = {
+                score_data = {
                     "rank_score": float(rank_scores[i]),
                     "win_probability": float(win_probs[i])
                 }
+                if place_probs is not None:
+                    score_data["place_probability"] = float(place_probs[i])
+                ml_scores[str(horse_num)] = score_data
 
             logger.info(f"ML predictions computed: {len(ml_scores)} horses")
 
@@ -629,20 +679,42 @@ def _generate_ml_only_prediction(
             "jockey_name": horse.get("kishumei", ""),
             "rank_score": score_data.get("rank_score", 999),
             "win_probability": score_data.get("win_probability", 0.0),
+            "place_probability": score_data.get("place_probability"),  # モデルからの複勝確率（あれば）
         })
 
     # スコア順にソート
     scored_horses.sort(key=lambda x: x["rank_score"])
 
-    # 順位分布を計算（簡易モデル: 勝率ベースで推定）
-    def calc_position_distribution(win_prob: float, rank: int, n: int) -> Dict[str, float]:
-        """順位分布を推定（勝率と予測順位から算出）"""
+    # 順位分布を計算
+    def calc_position_distribution(
+        win_prob: float,
+        place_prob: Optional[float],
+        rank: int,
+        n: int
+    ) -> Dict[str, float]:
+        """順位分布を推定（勝率・複勝率と予測順位から算出）"""
         # 1着確率 = 勝率
         first = win_prob
-        # 2着確率 = 予測順位に応じて減衰
-        second = min(win_prob * 1.5, 0.3) if rank <= 5 else win_prob * 0.5
-        # 3着確率
-        third = min(win_prob * 1.8, 0.35) if rank <= 7 else win_prob * 0.3
+
+        if place_prob is not None:
+            # 複勝確率がある場合、それを使って2着・3着を推定
+            # place_prob = P(1着) + P(2着) + P(3着)
+            remaining_place = max(0, place_prob - first)
+            # 2着と3着を均等に分配（予測順位に応じて調整）
+            if rank <= 3:
+                second = remaining_place * 0.55
+                third = remaining_place * 0.45
+            elif rank <= 6:
+                second = remaining_place * 0.5
+                third = remaining_place * 0.5
+            else:
+                second = remaining_place * 0.45
+                third = remaining_place * 0.55
+        else:
+            # 旧形式: 勝率ベースで推定
+            second = min(win_prob * 1.5, 0.3) if rank <= 5 else win_prob * 0.5
+            third = min(win_prob * 1.8, 0.35) if rank <= 7 else win_prob * 0.3
+
         # 4着以下
         out = max(0.0, 1.0 - first - second - third)
         return {
@@ -660,15 +732,22 @@ def _generate_ml_only_prediction(
     for i, h in enumerate(scored_horses):
         rank = i + 1
         win_prob = h["win_probability"]
-        pos_dist = calc_position_distribution(win_prob, rank, n_horses)
+        model_place_prob = h.get("place_probability")  # モデルからの複勝確率
+
+        pos_dist = calc_position_distribution(win_prob, model_place_prob, rank, n_horses)
 
         # 連対率（2着以内確率）- 上限1.0
         quinella_prob = min(1.0, pos_dist["first"] + pos_dist["second"])
-        # 複勝率（3着以内確率）- 上限1.0
-        place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
+        # 複勝率（3着以内確率）- モデルからの値があればそれを使用、なければ分布から計算
+        if model_place_prob is not None:
+            place_prob = model_place_prob
+        else:
+            place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
 
-        # キャリブレーション適用（Isotonic Regressionで補正）
-        if calibrators:
+        # キャリブレーション適用（外部キャリブレーター - モデル未適用の場合のみ）
+        # モデルに内蔵キャリブレーターがある場合は既に適用済み
+        if calibrators and model_place_prob is None:
+            # 旧形式モデルの場合のみ外部キャリブレーターを適用
             if 'win' in calibrators:
                 win_prob = float(calibrators['win'].predict(np.array([[win_prob]]).ravel())[0])
             if 'quinella' in calibrators:
