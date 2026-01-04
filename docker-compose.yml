@@ -123,9 +123,9 @@ services:
               capabilities: [gpu]
     labels:
       ofelia.enabled: "true"
-      # 毎日21:00 - 結果収集（当日のレース結果を分析）
-      ofelia.job-exec.result-collect.schedule: "0 21 * * *"
-      ofelia.job-exec.result-collect.command: "python -m src.scheduler.result_collector --today"
+      # 毎週火曜18:00 - 結果収集（週末のレース結果を分析）
+      ofelia.job-exec.result-collect.schedule: "0 18 * * 2"
+      ofelia.job-exec.result-collect.command: "python -m src.scheduler.result_collector"
       # 毎週日曜22:00 - 週次バックテスト・精度レポート
       ofelia.job-exec.sunday-backtest.schedule: "0 22 * * 7"
       ofelia.job-exec.sunday-backtest.command: "python -m src.scheduler.weekly_backtest"

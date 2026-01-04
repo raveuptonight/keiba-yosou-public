@@ -357,6 +357,45 @@ class ResultCollector:
         except Exception as e:
             logger.error(f"Discord通知エラー: {e}")
 
+    def send_weekend_notification(self, saturday: date, sunday: date, stats: Dict, accuracy: Dict):
+        """週末合計のDiscord通知を送信"""
+        import os
+        import requests
+
+        bot_token = os.getenv('DISCORD_BOT_TOKEN')
+        channel_id = os.getenv('DISCORD_NOTIFICATION_CHANNEL_ID')
+
+        if not bot_token or not channel_id:
+            logger.warning("Discord通知設定がありません")
+            return
+
+        message = f"""📊 **週末予想精度レポート**
+期間: {saturday} - {sunday}
+
+分析レース数: {stats.get('analyzed_races', 0)}R
+
+🎯 的中率:
+  単勝: {accuracy.get('tansho_hit_rate', 0):.1f}%
+  複勝: {accuracy.get('fukusho_hit_rate', 0):.1f}%
+  馬連: {accuracy.get('umaren_hit_rate', 0):.1f}%
+  三連複: {accuracy.get('sanrenpuku_hit_rate', 0):.1f}%
+"""
+
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {bot_token}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = requests.post(url, headers=headers, json={"content": message}, timeout=10)
+            if response.status_code in (200, 201):
+                logger.info("週末Discord通知送信完了")
+            else:
+                logger.warning(f"週末Discord通知失敗: {response.status_code}")
+        except Exception as e:
+            logger.error(f"週末Discord通知エラー: {e}")
+
 
 def collect_today_results():
     """当日のレース結果を収集"""
@@ -377,6 +416,70 @@ def collect_today_results():
         print(f"三連複的中率: {acc['accuracy']['sanrenpuku_hit_rate']:.1f}%")
     else:
         print(f"結果収集失敗: {analysis['status']}")
+
+
+def collect_weekend_results():
+    """先週末（土日）のレース結果を収集"""
+    collector = ResultCollector()
+    today = date.today()
+
+    # 直近の日曜日を計算
+    days_since_sunday = today.weekday() + 1
+    if days_since_sunday == 7:
+        days_since_sunday = 0
+    last_sunday = today - timedelta(days=days_since_sunday)
+    last_saturday = last_sunday - timedelta(days=1)
+
+    weekend_dates = [last_saturday, last_sunday]
+    total_stats = {
+        'total_races': 0,
+        'analyzed_races': 0,
+        'tansho_hit': 0,
+        'fukusho_hit': 0,
+        'umaren_hit': 0,
+        'sanrenpuku_hit': 0,
+    }
+
+    print(f"\n=== 週末レース結果収集 ({last_saturday} - {last_sunday}) ===")
+
+    for target_date in weekend_dates:
+        analysis = collector.collect_and_analyze(target_date)
+
+        if analysis['status'] == 'success':
+            collector.save_analysis(analysis)
+            acc = analysis['accuracy']
+            total_stats['total_races'] += acc['total_races']
+            total_stats['analyzed_races'] += acc['analyzed_races']
+            total_stats['tansho_hit'] += acc['raw_stats']['tansho_hit']
+            total_stats['fukusho_hit'] += acc['raw_stats']['fukusho_hit']
+            total_stats['umaren_hit'] += acc['raw_stats']['umaren_hit']
+            total_stats['sanrenpuku_hit'] += acc['raw_stats']['sanrenpuku_hit']
+
+            print(f"\n{acc['date']}: {acc['analyzed_races']}R分析")
+            print(f"  単勝: {acc['accuracy']['tansho_hit_rate']:.1f}%")
+            print(f"  複勝: {acc['accuracy']['fukusho_hit_rate']:.1f}%")
+        else:
+            print(f"\n{target_date}: {analysis['status']}")
+
+    # 週末合計を通知
+    if total_stats['analyzed_races'] > 0:
+        n = total_stats['analyzed_races']
+        weekend_accuracy = {
+            'tansho_hit_rate': total_stats['tansho_hit'] / n * 100,
+            'fukusho_hit_rate': total_stats['fukusho_hit'] / n * 100,
+            'umaren_hit_rate': total_stats['umaren_hit'] / n * 100,
+            'sanrenpuku_hit_rate': total_stats['sanrenpuku_hit'] / n * 100,
+        }
+
+        print(f"\n=== 週末合計 ===")
+        print(f"分析レース数: {n}R")
+        print(f"単勝的中率: {weekend_accuracy['tansho_hit_rate']:.1f}%")
+        print(f"複勝的中率: {weekend_accuracy['fukusho_hit_rate']:.1f}%")
+        print(f"馬連的中率: {weekend_accuracy['umaren_hit_rate']:.1f}%")
+        print(f"三連複的中率: {weekend_accuracy['sanrenpuku_hit_rate']:.1f}%")
+
+        # Discord通知（週末合計）
+        collector.send_weekend_notification(last_saturday, last_sunday, total_stats, weekend_accuracy)
 
 
 def collect_yesterday_results():
@@ -408,8 +511,14 @@ def main():
     parser.add_argument("--date", "-d", help="対象日 (YYYY-MM-DD)")
     parser.add_argument("--today", "-t", action="store_true", help="当日の結果を収集")
     parser.add_argument("--yesterday", "-y", action="store_true", help="昨日の結果を収集")
+    parser.add_argument("--weekend", "-w", action="store_true", help="先週末（土日）の結果を収集")
 
     args = parser.parse_args()
+
+    # 週末モード（デフォルト）
+    if args.weekend or (not args.date and not args.today and not args.yesterday):
+        collect_weekend_results()
+        return
 
     collector = ResultCollector()
 
@@ -420,7 +529,6 @@ def main():
     elif args.yesterday:
         target_date = date.today() - timedelta(days=1)
     else:
-        # デフォルト: 当日（21時以降の実行を想定）
         target_date = date.today()
 
     analysis = collector.collect_and_analyze(target_date)
