@@ -75,9 +75,9 @@ class FastFeatureExtractor:
         entries = self._get_all_entries(race_codes)
         logger.info(f"  出走馬数: {len(entries)}")
 
-        # 3. 過去成績を一括取得（直近10走）
+        # 3. 過去成績を一括取得（直近10走）- 当該レースを除外してデータリーク防止
         kettonums = list(set(e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')))
-        past_stats = self._get_past_stats_batch(kettonums)
+        past_stats = self._get_past_stats_batch(kettonums, entries=entries)
         logger.info(f"  過去成績取得: {len(past_stats)}頭")
 
         # 4. 騎手・調教師成績をキャッシュ
@@ -90,8 +90,8 @@ class FastFeatureExtractor:
         jockey_horse_stats = self._get_jockey_horse_combo_batch(jh_pairs)
         logger.info(f"  騎手・馬コンビ: {len(jockey_horse_stats)}件")
 
-        # 芝/ダート成績
-        surface_stats = self._get_surface_stats_batch(kettonums)
+        # 芝/ダート成績 - 当該レースを除外してデータリーク防止
+        surface_stats = self._get_surface_stats_batch(kettonums, entries=entries)
         logger.info(f"  芝/ダート成績: {len(surface_stats)}件")
 
         # 左右回り成績
@@ -106,12 +106,12 @@ class FastFeatureExtractor:
         training_stats = self._get_training_stats_batch(kettonums)
         logger.info(f"  調教データ: {len(training_stats)}件")
 
-        # 馬場状態別成績
-        baba_stats = self._get_baba_stats_batch(kettonums, races)
+        # 馬場状態別成績 - 当該レースを除外してデータリーク防止
+        baba_stats = self._get_baba_stats_batch(kettonums, races, entries=entries)
         logger.info(f"  馬場別成績: {len(baba_stats)}件")
 
-        # 間隔カテゴリ別成績
-        interval_stats = self._get_interval_stats_batch(kettonums)
+        # 間隔カテゴリ別成績 - 当該レースを除外してデータリーク防止
+        interval_stats = self._get_interval_stats_batch(kettonums, entries=entries)
         logger.info(f"  間隔別成績: {len(interval_stats)}件")
 
         # ===== 拡張特徴量（v2）=====
@@ -123,8 +123,8 @@ class FastFeatureExtractor:
         venue_stats = self._get_venue_stats_batch(kettonums)
         logger.info(f"  競馬場別成績: {len(venue_stats)}件")
 
-        # 前走詳細情報
-        zenso_info = self._get_zenso_batch(kettonums, race_codes)
+        # 前走詳細情報 - 当該レースを除外してデータリーク防止
+        zenso_info = self._get_zenso_batch(kettonums, race_codes, entries=entries)
         logger.info(f"  前走詳細: {len(zenso_info)}件")
 
         # 騎手直近成績
@@ -224,56 +224,133 @@ class FastFeatureExtractor:
         cur.close()
         return [dict(zip(cols, row)) for row in rows]
 
-    def _get_past_stats_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
-        """過去成績をバッチで取得（改善版）"""
+    def _get_past_stats_batch(self, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """過去成績をバッチで取得（データリーク防止版）
+
+        Args:
+            kettonums: 馬番号リスト
+            entries: 出走馬情報リスト（race_codeを含む）- 当該レースを除外するために使用
+        """
         if not kettonums:
             return {}
 
-        # 各馬の直近10走の詳細統計を計算
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
+
+        # 各馬の直近10走の詳細統計を計算（当該レースを除外）
         placeholders = ','.join(['%s'] * len(kettonums))
-        sql = f"""
-            WITH ranked AS (
+
+        # 当該レースを除外するための条件を追加
+        if horse_race_map:
+            # 各馬のrace_codeより前のレースのみを対象とする
+            # VALUES句で馬ごとのフィルタを作成
+            values_parts = []
+            params = list(kettonums)
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')  # 見つからない場合は全て含める
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            sql = f"""
+                WITH horse_filter AS (
+                    SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                ),
+                ranked AS (
+                    SELECT
+                        u.ketto_toroku_bango,
+                        u.race_code,
+                        u.kakutei_chakujun,
+                        u.soha_time,
+                        u.kohan_3f,
+                        u.corner3_juni,
+                        u.corner4_juni,
+                        u.kishu_code,
+                        u.kaisai_nen,
+                        u.kaisai_gappi,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY u.ketto_toroku_bango
+                            ORDER BY u.race_code DESC
+                        ) as rn
+                    FROM umagoto_race_joho u
+                    JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                    WHERE u.ketto_toroku_bango IN ({placeholders})
+                      AND u.data_kubun = '7'
+                      AND u.kakutei_chakujun ~ '^[0-9]+$'
+                      AND u.race_code < hf.current_race_code  -- 当該レースより前のみ
+                )
                 SELECT
                     ketto_toroku_bango,
-                    kakutei_chakujun,
-                    soha_time,
-                    kohan_3f,
-                    corner3_juni,
-                    corner4_juni,
-                    kishu_code,
-                    kaisai_nen,
-                    kaisai_gappi,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY ketto_toroku_bango
-                        ORDER BY race_code DESC
-                    ) as rn
-                FROM umagoto_race_joho
-                WHERE ketto_toroku_bango IN ({placeholders})
-                  AND data_kubun = '7'
-                  AND kakutei_chakujun ~ '^[0-9]+$'
-            )
-            SELECT
-                ketto_toroku_bango,
-                COUNT(*) as race_count,
-                AVG(CAST(kakutei_chakujun AS INTEGER)) as avg_rank,
-                SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as win_count,
-                SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as place_count,
-                AVG(CAST(NULLIF(soha_time, '') AS INTEGER)) as avg_time,
-                MIN(CAST(NULLIF(soha_time, '') AS INTEGER)) as best_time,
-                MAX(CASE WHEN rn = 1 THEN CAST(NULLIF(soha_time, '') AS INTEGER) END) as recent_time,
-                AVG(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as avg_last3f,
-                MIN(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as best_last3f,
-                AVG(CAST(NULLIF(corner3_juni, '') AS INTEGER)) as avg_corner3,
-                AVG(CAST(NULLIF(corner4_juni, '') AS INTEGER)) as avg_corner4,
-                MIN(CAST(kakutei_chakujun AS INTEGER)) as best_finish,
-                MAX(CASE WHEN rn = 1 THEN kishu_code END) as last_jockey,
-                MAX(CASE WHEN rn = 1 THEN kaisai_nen || kaisai_gappi END) as last_race_date
-            FROM ranked
-            WHERE rn <= 10
-            GROUP BY ketto_toroku_bango
-        """
+                    COUNT(*) as race_count,
+                    AVG(CAST(kakutei_chakujun AS INTEGER)) as avg_rank,
+                    SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as win_count,
+                    SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as place_count,
+                    AVG(CAST(NULLIF(soha_time, '') AS INTEGER)) as avg_time,
+                    MIN(CAST(NULLIF(soha_time, '') AS INTEGER)) as best_time,
+                    MAX(CASE WHEN rn = 1 THEN CAST(NULLIF(soha_time, '') AS INTEGER) END) as recent_time,
+                    AVG(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as avg_last3f,
+                    MIN(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as best_last3f,
+                    AVG(CAST(NULLIF(corner3_juni, '') AS INTEGER)) as avg_corner3,
+                    AVG(CAST(NULLIF(corner4_juni, '') AS INTEGER)) as avg_corner4,
+                    MIN(CAST(kakutei_chakujun AS INTEGER)) as best_finish,
+                    MAX(CASE WHEN rn = 1 THEN kishu_code END) as last_jockey,
+                    MAX(CASE WHEN rn = 1 THEN kaisai_nen || kaisai_gappi END) as last_race_date
+                FROM ranked
+                WHERE rn <= 10
+                GROUP BY ketto_toroku_bango
+            """
+        else:
+            # entries がない場合は従来の動作（予測時など）
+            params = kettonums
+            sql = f"""
+                WITH ranked AS (
+                    SELECT
+                        ketto_toroku_bango,
+                        kakutei_chakujun,
+                        soha_time,
+                        kohan_3f,
+                        corner3_juni,
+                        corner4_juni,
+                        kishu_code,
+                        kaisai_nen,
+                        kaisai_gappi,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ketto_toroku_bango
+                            ORDER BY race_code DESC
+                        ) as rn
+                    FROM umagoto_race_joho
+                    WHERE ketto_toroku_bango IN ({placeholders})
+                      AND data_kubun = '7'
+                      AND kakutei_chakujun ~ '^[0-9]+$'
+                )
+                SELECT
+                    ketto_toroku_bango,
+                    COUNT(*) as race_count,
+                    AVG(CAST(kakutei_chakujun AS INTEGER)) as avg_rank,
+                    SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as win_count,
+                    SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as place_count,
+                    AVG(CAST(NULLIF(soha_time, '') AS INTEGER)) as avg_time,
+                    MIN(CAST(NULLIF(soha_time, '') AS INTEGER)) as best_time,
+                    MAX(CASE WHEN rn = 1 THEN CAST(NULLIF(soha_time, '') AS INTEGER) END) as recent_time,
+                    AVG(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as avg_last3f,
+                    MIN(CAST(NULLIF(kohan_3f, '') AS INTEGER)) as best_last3f,
+                    AVG(CAST(NULLIF(corner3_juni, '') AS INTEGER)) as avg_corner3,
+                    AVG(CAST(NULLIF(corner4_juni, '') AS INTEGER)) as avg_corner4,
+                    MIN(CAST(kakutei_chakujun AS INTEGER)) as best_finish,
+                    MAX(CASE WHEN rn = 1 THEN kishu_code END) as last_jockey,
+                    MAX(CASE WHEN rn = 1 THEN kaisai_nen || kaisai_gappi END) as last_race_date
+                FROM ranked
+                WHERE rn <= 10
+                GROUP BY ketto_toroku_bango
+            """
+
         cur = self.conn.cursor()
-        cur.execute(sql, kettonums)
+        cur.execute(sql, params)
         rows = cur.fetchall()
         cur.close()
 
@@ -464,49 +541,110 @@ class FastFeatureExtractor:
             self.conn.rollback()
             return {}
 
-    def _get_surface_stats_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
-        """芝/ダート別成績をバッチ取得"""
+    def _get_surface_stats_batch(self, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """芝/ダート別成績をバッチ取得（データリーク防止版）"""
         if not kettonums:
             return {}
 
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
+
         placeholders = ','.join(['%s'] * len(kettonums))
 
-        # 芝成績
-        sql_turf = f"""
-            SELECT
-                u.ketto_toroku_bango,
-                COUNT(*) as runs,
-                SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
-            FROM umagoto_race_joho u
-            JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
-            WHERE u.ketto_toroku_bango IN ({placeholders})
-              AND u.data_kubun = '7'
-              AND u.kakutei_chakujun ~ '^[0-9]+$'
-              AND r.track_code LIKE '1%%'
-            GROUP BY u.ketto_toroku_bango
-        """
-        # ダート成績
-        sql_dirt = f"""
-            SELECT
-                u.ketto_toroku_bango,
-                COUNT(*) as runs,
-                SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
-            FROM umagoto_race_joho u
-            JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
-            WHERE u.ketto_toroku_bango IN ({placeholders})
-              AND u.data_kubun = '7'
-              AND u.kakutei_chakujun ~ '^[0-9]+$'
-              AND r.track_code LIKE '2%%'
-            GROUP BY u.ketto_toroku_bango
-        """
+        if horse_race_map:
+            # VALUES句で馬ごとのフィルタを作成
+            values_parts = []
+            params = list(kettonums)
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            # 芝成績
+            sql_turf = f"""
+                WITH horse_filter AS (
+                    SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                )
+                SELECT
+                    u.ketto_toroku_bango,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                  AND r.track_code LIKE '1%%'
+                  AND u.race_code < hf.current_race_code
+                GROUP BY u.ketto_toroku_bango
+            """
+            # ダート成績
+            sql_dirt = f"""
+                WITH horse_filter AS (
+                    SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                )
+                SELECT
+                    u.ketto_toroku_bango,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                  AND r.track_code LIKE '2%%'
+                  AND u.race_code < hf.current_race_code
+                GROUP BY u.ketto_toroku_bango
+            """
+        else:
+            params = kettonums
+            # 芝成績
+            sql_turf = f"""
+                SELECT
+                    u.ketto_toroku_bango,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                  AND r.track_code LIKE '1%%'
+                GROUP BY u.ketto_toroku_bango
+            """
+            # ダート成績
+            sql_dirt = f"""
+                SELECT
+                    u.ketto_toroku_bango,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                  AND r.track_code LIKE '2%%'
+                GROUP BY u.ketto_toroku_bango
+            """
+
         result = {}
         try:
             cur = self.conn.cursor()
 
             # 芝
-            cur.execute(sql_turf, kettonums)
+            cur.execute(sql_turf, params)
             for row in cur.fetchall():
                 kettonum = row[0]
                 runs = int(row[1] or 0)
@@ -520,7 +658,7 @@ class FastFeatureExtractor:
                 }
 
             # ダート
-            cur.execute(sql_dirt, kettonums)
+            cur.execute(sql_dirt, params)
             for row in cur.fetchall():
                 kettonum = row[0]
                 runs = int(row[1] or 0)
@@ -1028,31 +1166,223 @@ class FastFeatureExtractor:
         mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
         return mapping.get(grade_code, 3)
 
-    def _get_baba_stats_batch(self, kettonums: List[str], races: List[Dict]) -> Dict[str, Dict]:
-        """馬場状態別成績をバッチ取得"""
+    def _get_baba_stats_batch(self, kettonums: List[str], races: List[Dict], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """馬場状態別成績をバッチ取得（データリーク防止版）"""
         if not kettonums:
             return {}
+
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
 
         placeholders = ','.join(['%s'] * len(kettonums))
         result = {}
 
-        # 芝・良
-        for track, baba_name in [('1', 'turf'), ('2', 'dirt')]:
-            for baba_code, baba_suffix in [('1', 'ryo'), ('2', 'yayaomo'), ('3', 'omo'), ('4', 'furyo')]:
+        if horse_race_map:
+            # VALUES句で馬ごとのフィルタを作成
+            values_parts = []
+            params = list(kettonums)
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            # 芝・良
+            for track, baba_name in [('1', 'turf'), ('2', 'dirt')]:
+                for baba_code, baba_suffix in [('1', 'ryo'), ('2', 'yayaomo'), ('3', 'omo'), ('4', 'furyo')]:
+                    sql = f"""
+                        WITH horse_filter AS (
+                            SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                        )
+                        SELECT
+                            u.ketto_toroku_bango,
+                            COUNT(*) as runs,
+                            SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                            SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                        FROM umagoto_race_joho u
+                        JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                        JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                        WHERE u.ketto_toroku_bango IN ({placeholders})
+                          AND u.data_kubun = '7'
+                          AND u.kakutei_chakujun ~ '^[0-9]+$'
+                          AND r.track_code LIKE '{track}%%'
+                          AND (r.shiba_babajotai_code = '{baba_code}' OR r.dirt_babajotai_code = '{baba_code}')
+                          AND u.race_code < hf.current_race_code
+                        GROUP BY u.ketto_toroku_bango
+                    """
+                    try:
+                        cur = self.conn.cursor()
+                        cur.execute(sql, params)
+                        for row in cur.fetchall():
+                            kettonum = row[0]
+                            runs = int(row[1] or 0)
+                            wins = int(row[2] or 0)
+                            places = int(row[3] or 0)
+                            key = f"{kettonum}_{baba_name}_{baba_suffix}"
+                            result[key] = {
+                                'runs': runs,
+                                'win_rate': wins / runs if runs > 0 else 0.0,
+                                'place_rate': places / runs if runs > 0 else 0.0
+                            }
+                        cur.close()
+                    except Exception as e:
+                        logger.debug(f"Baba stats batch failed for {baba_name}_{baba_suffix}: {e}")
+                        self.conn.rollback()
+        else:
+            # entries がない場合は従来の動作
+            for track, baba_name in [('1', 'turf'), ('2', 'dirt')]:
+                for baba_code, baba_suffix in [('1', 'ryo'), ('2', 'yayaomo'), ('3', 'omo'), ('4', 'furyo')]:
+                    sql = f"""
+                        SELECT
+                            u.ketto_toroku_bango,
+                            COUNT(*) as runs,
+                            SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                            SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                        FROM umagoto_race_joho u
+                        JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                        WHERE u.ketto_toroku_bango IN ({placeholders})
+                          AND u.data_kubun = '7'
+                          AND u.kakutei_chakujun ~ '^[0-9]+$'
+                          AND r.track_code LIKE '{track}%%'
+                          AND (r.shiba_babajotai_code = '{baba_code}' OR r.dirt_babajotai_code = '{baba_code}')
+                        GROUP BY u.ketto_toroku_bango
+                    """
+                    try:
+                        cur = self.conn.cursor()
+                        cur.execute(sql, kettonums)
+                        for row in cur.fetchall():
+                            kettonum = row[0]
+                            runs = int(row[1] or 0)
+                            wins = int(row[2] or 0)
+                            places = int(row[3] or 0)
+                            key = f"{kettonum}_{baba_name}_{baba_suffix}"
+                            result[key] = {
+                                'runs': runs,
+                                'win_rate': wins / runs if runs > 0 else 0.0,
+                                'place_rate': places / runs if runs > 0 else 0.0
+                            }
+                        cur.close()
+                    except Exception as e:
+                        logger.debug(f"Baba stats batch failed for {baba_name}_{baba_suffix}: {e}")
+                        self.conn.rollback()
+
+        return result
+
+    def _get_interval_stats_batch(self, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """間隔カテゴリ別成績をバッチ取得（データリーク防止版）"""
+        if not kettonums:
+            return {}
+
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
+
+        placeholders = ','.join(['%s'] * len(kettonums))
+
+        # 間隔カテゴリ: 連闘(1-7日), 中1週(8-14日), 中2週(15-21日), 中3週(22-28日), 中4週以上(29日以上)
+        result = {}
+
+        if horse_race_map:
+            # VALUES句で馬ごとのフィルタを作成
+            values_parts = []
+            params = list(kettonums)
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            for interval_name, min_days, max_days in [
+                ('rentou', 1, 7),
+                ('week1', 8, 14),
+                ('week2', 15, 21),
+                ('week3', 22, 28),
+                ('week4plus', 29, 365)
+            ]:
                 sql = f"""
+                    WITH horse_filter AS (
+                        SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                    ),
+                    race_intervals AS (
+                        SELECT
+                            u.ketto_toroku_bango,
+                            u.race_code,
+                            u.kakutei_chakujun,
+                            DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2)))
+                            - LAG(DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2))))
+                              OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) as interval_days
+                        FROM umagoto_race_joho u
+                        JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                        WHERE u.ketto_toroku_bango IN ({placeholders})
+                          AND u.data_kubun = '7'
+                          AND u.kakutei_chakujun ~ '^[0-9]+$'
+                          AND u.race_code < hf.current_race_code
+                    )
                     SELECT
-                        u.ketto_toroku_bango,
+                        ketto_toroku_bango,
                         COUNT(*) as runs,
-                        SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
-                        SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
-                    FROM umagoto_race_joho u
-                    JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
-                    WHERE u.ketto_toroku_bango IN ({placeholders})
-                      AND u.data_kubun = '7'
-                      AND u.kakutei_chakujun ~ '^[0-9]+$'
-                      AND r.track_code LIKE '{track}%%'
-                      AND (r.shiba_babajotai_code = '{baba_code}' OR r.dirt_babajotai_code = '{baba_code}')
-                    GROUP BY u.ketto_toroku_bango
+                        SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                    FROM race_intervals
+                    WHERE interval_days >= {min_days} AND interval_days <= {max_days}
+                    GROUP BY ketto_toroku_bango
+                """
+                try:
+                    cur = self.conn.cursor()
+                    cur.execute(sql, params)
+                    for row in cur.fetchall():
+                        kettonum = row[0]
+                        runs = int(row[1] or 0)
+                        wins = int(row[2] or 0)
+                        places = int(row[3] or 0)
+                        key = f"{kettonum}_{interval_name}"
+                        result[key] = {
+                            'runs': runs,
+                            'win_rate': wins / runs if runs > 0 else 0.0,
+                            'place_rate': places / runs if runs > 0 else 0.0
+                        }
+                    cur.close()
+                except Exception as e:
+                    logger.debug(f"Interval stats batch failed for {interval_name}: {e}")
+                    self.conn.rollback()
+        else:
+            for interval_name, min_days, max_days in [
+                ('rentou', 1, 7),
+                ('week1', 8, 14),
+                ('week2', 15, 21),
+                ('week3', 22, 28),
+                ('week4plus', 29, 365)
+            ]:
+                sql = f"""
+                    WITH race_intervals AS (
+                        SELECT
+                            u.ketto_toroku_bango,
+                            u.kakutei_chakujun,
+                            DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2)))
+                            - LAG(DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2))))
+                              OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) as interval_days
+                        FROM umagoto_race_joho u
+                        WHERE u.ketto_toroku_bango IN ({placeholders})
+                          AND u.data_kubun = '7'
+                          AND u.kakutei_chakujun ~ '^[0-9]+$'
+                    )
+                    SELECT
+                        ketto_toroku_bango,
+                        COUNT(*) as runs,
+                        SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                        SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                    FROM race_intervals
+                    WHERE interval_days >= {min_days} AND interval_days <= {max_days}
+                    GROUP BY ketto_toroku_bango
                 """
                 try:
                     cur = self.conn.cursor()
@@ -1062,7 +1392,7 @@ class FastFeatureExtractor:
                         runs = int(row[1] or 0)
                         wins = int(row[2] or 0)
                         places = int(row[3] or 0)
-                        key = f"{kettonum}_{baba_name}_{baba_suffix}"
+                        key = f"{kettonum}_{interval_name}"
                         result[key] = {
                             'runs': runs,
                             'win_rate': wins / runs if runs > 0 else 0.0,
@@ -1070,68 +1400,8 @@ class FastFeatureExtractor:
                         }
                     cur.close()
                 except Exception as e:
-                    logger.debug(f"Baba stats batch failed for {baba_name}_{baba_suffix}: {e}")
+                    logger.debug(f"Interval stats batch failed for {interval_name}: {e}")
                     self.conn.rollback()
-
-        return result
-
-    def _get_interval_stats_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
-        """間隔カテゴリ別成績をバッチ取得"""
-        if not kettonums:
-            return {}
-
-        placeholders = ','.join(['%s'] * len(kettonums))
-
-        # 間隔カテゴリ: 連闘(1-7日), 中1週(8-14日), 中2週(15-21日), 中3週(22-28日), 中4週以上(29日以上)
-        result = {}
-
-        for interval_name, min_days, max_days in [
-            ('rentou', 1, 7),
-            ('week1', 8, 14),
-            ('week2', 15, 21),
-            ('week3', 22, 28),
-            ('week4plus', 29, 365)
-        ]:
-            sql = f"""
-                WITH race_intervals AS (
-                    SELECT
-                        u.ketto_toroku_bango,
-                        u.kakutei_chakujun,
-                        DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2)))
-                        - LAG(DATE(CONCAT(u.kaisai_nen, '-', SUBSTRING(u.kaisai_gappi, 1, 2), '-', SUBSTRING(u.kaisai_gappi, 3, 2))))
-                          OVER (PARTITION BY u.ketto_toroku_bango ORDER BY u.race_code) as interval_days
-                    FROM umagoto_race_joho u
-                    WHERE u.ketto_toroku_bango IN ({placeholders})
-                      AND u.data_kubun = '7'
-                      AND u.kakutei_chakujun ~ '^[0-9]+$'
-                )
-                SELECT
-                    ketto_toroku_bango,
-                    COUNT(*) as runs,
-                    SUM(CASE WHEN kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
-                    SUM(CASE WHEN kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
-                FROM race_intervals
-                WHERE interval_days >= {min_days} AND interval_days <= {max_days}
-                GROUP BY ketto_toroku_bango
-            """
-            try:
-                cur = self.conn.cursor()
-                cur.execute(sql, kettonums)
-                for row in cur.fetchall():
-                    kettonum = row[0]
-                    runs = int(row[1] or 0)
-                    wins = int(row[2] or 0)
-                    places = int(row[3] or 0)
-                    key = f"{kettonum}_{interval_name}"
-                    result[key] = {
-                        'runs': runs,
-                        'win_rate': wins / runs if runs > 0 else 0.0,
-                        'place_rate': places / runs if runs > 0 else 0.0
-                    }
-                cur.close()
-            except Exception as e:
-                logger.debug(f"Interval stats batch failed for {interval_name}: {e}")
-                self.conn.rollback()
 
         return result
 
@@ -1342,42 +1612,95 @@ class FastFeatureExtractor:
 
         return result
 
-    def _get_zenso_batch(self, kettonums: List[str], race_codes: List[str]) -> Dict[str, Dict]:
-        """前走情報をバッチ取得"""
+    def _get_zenso_batch(self, kettonums: List[str], race_codes: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """前走情報をバッチ取得（データリーク防止版）"""
         if not kettonums:
             return {}
 
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
+
         placeholders = ','.join(['%s'] * len(kettonums))
-        # 各馬の直近5走を取得
-        sql = f"""
-            WITH ranked AS (
-                SELECT
-                    u.ketto_toroku_bango,
-                    u.race_code,
-                    u.kakutei_chakujun,
-                    u.tansho_ninkijun,
-                    u.kohan_3f,
-                    u.corner3_juni,
-                    u.corner4_juni,
-                    r.kyori,
-                    r.grade_code,
-                    r.keibajo_code,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY u.ketto_toroku_bango
-                        ORDER BY u.race_code DESC
-                    ) as rn
-                FROM umagoto_race_joho u
-                JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
-                WHERE u.ketto_toroku_bango IN ({placeholders})
-                  AND u.data_kubun = '7'
-                  AND u.kakutei_chakujun ~ '^[0-9]+$'
-            )
-            SELECT * FROM ranked WHERE rn <= 5
-        """
+
+        if horse_race_map:
+            # VALUES句で馬ごとのフィルタを作成
+            values_parts = []
+            params = list(kettonums)
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            # 各馬の直近5走を取得（当該レースを除外）
+            sql = f"""
+                WITH horse_filter AS (
+                    SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                ),
+                ranked AS (
+                    SELECT
+                        u.ketto_toroku_bango,
+                        u.race_code,
+                        u.kakutei_chakujun,
+                        u.tansho_ninkijun,
+                        u.kohan_3f,
+                        u.corner3_juni,
+                        u.corner4_juni,
+                        r.kyori,
+                        r.grade_code,
+                        r.keibajo_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY u.ketto_toroku_bango
+                            ORDER BY u.race_code DESC
+                        ) as rn
+                    FROM umagoto_race_joho u
+                    JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
+                    JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                    WHERE u.ketto_toroku_bango IN ({placeholders})
+                      AND u.data_kubun = '7'
+                      AND u.kakutei_chakujun ~ '^[0-9]+$'
+                      AND u.race_code < hf.current_race_code
+                )
+                SELECT * FROM ranked WHERE rn <= 5
+            """
+        else:
+            params = kettonums
+            # 各馬の直近5走を取得
+            sql = f"""
+                WITH ranked AS (
+                    SELECT
+                        u.ketto_toroku_bango,
+                        u.race_code,
+                        u.kakutei_chakujun,
+                        u.tansho_ninkijun,
+                        u.kohan_3f,
+                        u.corner3_juni,
+                        u.corner4_juni,
+                        r.kyori,
+                        r.grade_code,
+                        r.keibajo_code,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY u.ketto_toroku_bango
+                            ORDER BY u.race_code DESC
+                        ) as rn
+                    FROM umagoto_race_joho u
+                    JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
+                    WHERE u.ketto_toroku_bango IN ({placeholders})
+                      AND u.data_kubun = '7'
+                      AND u.kakutei_chakujun ~ '^[0-9]+$'
+                )
+                SELECT * FROM ranked WHERE rn <= 5
+            """
+
         result = {}
         try:
             cur = self.conn.cursor()
-            cur.execute(sql, kettonums)
+            cur.execute(sql, params)
             rows = cur.fetchall()
             cur.close()
 
