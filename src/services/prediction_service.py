@@ -590,6 +590,8 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
             past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
             past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
     training_stats = extractor._get_training_stats_batch(kettonums)
+    # 競馬場別成績（予測時は全データ使用 - entriesを渡さない）
+    venue_stats = extractor._get_venue_stats_batch(kettonums)
 
     # 6. 特徴量生成（ダミーの着順を設定）
     features_list = []
@@ -600,7 +602,8 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
             entry, races, past_stats,
             jockey_horse_stats=jockey_horse_stats,
             distance_stats=surface_stats,
-            training_stats=training_stats
+            training_stats=training_stats,
+            venue_stats=venue_stats
         )
         if features:
             features['bamei'] = entry.get('bamei', '')
@@ -803,12 +806,14 @@ def _compute_ml_predictions(
                 horse_num = features.get('umaban', i + 1)
                 score_data = {
                     "rank_score": float(rank_scores[i]),
-                    "win_probability": float(win_probs[i])
+                    "win_probability": float(min(1.0, win_probs[i]))  # クリップ
                 }
                 if quinella_probs is not None:
-                    score_data["quinella_probability"] = float(quinella_probs[i])
+                    # 個別確率は1.0を超えないようクリップ
+                    score_data["quinella_probability"] = float(min(1.0, quinella_probs[i]))
                 if place_probs is not None:
-                    score_data["place_probability"] = float(place_probs[i])
+                    # 個別確率は1.0を超えないようクリップ
+                    score_data["place_probability"] = float(min(1.0, place_probs[i]))
                 ml_scores[str(horse_num)] = score_data
 
             logger.info(f"ML predictions computed: {len(ml_scores)} horses")
@@ -1005,19 +1010,27 @@ def _generate_ml_only_prediction(
     # 順位分布を計算
     def calc_position_distribution(
         win_prob: float,
+        quinella_prob: Optional[float],
         place_prob: Optional[float],
         rank: int,
         n: int
     ) -> Dict[str, float]:
-        """順位分布を推定（勝率・複勝率と予測順位から算出）"""
+        """順位分布を推定（勝率・連対率・複勝率から算出）
+
+        連対率モデルがある場合:
+          2着確率 = 連対率 - 勝率
+          3着確率 = 複勝率 - 連対率
+        """
         # 1着確率 = 勝率
         first = win_prob
 
-        if place_prob is not None:
-            # 複勝確率がある場合、それを使って2着・3着を推定
-            # place_prob = P(1着) + P(2着) + P(3着)
+        if quinella_prob is not None and place_prob is not None:
+            # 連対率・複勝率モデルがある場合、直接計算
+            second = max(0, quinella_prob - first)
+            third = max(0, place_prob - quinella_prob)
+        elif place_prob is not None:
+            # 連対率がない場合（旧形式互換）
             remaining_place = max(0, place_prob - first)
-            # 2着と3着を均等に分配（予測順位に応じて調整）
             if rank <= 3:
                 second = remaining_place * 0.55
                 third = remaining_place * 0.45
@@ -1053,8 +1066,8 @@ def _generate_ml_only_prediction(
         model_quinella_prob = h.get("quinella_probability")  # モデルからの連対確率
         model_place_prob = h.get("place_probability")  # モデルからの複勝確率
 
-        # 順位分布を計算（表示用）
-        pos_dist = calc_position_distribution(win_prob, model_place_prob, rank, n_horses)
+        # 順位分布を計算（表示用）- 連対率モデルを使用
+        pos_dist = calc_position_distribution(win_prob, model_quinella_prob, model_place_prob, rank, n_horses)
 
         # 連対率: モデルからの値を優先、なければ分布から計算
         if model_quinella_prob is not None:
@@ -1101,8 +1114,35 @@ def _generate_ml_only_prediction(
     else:
         prediction_confidence = 0.5
 
+    # 複数ランキングを生成（目的別）
+    # 連対率順（馬連・ワイド向け）
+    quinella_ranking = sorted(
+        [(h["horse_number"], h["quinella_probability"]) for h in ranked_horses],
+        key=lambda x: x[1], reverse=True
+    )[:5]  # Top5
+
+    # 複勝率順（複勝向け）
+    place_ranking = sorted(
+        [(h["horse_number"], h["place_probability"]) for h in ranked_horses],
+        key=lambda x: x[1], reverse=True
+    )[:5]  # Top5
+
+    # 穴馬候補（複勝率高いが勝率低い = 勝ち切れないが3着には来る）
+    # 複勝率 >= 20% かつ 勝率 < 10%
+    dark_horses = [
+        {"horse_number": h["horse_number"], "win_prob": h["win_probability"],
+         "place_prob": h["place_probability"]}
+        for h in ranked_horses
+        if h["place_probability"] >= 0.20 and h["win_probability"] < 0.10
+    ][:3]
+
     return {
-        "ranked_horses": ranked_horses,
+        "ranked_horses": ranked_horses,  # 勝率順（単勝向け）
+        "quinella_ranking": [{"rank": i+1, "horse_number": num, "quinella_prob": round(prob, 4)}
+                            for i, (num, prob) in enumerate(quinella_ranking)],
+        "place_ranking": [{"rank": i+1, "horse_number": num, "place_prob": round(prob, 4)}
+                          for i, (num, prob) in enumerate(place_ranking)],
+        "dark_horses": dark_horses,  # 穴馬候補
         "prediction_confidence": round(prediction_confidence, 4),
         "model_info": "ensemble_model",
     }
@@ -1592,6 +1632,9 @@ def _convert_to_prediction_response(
     # PredictionResult を構築（確率ベース・ランキング形式）
     prediction_result = PredictionResult(
         ranked_horses=ranked_horses,
+        quinella_ranking=ml_result.get("quinella_ranking"),
+        place_ranking=ml_result.get("place_ranking"),
+        dark_horses=ml_result.get("dark_horses"),
         prediction_confidence=ml_result.get("prediction_confidence", 0.5),
         model_info=ml_result.get("model_info", "ensemble_model"),
     )

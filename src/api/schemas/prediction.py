@@ -59,11 +59,41 @@ class HorseRankingEntry(BaseModel):
     )
 
 
+class QuinellaRankingEntry(BaseModel):
+    """連対率順ランキングエントリ"""
+    rank: int
+    horse_number: int
+    quinella_prob: float
+
+
+class PlaceRankingEntry(BaseModel):
+    """複勝率順ランキングエントリ"""
+    rank: int
+    horse_number: int
+    place_prob: float
+
+
+class DarkHorseEntry(BaseModel):
+    """穴馬候補エントリ"""
+    horse_number: int
+    win_prob: float
+    place_prob: float
+
+
 class PredictionResult(BaseModel):
     """予想結果本体（確率ベース・ランキング形式）"""
 
     ranked_horses: List[HorseRankingEntry] = Field(
-        ..., description="全馬ランキング（確率順）"
+        ..., description="全馬ランキング（勝率順・単勝向け）"
+    )
+    quinella_ranking: Optional[List[QuinellaRankingEntry]] = Field(
+        None, description="連対率順Top5（馬連・ワイド向け）"
+    )
+    place_ranking: Optional[List[PlaceRankingEntry]] = Field(
+        None, description="複勝率順Top5（複勝向け）"
+    )
+    dark_horses: Optional[List[DarkHorseEntry]] = Field(
+        None, description="穴馬候補（複勝率高い＆勝率低い）"
     )
     prediction_confidence: float = Field(
         ..., ge=0.0, le=1.0, description="予測全体の信頼度スコア"

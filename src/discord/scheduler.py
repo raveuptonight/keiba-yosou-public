@@ -32,6 +32,131 @@ from src.discord.formatters import format_prediction_notification, format_final_
 logger = logging.getLogger(__name__)
 
 
+class RankingSelectView(View):
+    """ランキング表示選択ビュー（最終予想用）"""
+
+    def __init__(
+        self,
+        race_id: str,
+        prediction_data: Dict,
+        timeout: float = 3600  # 1時間有効
+    ):
+        super().__init__(timeout=timeout)
+        self.race_id = race_id
+        self.prediction_data = prediction_data
+
+    @discord.ui.button(label="勝率順", style=discord.ButtonStyle.primary, custom_id="ranking_win", emoji="🏆")
+    async def win_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """勝率順ランキングを表示"""
+        await self._show_ranking(interaction, "win")
+
+    @discord.ui.button(label="連対率順", style=discord.ButtonStyle.secondary, custom_id="ranking_quinella", emoji="🥈")
+    async def quinella_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """連対率順ランキングを表示"""
+        await self._show_ranking(interaction, "quinella")
+
+    @discord.ui.button(label="複勝率順", style=discord.ButtonStyle.secondary, custom_id="ranking_place", emoji="🥉")
+    async def place_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """複勝率順ランキングを表示"""
+        await self._show_ranking(interaction, "place")
+
+    @discord.ui.button(label="穴馬候補", style=discord.ButtonStyle.success, custom_id="ranking_dark", emoji="🐴")
+    async def dark_horses_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """穴馬候補を表示"""
+        await self._show_ranking(interaction, "dark")
+
+    async def _show_ranking(self, interaction: discord.Interaction, ranking_type: str):
+        """指定タイプのランキングを表示"""
+        await interaction.response.defer(ephemeral=True)
+
+        result = self.prediction_data.get("prediction_result", {})
+        ranked = result.get("ranked_horses", [])
+        venue = self.prediction_data.get("venue", "?")
+        race_num = self.prediction_data.get("race_number", "?")
+        race_name = self.prediction_data.get("race_name", "")
+
+        # レース番号フォーマット
+        try:
+            race_num_int = int(race_num)
+            race_num_formatted = f"{race_num_int}R"
+        except (ValueError, TypeError):
+            race_num_formatted = f"{race_num}R" if not str(race_num).endswith("R") else race_num
+
+        header = f"**{venue} {race_num_formatted}** {race_name}\n"
+
+        if ranking_type == "win":
+            # 勝率順（全馬表示）
+            lines = [header, "**勝率順ランキング（単勝向け）**\n"]
+            marks = ['◎', '○', '▲', '△', '△', '×', '×', '×', '☆', '☆']
+            for h in ranked[:10]:
+                rank = h.get('rank', 0)
+                mark = marks[rank - 1] if rank <= len(marks) else '☆'
+                num = h.get('horse_number', '?')
+                name = h.get('horse_name', '?')[:8]
+                win = h.get('win_probability', 0)
+                quinella = h.get('quinella_probability', 0)
+                place = h.get('place_probability', 0)
+                lines.append(f"{mark} {rank}位 {num}番 {name} (単{win:.1%} 連{quinella:.1%} 複{place:.1%})")
+            message = "\n".join(lines)
+
+        elif ranking_type == "quinella":
+            # 連対率順Top5
+            quinella_ranking = result.get("quinella_ranking", [])
+            lines = [header, "**連対率順 Top5（馬連・ワイド向け）**\n"]
+            if quinella_ranking:
+                for entry in quinella_ranking[:5]:
+                    rank = entry.get('rank', 0)
+                    num = entry.get('horse_number', '?')
+                    prob = entry.get('quinella_prob', 0)
+                    # 馬名を取得
+                    horse_name = next((h.get('horse_name', '?') for h in ranked
+                                      if h.get('horse_number') == num), '?')[:8]
+                    lines.append(f"{rank}位 {num}番 {horse_name} 連対率: {prob:.1%}")
+            else:
+                lines.append("データなし")
+            message = "\n".join(lines)
+
+        elif ranking_type == "place":
+            # 複勝率順Top5
+            place_ranking = result.get("place_ranking", [])
+            lines = [header, "**複勝率順 Top5（複勝向け）**\n"]
+            if place_ranking:
+                for entry in place_ranking[:5]:
+                    rank = entry.get('rank', 0)
+                    num = entry.get('horse_number', '?')
+                    prob = entry.get('place_prob', 0)
+                    # 馬名を取得
+                    horse_name = next((h.get('horse_name', '?') for h in ranked
+                                      if h.get('horse_number') == num), '?')[:8]
+                    lines.append(f"{rank}位 {num}番 {horse_name} 複勝率: {prob:.1%}")
+            else:
+                lines.append("データなし")
+            message = "\n".join(lines)
+
+        elif ranking_type == "dark":
+            # 穴馬候補
+            dark_horses = result.get("dark_horses", [])
+            lines = [header, "**穴馬候補（複勝率>=20%かつ勝率<10%）**\n"]
+            if dark_horses:
+                for entry in dark_horses[:3]:
+                    num = entry.get('horse_number', '?')
+                    win = entry.get('win_prob', 0)
+                    place = entry.get('place_prob', 0)
+                    # 馬名を取得
+                    horse_name = next((h.get('horse_name', '?') for h in ranked
+                                      if h.get('horse_number') == num), '?')[:8]
+                    lines.append(f"🐴 {num}番 {horse_name}: 勝率{win:.1%} → 複勝率{place:.1%}")
+                lines.append("")
+                lines.append("_勝ち切れないが3着には来る可能性が高い馬_")
+            else:
+                lines.append("該当馬なし")
+            message = "\n".join(lines)
+        else:
+            message = "不明なランキングタイプ"
+
+        await interaction.followup.send(message, ephemeral=True)
+
+
 class PredictionSummaryView(View):
     """予想完了後のレース選択ビュー"""
 
@@ -506,21 +631,65 @@ class PredictionScheduler(commands.Cog):
                 channel = self.get_notification_channel()
                 if channel:
                     if is_final:
-                        # 最終予想: 詳細フォーマットで通知
-                        # 予想結果は既に取得済み
+                        # 最終予想: コンパクトサマリー + ボタンで詳細表示
                         result = prediction.get("prediction_result", {})
                         ranked = result.get("ranked_horses", [])
 
                         if ranked:
-                            # 最終予想通知フォーマット
-                            message = format_final_prediction_notification(
-                                venue=prediction.get("venue", "不明"),
-                                race_number=prediction.get("race_number", "?"),
-                                race_time=prediction.get("race_time", ""),
-                                race_name=prediction.get("race_name", ""),
-                                ranked_horses=ranked,
+                            # コンパクトサマリーを生成
+                            venue = prediction.get("venue", "不明")
+                            race_number = prediction.get("race_number", "?")
+                            race_time = prediction.get("race_time", "")
+                            race_name = prediction.get("race_name", "")
+
+                            # レース番号フォーマット
+                            try:
+                                race_num_int = int(race_number.replace("R", ""))
+                                race_num_formatted = f"{race_num_int}R"
+                            except (ValueError, TypeError):
+                                race_num_formatted = f"{race_number}R" if not str(race_number).endswith("R") else race_number
+
+                            # 時刻フォーマット
+                            if race_time and len(race_time) >= 4 and ":" not in race_time:
+                                time_formatted = f"{race_time[:2]}:{race_time[2:4]}"
+                            else:
+                                time_formatted = race_time
+
+                            # サマリーメッセージ（Top3のみ表示）
+                            lines = [
+                                f"🔥 **{venue} {race_num_formatted} 最終予想**",
+                                f"{time_formatted}発走 {race_name}",
+                                "",
+                                "**予想 Top3**",
+                            ]
+
+                            marks = ['◎', '○', '▲']
+                            for i, h in enumerate(ranked[:3]):
+                                mark = marks[i]
+                                num = h.get('horse_number', '?')
+                                name = h.get('horse_name', '?')[:8]
+                                win = h.get('win_probability', 0)
+                                lines.append(f"{mark} {num}番 {name} (勝率 {win:.1%})")
+
+                            # 穴馬候補があれば表示
+                            dark_horses = result.get("dark_horses", [])
+                            if dark_horses:
+                                lines.append("")
+                                lines.append(f"🐴 穴馬候補: {len(dark_horses)}頭")
+
+                            lines.append("")
+                            lines.append("▼ ボタンを押してランキング詳細を表示")
+
+                            message = "\n".join(lines)
+
+                            # RankingSelectViewを作成
+                            view = RankingSelectView(
+                                race_id=race_id,
+                                prediction_data=prediction,
+                                timeout=3600  # 1時間有効
                             )
-                            await channel.send(message)
+
+                            await channel.send(message, view=view)
                         else:
                             # 予想結果が空の場合
                             logger.warning(f"最終予想結果が空: race_id={race_id}")

@@ -119,8 +119,8 @@ class FastFeatureExtractor:
         pedigree_info = self._get_pedigree_batch(kettonums)
         logger.info(f"  血統情報: {len(pedigree_info)}件")
 
-        # 競馬場別成績
-        venue_stats = self._get_venue_stats_batch(kettonums)
+        # 競馬場別成績 - 当該レースを除外してデータリーク防止
+        venue_stats = self._get_venue_stats_batch(kettonums, entries=entries)
         logger.info(f"  競馬場別成績: {len(venue_stats)}件")
 
         # 前走詳細情報 - 当該レースを除外してデータリーク防止
@@ -1566,49 +1566,98 @@ class FastFeatureExtractor:
             self.conn.rollback()
             return {}
 
-    def _get_venue_stats_batch(self, kettonums: List[str]) -> Dict[str, Dict]:
-        """競馬場別成績をバッチ取得（shussobetsu_keibajo）"""
+    def _get_venue_stats_batch(self, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+        """競馬場別成績をバッチ取得（データリーク防止版）
+
+        Args:
+            kettonums: 馬番号リスト
+            entries: 出走馬情報リスト（race_codeを含む）- 当該レースを除外するために使用
+        """
         if not kettonums:
             return {}
 
-        placeholders = ','.join(['%s'] * len(kettonums))
-        result = {}
+        # 馬ごとの当該race_codeマッピングを作成
+        horse_race_map = {}
+        if entries:
+            for e in entries:
+                k = e.get('ketto_toroku_bango', '')
+                rc = e.get('race_code', '')
+                if k and rc:
+                    horse_race_map[k] = rc
 
-        # 各競馬場×芝/ダートの成績を取得
-        for venue_code, venue_name in self.VENUE_CODES.items():
-            for surface in ['shiba', 'dirt']:
-                col_prefix = f"{venue_name}_{surface}"
-                sql = f"""
-                    SELECT
-                        ketto_toroku_bango,
-                        COALESCE(NULLIF({col_prefix}_1chaku, '')::int, 0) as wins,
-                        COALESCE(NULLIF({col_prefix}_2chaku, '')::int, 0) as second,
-                        COALESCE(NULLIF({col_prefix}_3chaku, '')::int, 0) as third,
-                        COALESCE(NULLIF({col_prefix}_4chaku, '')::int, 0) +
-                        COALESCE(NULLIF({col_prefix}_5chaku, '')::int, 0) +
-                        COALESCE(NULLIF({col_prefix}_chakugai, '')::int, 0) as other
-                    FROM shussobetsu_keibajo
-                    WHERE ketto_toroku_bango IN ({placeholders})
-                """
-                try:
-                    cur = self.conn.cursor()
-                    cur.execute(sql, kettonums)
-                    for row in cur.fetchall():
-                        kettonum = row[0]
-                        wins = int(row[1] or 0)
-                        places = wins + int(row[2] or 0) + int(row[3] or 0)
-                        total = places + int(row[4] or 0)
-                        if total > 0:
-                            key = f"{kettonum}_{venue_code}_{surface}"
-                            result[key] = {
-                                'win_rate': wins / total,
-                                'place_rate': places / total,
-                                'runs': total
-                            }
-                    cur.close()
-                except Exception as e:
-                    logger.debug(f"Venue stats batch failed for {venue_name}_{surface}: {e}")
-                    self.conn.rollback()
+        placeholders = ','.join(['%s'] * len(kettonums))
+
+        # 当該レースを除外するための条件を追加
+        if horse_race_map:
+            values_parts = []
+            params = []  # 空リストから開始
+            for k in kettonums:
+                rc = horse_race_map.get(k, '9999999999999999')
+                values_parts.append("(%s, %s)")
+                params.extend([k, rc])
+
+            sql = f"""
+                WITH horse_filter AS (
+                    SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
+                )
+                SELECT
+                    u.ketto_toroku_bango,
+                    r.keibajo_code,
+                    CASE WHEN r.track_code LIKE '1%%' THEN 'shiba' ELSE 'dirt' END as surface,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                  AND u.race_code < hf.current_race_code
+                GROUP BY u.ketto_toroku_bango, r.keibajo_code, surface
+            """
+            params.extend(kettonums)  # WHERE IN用のパラメータを追加
+        else:
+            # entriesがない場合（予測時など）は全データ使用
+            sql = f"""
+                SELECT
+                    u.ketto_toroku_bango,
+                    r.keibajo_code,
+                    CASE WHEN r.track_code LIKE '1%%' THEN 'shiba' ELSE 'dirt' END as surface,
+                    COUNT(*) as runs,
+                    SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                    SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+                FROM umagoto_race_joho u
+                JOIN race_shosai r ON u.race_code = r.race_code AND r.data_kubun = '7'
+                WHERE u.ketto_toroku_bango IN ({placeholders})
+                  AND u.data_kubun = '7'
+                  AND u.kakutei_chakujun ~ '^[0-9]+$'
+                GROUP BY u.ketto_toroku_bango, r.keibajo_code, surface
+            """
+            params = kettonums
+
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, params)
+            for row in cur.fetchall():
+                kettonum = row[0]
+                venue_code = row[1]
+                surface = row[2]
+                runs = int(row[3] or 0)
+                wins = int(row[4] or 0)
+                places = int(row[5] or 0)
+                if runs > 0:
+                    key = f"{kettonum}_{venue_code}_{surface}"
+                    result[key] = {
+                        'win_rate': wins / runs,
+                        'place_rate': places / runs,
+                        'runs': runs
+                    }
+            cur.close()
+        except Exception as e:
+            logger.warning(f"Venue stats batch failed: {e}")
+            self.conn.rollback()
 
         return result
 
