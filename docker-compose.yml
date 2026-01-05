@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # スケジューラ（定期実行管理）
   scheduler:
