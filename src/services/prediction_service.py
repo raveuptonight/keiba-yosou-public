@@ -771,7 +771,7 @@ def _compute_ml_predictions(
                     place_probs = place_calibrator.predict(place_probs)
                     logger.info("Applied place_calibrator")
 
-                # 確率の正規化
+                # 確率の正規化（各確率を独立して正規化）
                 # 勝率: 合計を1.0に（1頭だけが勝つ）
                 win_sum = win_probs.sum()
                 if win_sum > 0:
@@ -779,18 +779,16 @@ def _compute_ml_predictions(
 
                 # 連対率: 合計を2.0に（2頭が2着以内）
                 if quinella_probs is not None:
-                    expected_quinella_sum = min(2.0, n_horses)  # 2頭以上なら常に2.0
+                    expected_quinella_sum = min(2.0, n_horses)
                     quinella_sum = quinella_probs.sum()
                     if quinella_sum > 0:
                         quinella_probs = quinella_probs * expected_quinella_sum / quinella_sum
-                        logger.info(f"Quinella probs normalized: sum={expected_quinella_sum:.2f}")
 
                 # 複勝率: 合計を3.0に（3頭が3着以内）
-                expected_place_sum = min(3.0, n_horses)  # 3頭以上なら常に3.0
+                expected_place_sum = min(3.0, n_horses)
                 place_sum = place_probs.sum()
                 if place_sum > 0:
                     place_probs = place_probs * expected_place_sum / place_sum
-                    logger.info(f"Place probs normalized: sum={expected_place_sum:.2f}")
             else:
                 # 旧形式: スコアを確率に変換（softmax風）
                 logger.info("Using regression scores for probability (legacy mode)")
