@@ -20,55 +20,6 @@ if not ML_MODEL_PATH.exists():
     # ローカル開発時のパス
     ML_MODEL_PATH = Path(__file__).parent.parent.parent / "models" / "ensemble_model_latest.pkl"
 
-# キャリブレーションファイルパス
-CALIBRATION_PATH = Path("/app/models/calibration.pkl")
-if not CALIBRATION_PATH.exists():
-    CALIBRATION_PATH = Path(__file__).parent.parent.parent / "models" / "calibration.pkl"
-
-# キャリブレーションデータをグローバルにキャッシュ
-_calibration_data = None
-
-# デフォルトの確率上限（キャリブレーションファイルに値がない場合のフォールバック）
-DEFAULT_MAX_PROBS = {
-    'win': 0.50,
-    'quinella': 0.65,
-    'place': 0.85,
-}
-
-
-def _load_calibrators():
-    """キャリブレーターを読み込み（遅延読み込み）"""
-    global _calibration_data
-    if _calibration_data is not None:
-        return _calibration_data.get('calibrators', {})
-
-    if not CALIBRATION_PATH.exists():
-        logger.warning(f"キャリブレーションファイルが見つかりません: {CALIBRATION_PATH}")
-        return None
-
-    try:
-        import joblib
-        _calibration_data = joblib.load(CALIBRATION_PATH)
-        calibrators = _calibration_data.get('calibrators', {})
-        max_probs = _calibration_data.get('max_probs', DEFAULT_MAX_PROBS)
-        logger.info(f"キャリブレーター読み込み完了: {list(calibrators.keys())}")
-        logger.info(f"確率上限: 単勝{max_probs.get('win', 0.5)*100:.0f}%, "
-                    f"連対{max_probs.get('quinella', 0.65)*100:.0f}%, "
-                    f"複勝{max_probs.get('place', 0.85)*100:.0f}%")
-        return calibrators
-    except Exception as e:
-        logger.error(f"キャリブレーター読み込み失敗: {e}")
-        return None
-
-
-def _get_max_probs():
-    """確率上限値を取得"""
-    global _calibration_data
-    if _calibration_data is None:
-        _load_calibrators()
-    if _calibration_data is not None:
-        return _calibration_data.get('max_probs', DEFAULT_MAX_PROBS)
-    return DEFAULT_MAX_PROBS
 from src.api.schemas.prediction import (
     PredictionResponse,
     PredictionResult,
@@ -495,6 +446,13 @@ def _apply_track_condition_adjustment(
             'track_adjustment': adjustment,
         }
 
+        # quinella_probabilityも調整
+        if 'quinella_probability' in score_data:
+            old_quinella = score_data['quinella_probability']
+            new_quinella = old_quinella * (1 + adjustment * 2.5)
+            new_quinella = max(0.005, min(0.99, new_quinella))
+            adjusted_scores[umaban_str]['quinella_probability'] = new_quinella
+
         # place_probabilityも調整
         if 'place_probability' in score_data:
             old_place = score_data['place_probability']
@@ -508,6 +466,31 @@ def _apply_track_condition_adjustment(
 
     if adjusted_count == 0:
         return ml_scores
+
+    # 確率を再正規化
+    n_horses = len(adjusted_scores)
+
+    # 勝率: 合計1.0
+    win_sum = sum(s.get('win_probability', 0) for s in adjusted_scores.values())
+    if win_sum > 0:
+        for umaban_str in adjusted_scores:
+            adjusted_scores[umaban_str]['win_probability'] /= win_sum
+
+    # 連対率: 合計2.0
+    quinella_sum = sum(s.get('quinella_probability', 0) for s in adjusted_scores.values())
+    if quinella_sum > 0:
+        expected_quinella = min(2.0, n_horses)  # 2頭以上なら常に2.0
+        for umaban_str in adjusted_scores:
+            if 'quinella_probability' in adjusted_scores[umaban_str]:
+                adjusted_scores[umaban_str]['quinella_probability'] *= expected_quinella / quinella_sum
+
+    # 複勝率: 合計3.0
+    place_sum = sum(s.get('place_probability', 0) for s in adjusted_scores.values())
+    if place_sum > 0:
+        expected_place = min(3.0, n_horses)  # 3頭以上なら常に3.0
+        for umaban_str in adjusted_scores:
+            if 'place_probability' in adjusted_scores[umaban_str]:
+                adjusted_scores[umaban_str]['place_probability'] *= expected_place / place_sum
 
     return adjusted_scores
 
@@ -689,12 +672,16 @@ def _compute_ml_predictions(
         # 分類モデル・キャリブレーター取得（新形式のみ）
         xgb_win = models_dict.get('xgb_win')
         lgb_win = models_dict.get('lgb_win')
+        xgb_quinella = models_dict.get('xgb_quinella')
+        lgb_quinella = models_dict.get('lgb_quinella')
         xgb_place = models_dict.get('xgb_place')
         lgb_place = models_dict.get('lgb_place')
         win_calibrator = models_dict.get('win_calibrator')
+        quinella_calibrator = models_dict.get('quinella_calibrator')
         place_calibrator = models_dict.get('place_calibrator')
 
         has_classifiers = xgb_win is not None and lgb_win is not None
+        has_quinella = xgb_quinella is not None and lgb_quinella is not None
 
         feature_names = model_data.get('feature_names', [])
         logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}")
@@ -752,10 +739,21 @@ def _compute_ml_predictions(
             # 分類モデルがある場合は確率を直接予測
             if has_classifiers:
                 logger.info("Using classification models for probability prediction")
+                n_horses = len(X)
+
                 # 勝利確率
                 xgb_win_prob = xgb_win.predict_proba(X)[:, 1]
                 lgb_win_prob = lgb_win.predict_proba(X)[:, 1]
                 win_probs = (xgb_win_prob + lgb_win_prob) / 2
+
+                # 連対確率（モデルがあれば使用、なければ推定）
+                if has_quinella:
+                    xgb_quinella_prob = xgb_quinella.predict_proba(X)[:, 1]
+                    lgb_quinella_prob = lgb_quinella.predict_proba(X)[:, 1]
+                    quinella_probs = (xgb_quinella_prob + lgb_quinella_prob) / 2
+                else:
+                    # 旧モデル互換: 勝率と複勝率から推定
+                    quinella_probs = None
 
                 # 複勝確率
                 xgb_place_prob = xgb_place.predict_proba(X)[:, 1]
@@ -763,10 +761,12 @@ def _compute_ml_predictions(
                 place_probs = (xgb_place_prob + lgb_place_prob) / 2
 
                 # キャリブレーション適用（モデル内蔵キャリブレーター）
-                # 注意: 3分割学習で適切に訓練されたキャリブレーターを使用
                 if win_calibrator is not None:
                     win_probs = win_calibrator.predict(win_probs)
                     logger.info("Applied win_calibrator")
+                if quinella_calibrator is not None and quinella_probs is not None:
+                    quinella_probs = quinella_calibrator.predict(quinella_probs)
+                    logger.info("Applied quinella_calibrator")
                 if place_calibrator is not None:
                     place_probs = place_calibrator.predict(place_probs)
                     logger.info("Applied place_calibrator")
@@ -777,9 +777,16 @@ def _compute_ml_predictions(
                 if win_sum > 0:
                     win_probs = win_probs / win_sum
 
-                # 複勝率: 合計を約3.0に（3頭が複勝圏内）
-                n_horses = len(win_probs)
-                expected_place_sum = min(3.0, n_horses * 0.3)  # 頭数が少ない場合は調整
+                # 連対率: 合計を2.0に（2頭が2着以内）
+                if quinella_probs is not None:
+                    expected_quinella_sum = min(2.0, n_horses)  # 2頭以上なら常に2.0
+                    quinella_sum = quinella_probs.sum()
+                    if quinella_sum > 0:
+                        quinella_probs = quinella_probs * expected_quinella_sum / quinella_sum
+                        logger.info(f"Quinella probs normalized: sum={expected_quinella_sum:.2f}")
+
+                # 複勝率: 合計を3.0に（3頭が3着以内）
+                expected_place_sum = min(3.0, n_horses)  # 3頭以上なら常に3.0
                 place_sum = place_probs.sum()
                 if place_sum > 0:
                     place_probs = place_probs * expected_place_sum / place_sum
@@ -789,7 +796,8 @@ def _compute_ml_predictions(
                 logger.info("Using regression scores for probability (legacy mode)")
                 scores_exp = np.exp(-rank_scores)
                 win_probs = scores_exp / scores_exp.sum()
-                place_probs = None  # 旧形式では複勝確率なし
+                quinella_probs = None
+                place_probs = None
 
             # 結果を辞書形式に変換
             ml_scores = {}
@@ -799,6 +807,8 @@ def _compute_ml_predictions(
                     "rank_score": float(rank_scores[i]),
                     "win_probability": float(win_probs[i])
                 }
+                if quinella_probs is not None:
+                    score_data["quinella_probability"] = float(quinella_probs[i])
                 if place_probs is not None:
                     score_data["place_probability"] = float(place_probs[i])
                 ml_scores[str(horse_num)] = score_data
@@ -985,6 +995,7 @@ def _generate_ml_only_prediction(
             "jockey_name": horse.get("kishumei", ""),
             "rank_score": score_data.get("rank_score", 999),
             "win_probability": score_data.get("win_probability", 0.0),
+            "quinella_probability": score_data.get("quinella_probability"),  # モデルからの連対確率（あれば）
             "place_probability": score_data.get("place_probability"),  # モデルからの複勝確率（あれば）
         })
 
@@ -1033,39 +1044,31 @@ def _generate_ml_only_prediction(
         }
 
     # ランキングエントリを生成
-    # 注意: 外部キャリブレーターは二重適用になるため使用しない
-    # モデル内蔵キャリブレーター（3分割学習）で適切にキャリブレーション済み
+    # 注意: 確率はすでにモデルで予測・正規化済み
+    # - 勝率: 合計1.0
+    # - 連対率: 合計2.0
+    # - 複勝率: 合計3.0
     ranked_horses = []
     for i, h in enumerate(scored_horses):
         rank = i + 1
         win_prob = h["win_probability"]
+        model_quinella_prob = h.get("quinella_probability")  # モデルからの連対確率
         model_place_prob = h.get("place_probability")  # モデルからの複勝確率
 
+        # 順位分布を計算（表示用）
         pos_dist = calc_position_distribution(win_prob, model_place_prob, rank, n_horses)
 
-        # 連対率（2着以内確率）- 上限1.0
-        quinella_prob = min(1.0, pos_dist["first"] + pos_dist["second"])
-        # 複勝率（3着以内確率）- モデルからの値があればそれを使用、なければ分布から計算
+        # 連対率: モデルからの値を優先、なければ分布から計算
+        if model_quinella_prob is not None:
+            quinella_prob = model_quinella_prob
+        else:
+            quinella_prob = min(1.0, pos_dist["first"] + pos_dist["second"])
+
+        # 複勝率: モデルからの値を優先、なければ分布から計算
         if model_place_prob is not None:
             place_prob = model_place_prob
         else:
             place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
-
-        # 保守的な確率上限（過信防止）
-        # キャリブレーションファイルから動的に取得、なければデフォルト値を使用
-        max_probs = _get_max_probs()
-        MAX_WIN_PROB = max_probs.get('win', 0.50)
-        MAX_QUINELLA_PROB = max_probs.get('quinella', 0.65)
-        MAX_PLACE_PROB = max_probs.get('place', 0.85)
-
-        win_prob = max(0.01, min(MAX_WIN_PROB, win_prob))
-        quinella_prob = max(0.02, min(MAX_QUINELLA_PROB, quinella_prob))
-        place_prob = max(0.05, min(MAX_PLACE_PROB, place_prob))
-
-        # 論理的整合性を確保: 複勝率 ≥ 連対率 ≥ 勝率
-        # （3着以内に入る確率は、2着以内に入る確率以上、1着になる確率以上）
-        quinella_prob = max(quinella_prob, win_prob * 1.3)  # 連対率は勝率の1.3倍以上
-        place_prob = max(place_prob, quinella_prob * 1.2)   # 複勝率は連対率の1.2倍以上
 
         # 個別の信頼度（データの完全性と確率の分離度から算出）
         # 勝率が次の馬と十分に離れているかで信頼度を評価

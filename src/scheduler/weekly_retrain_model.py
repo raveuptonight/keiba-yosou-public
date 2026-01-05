@@ -111,8 +111,9 @@ class WeeklyRetrain:
             y = df['target']
 
             # 分類用ターゲット
-            y_win = (y == 1).astype(int)
-            y_place = (y <= 3).astype(int)
+            y_win = (y == 1).astype(int)      # 1着かどうか
+            y_quinella = (y <= 2).astype(int)  # 2着以内かどうか（連対）
+            y_place = (y <= 3).astype(int)    # 3着以内かどうか（複勝）
 
             # ===== 3分割（時系列順）=====
             # train (70%): モデル学習用
@@ -136,6 +137,11 @@ class WeeklyRetrain:
             y_win_calib = y_win[train_end:calib_end]
             y_win_test = y_win[calib_end:]
             y_win_val = y_win_calib
+
+            y_quinella_train = y_quinella[:train_end]
+            y_quinella_calib = y_quinella[train_end:calib_end]
+            y_quinella_test = y_quinella[calib_end:]
+            y_quinella_val = y_quinella_calib
 
             y_place_train = y_place[:train_end]
             y_place_calib = y_place[train_end:calib_end]
@@ -197,7 +203,27 @@ class WeeklyRetrain:
             win_accuracy = ((ensemble_win_prob > 0.5) == y_win_val).mean()
             logger.info(f"勝利分類精度 (ensemble): {win_accuracy:.4f}")
 
-            # ===== 3. 複勝分類モデル =====
+            # ===== 3. 連対分類モデル =====
+            quinella_weight = len(y_quinella_train[y_quinella_train == 0]) / max(len(y_quinella_train[y_quinella_train == 1]), 1)
+
+            logger.info("XGBoost連対分類モデル学習中...")
+            xgb_quinella = xgb.XGBClassifier(**base_params, scale_pos_weight=quinella_weight)
+            xgb_quinella.fit(X_train, y_quinella_train, eval_set=[(X_val, y_quinella_val)], verbose=False)
+            models['xgb_quinella'] = xgb_quinella
+
+            logger.info("LightGBM連対分類モデル学習中...")
+            lgb_quinella = lgb.LGBMClassifier(**base_params, scale_pos_weight=quinella_weight, verbose=-1)
+            lgb_quinella.fit(X_train, y_quinella_train, eval_set=[(X_val, y_quinella_val)])
+            models['lgb_quinella'] = lgb_quinella
+
+            # 連対アンサンブル確率
+            xgb_quinella_prob = xgb_quinella.predict_proba(X_val)[:, 1]
+            lgb_quinella_prob = lgb_quinella.predict_proba(X_val)[:, 1]
+            ensemble_quinella_prob = (xgb_quinella_prob + lgb_quinella_prob) / 2
+            quinella_accuracy = ((ensemble_quinella_prob > 0.5) == y_quinella_val).mean()
+            logger.info(f"連対分類精度 (ensemble): {quinella_accuracy:.4f}")
+
+            # ===== 4. 複勝分類モデル =====
             place_weight = len(y_place_train[y_place_train == 0]) / max(len(y_place_train[y_place_train == 1]), 1)
 
             logger.info("XGBoost複勝分類モデル学習中...")
@@ -217,13 +243,17 @@ class WeeklyRetrain:
             place_accuracy = ((ensemble_place_prob > 0.5) == y_place_val).mean()
             logger.info(f"複勝分類精度 (ensemble): {place_accuracy:.4f}")
 
-            # ===== 4. キャリブレーション（calibデータで学習）=====
+            # ===== 5. キャリブレーション（calibデータで学習）=====
             logger.info("キャリブレーション学習中（calibデータ使用）...")
 
             # calibデータで予測（キャリブレーター学習用）
             xgb_win_prob_calib = xgb_win.predict_proba(X_calib)[:, 1]
             lgb_win_prob_calib = lgb_win.predict_proba(X_calib)[:, 1]
             ensemble_win_prob_calib = (xgb_win_prob_calib + lgb_win_prob_calib) / 2
+
+            xgb_quinella_prob_calib = xgb_quinella.predict_proba(X_calib)[:, 1]
+            lgb_quinella_prob_calib = lgb_quinella.predict_proba(X_calib)[:, 1]
+            ensemble_quinella_prob_calib = (xgb_quinella_prob_calib + lgb_quinella_prob_calib) / 2
 
             xgb_place_prob_calib = xgb_place.predict_proba(X_calib)[:, 1]
             lgb_place_prob_calib = lgb_place.predict_proba(X_calib)[:, 1]
@@ -234,11 +264,15 @@ class WeeklyRetrain:
             win_calibrator.fit(ensemble_win_prob_calib, y_win_calib)
             models['win_calibrator'] = win_calibrator
 
+            quinella_calibrator = IsotonicRegression(out_of_bounds='clip')
+            quinella_calibrator.fit(ensemble_quinella_prob_calib, y_quinella_calib)
+            models['quinella_calibrator'] = quinella_calibrator
+
             place_calibrator = IsotonicRegression(out_of_bounds='clip')
             place_calibrator.fit(ensemble_place_prob_calib, y_place_calib)
             models['place_calibrator'] = place_calibrator
 
-            # ===== 5. 最終評価（testデータ）=====
+            # ===== 6. 最終評価（testデータ）=====
             logger.info("最終評価中（testデータ使用）...")
             from sklearn.metrics import roc_auc_score, brier_score_loss
 
@@ -251,23 +285,32 @@ class WeeklyRetrain:
             lgb_win_prob_test = lgb_win.predict_proba(X_test)[:, 1]
             ensemble_win_prob_test = (xgb_win_prob_test + lgb_win_prob_test) / 2
 
+            xgb_quinella_prob_test = xgb_quinella.predict_proba(X_test)[:, 1]
+            lgb_quinella_prob_test = lgb_quinella.predict_proba(X_test)[:, 1]
+            ensemble_quinella_prob_test = (xgb_quinella_prob_test + lgb_quinella_prob_test) / 2
+
             xgb_place_prob_test = xgb_place.predict_proba(X_test)[:, 1]
             lgb_place_prob_test = lgb_place.predict_proba(X_test)[:, 1]
             ensemble_place_prob_test = (xgb_place_prob_test + lgb_place_prob_test) / 2
 
             # キャリブレーション適用
             calibrated_win_test = win_calibrator.predict(ensemble_win_prob_test)
+            calibrated_quinella_test = quinella_calibrator.predict(ensemble_quinella_prob_test)
             calibrated_place_test = place_calibrator.predict(ensemble_place_prob_test)
 
             # AUC-ROC（キャリブレーション前後）
             win_auc_raw = roc_auc_score(y_win_test, ensemble_win_prob_test)
             win_auc = roc_auc_score(y_win_test, calibrated_win_test)
+            quinella_auc_raw = roc_auc_score(y_quinella_test, ensemble_quinella_prob_test)
+            quinella_auc = roc_auc_score(y_quinella_test, calibrated_quinella_test)
             place_auc_raw = roc_auc_score(y_place_test, ensemble_place_prob_test)
             place_auc = roc_auc_score(y_place_test, calibrated_place_test)
 
             # Brier Score（キャリブレーション前後）
             win_brier_raw = brier_score_loss(y_win_test, ensemble_win_prob_test)
             win_brier = brier_score_loss(y_win_test, calibrated_win_test)
+            quinella_brier_raw = brier_score_loss(y_quinella_test, ensemble_quinella_prob_test)
+            quinella_brier = brier_score_loss(y_quinella_test, calibrated_quinella_test)
             place_brier_raw = brier_score_loss(y_place_test, ensemble_place_prob_test)
             place_brier = brier_score_loss(y_place_test, calibrated_place_test)
 
@@ -301,11 +344,13 @@ class WeeklyRetrain:
             logger.info("📊 モデル評価指標（testデータ）")
             logger.info("=" * 50)
             logger.info(f"勝利AUC:      {win_auc:.4f} (raw: {win_auc_raw:.4f})  {'✅ 良好' if win_auc >= 0.70 else '⚠️ 要改善'}")
+            logger.info(f"連対AUC:      {quinella_auc:.4f} (raw: {quinella_auc_raw:.4f})  {'✅ 良好' if quinella_auc >= 0.68 else '⚠️ 要改善'}")
             logger.info(f"複勝AUC:      {place_auc:.4f} (raw: {place_auc_raw:.4f})  {'✅ 良好' if place_auc >= 0.65 else '⚠️ 要改善'}")
             logger.info(f"勝利Brier:    {win_brier:.4f} (raw: {win_brier_raw:.4f}, 改善: {(win_brier_raw - win_brier) / win_brier_raw * 100:.1f}%)")
+            logger.info(f"連対Brier:    {quinella_brier:.4f} (raw: {quinella_brier_raw:.4f}, 改善: {(quinella_brier_raw - quinella_brier) / quinella_brier_raw * 100:.1f}%)")
             logger.info(f"複勝Brier:    {place_brier:.4f} (raw: {place_brier_raw:.4f}, 改善: {(place_brier_raw - place_brier) / place_brier_raw * 100:.1f}%)")
             logger.info(f"Top-3カバー率: {top3_coverage*100:.1f}%  {'✅ 良好' if top3_coverage >= 0.55 else '⚠️ 要改善'}")
-            logger.info(f"キャリブ後 - 勝率平均: {calibrated_win_test.mean():.4f}, 複勝率平均: {calibrated_place_test.mean():.4f}")
+            logger.info(f"キャリブ後 - 勝率平均: {calibrated_win_test.mean():.4f}, 連対率平均: {calibrated_quinella_test.mean():.4f}, 複勝率平均: {calibrated_place_test.mean():.4f}")
             logger.info("=" * 50)
 
             # 一時保存
@@ -324,15 +369,18 @@ class WeeklyRetrain:
                 'test_size': len(X_test),
                 'validation_rmse': float(rmse),
                 'win_accuracy': float(win_accuracy),
+                'quinella_accuracy': float(quinella_accuracy),
                 'place_accuracy': float(place_accuracy),
                 # 評価指標（testデータ、キャリブレーション後）
                 'win_auc': float(win_auc),
+                'quinella_auc': float(quinella_auc),
                 'place_auc': float(place_auc),
                 'win_brier': float(win_brier),
+                'quinella_brier': float(quinella_brier),
                 'place_brier': float(place_brier),
                 'top3_coverage': float(top3_coverage),
                 'years': years,
-                'version': 'v3_calibrated_ensemble'  # バージョン更新
+                'version': 'v4_quinella_ensemble'  # バージョン更新
             }
             joblib.dump(model_data, temp_model_path)
 
@@ -341,10 +389,13 @@ class WeeklyRetrain:
                 'model_path': str(temp_model_path),
                 'rmse': float(rmse),
                 'win_accuracy': float(win_accuracy),
+                'quinella_accuracy': float(quinella_accuracy),
                 'place_accuracy': float(place_accuracy),
                 'win_auc': float(win_auc),
+                'quinella_auc': float(quinella_auc),
                 'place_auc': float(place_auc),
                 'win_brier': float(win_brier),
+                'quinella_brier': float(quinella_brier),
                 'top3_coverage': float(top3_coverage),
                 'samples': len(df)
             }
