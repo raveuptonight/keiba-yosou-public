@@ -763,12 +763,14 @@ def _compute_ml_predictions(
                 place_probs = (xgb_place_prob + lgb_place_prob) / 2
 
                 # キャリブレーション適用（モデル内蔵キャリブレーター）
-                if win_calibrator is not None:
-                    win_probs = win_calibrator.predict(win_probs)
-                    logger.info("Applied win_calibrator")
-                if place_calibrator is not None:
-                    place_probs = place_calibrator.predict(place_probs)
-                    logger.info("Applied place_calibrator")
+                # 注意: IsotonicRegressionが小さい値を0に変換するバグがあるため一時無効化
+                # if win_calibrator is not None:
+                #     win_probs = win_calibrator.predict(win_probs)
+                #     logger.info("Applied win_calibrator")
+                # if place_calibrator is not None:
+                #     place_probs = place_calibrator.predict(place_probs)
+                #     logger.info("Applied place_calibrator")
+                logger.info("Internal calibrators skipped (temporary fix)")
 
                 # 確率の正規化（勝率の合計を1に）
                 win_sum = win_probs.sum()
@@ -794,6 +796,11 @@ def _compute_ml_predictions(
                 ml_scores[str(horse_num)] = score_data
 
             logger.info(f"ML predictions computed: {len(ml_scores)} horses")
+
+            # デバッグ: ML scores の確認
+            sample_scores = list(ml_scores.items())[:3]
+            for umaban, data in sample_scores:
+                logger.info(f"DEBUG ml_score[{umaban}]: win={data.get('win_probability', 0)*100:.4f}%")
 
             # バイアス適用
             # 優先順位:
@@ -973,8 +980,10 @@ def _generate_ml_only_prediction(
             "place_probability": score_data.get("place_probability"),  # モデルからの複勝確率（あれば）
         })
 
-    # スコア順にソート
-    scored_horses.sort(key=lambda x: x["rank_score"])
+    # 勝率順にソート（勝率が高い馬が上位）
+    # 注意: rank_scoreではなくwin_probabilityを使用することで、
+    # ユーザーに表示される勝率と順位が一致する
+    scored_horses.sort(key=lambda x: x["win_probability"], reverse=True)
 
     # 順位分布を計算
     def calc_position_distribution(
@@ -1035,10 +1044,9 @@ def _generate_ml_only_prediction(
         else:
             place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
 
-        # キャリブレーション適用（外部キャリブレーター - モデル未適用の場合のみ）
-        # モデルに内蔵キャリブレーターがある場合は既に適用済み
-        if calibrators and model_place_prob is None:
-            # 旧形式モデルの場合のみ外部キャリブレーターを適用
+        # キャリブレーション適用（外部キャリブレーター）
+        # 注意: 内部キャリブレーターは一時的に無効化されているため、外部キャリブレーターを適用
+        if calibrators:
             if 'win' in calibrators:
                 win_prob = float(calibrators['win'].predict(np.array([[win_prob]]).ravel())[0])
             if 'quinella' in calibrators:
@@ -1057,11 +1065,17 @@ def _generate_ml_only_prediction(
         quinella_prob = max(0.02, min(MAX_QUINELLA_PROB, quinella_prob))
         place_prob = max(0.05, min(MAX_PLACE_PROB, place_prob))
 
-        # 個別の信頼度（データの完全性とスコアの分離度から算出）
-        # スコアが他の馬と十分に離れているかで信頼度を評価
+        # 論理的整合性を確保: 複勝率 ≥ 連対率 ≥ 勝率
+        # （3着以内に入る確率は、2着以内に入る確率以上、1着になる確率以上）
+        quinella_prob = max(quinella_prob, win_prob * 1.3)  # 連対率は勝率の1.3倍以上
+        place_prob = max(place_prob, quinella_prob * 1.2)   # 複勝率は連対率の1.2倍以上
+
+        # 個別の信頼度（データの完全性と確率の分離度から算出）
+        # 勝率が次の馬と十分に離れているかで信頼度を評価
         if i < len(scored_horses) - 1:
-            score_gap = scored_horses[i + 1]["rank_score"] - h["rank_score"]
-            confidence = min(0.95, 0.5 + score_gap * 0.3)
+            prob_gap = h["win_probability"] - scored_horses[i + 1]["win_probability"]
+            # 確率の差に基づいて信頼度を計算（0.0〜0.95）
+            confidence = min(0.95, max(0.1, 0.5 + prob_gap * 5))
         else:
             confidence = 0.5
 
