@@ -114,14 +114,35 @@ class WeeklyRetrain:
             y_win = (y == 1).astype(int)
             y_place = (y <= 3).astype(int)
 
-            # 時系列分割
-            split_idx = int(len(df) * 0.8)
-            X_train, X_val = X[:split_idx], X[split_idx:]
-            y_train, y_val = y[:split_idx], y[split_idx:]
-            y_win_train, y_win_val = y_win[:split_idx], y_win[split_idx:]
-            y_place_train, y_place_val = y_place[:split_idx], y_place[split_idx:]
+            # ===== 3分割（時系列順）=====
+            # train (70%): モデル学習用
+            # calib (15%): キャリブレーター学習用（データリーク防止）
+            # test  (15%): 最終評価用
+            n = len(df)
+            train_end = int(n * 0.70)
+            calib_end = int(n * 0.85)
 
-            logger.info(f"訓練: {len(X_train)}, 検証: {len(X_val)}")
+            X_train = X[:train_end]
+            X_calib = X[train_end:calib_end]  # キャリブレーション用
+            X_test = X[calib_end:]             # 最終評価用
+            X_val = X_calib  # early stoppingにはcalibデータを使用
+
+            y_train = y[:train_end]
+            y_calib = y[train_end:calib_end]
+            y_test = y[calib_end:]
+            y_val = y_calib
+
+            y_win_train = y_win[:train_end]
+            y_win_calib = y_win[train_end:calib_end]
+            y_win_test = y_win[calib_end:]
+            y_win_val = y_win_calib
+
+            y_place_train = y_place[:train_end]
+            y_place_calib = y_place[train_end:calib_end]
+            y_place_test = y_place[calib_end:]
+            y_place_val = y_place_calib
+
+            logger.info(f"訓練: {len(X_train)}, キャリブ: {len(X_calib)}, テスト: {len(X_test)}")
 
             # 共通パラメータ
             base_params = {
@@ -196,63 +217,96 @@ class WeeklyRetrain:
             place_accuracy = ((ensemble_place_prob > 0.5) == y_place_val).mean()
             logger.info(f"複勝分類精度 (ensemble): {place_accuracy:.4f}")
 
-            # ===== 評価指標の計算 =====
-            from sklearn.metrics import roc_auc_score, brier_score_loss
+            # ===== 4. キャリブレーション（calibデータで学習）=====
+            logger.info("キャリブレーション学習中（calibデータ使用）...")
 
-            # AUC-ROC
-            win_auc = roc_auc_score(y_win_val, ensemble_win_prob)
-            place_auc = roc_auc_score(y_place_val, ensemble_place_prob)
+            # calibデータで予測（キャリブレーター学習用）
+            xgb_win_prob_calib = xgb_win.predict_proba(X_calib)[:, 1]
+            lgb_win_prob_calib = lgb_win.predict_proba(X_calib)[:, 1]
+            ensemble_win_prob_calib = (xgb_win_prob_calib + lgb_win_prob_calib) / 2
 
-            # Brier Score（勝利予測）
-            win_brier = brier_score_loss(y_win_val, ensemble_win_prob)
+            xgb_place_prob_calib = xgb_place.predict_proba(X_calib)[:, 1]
+            lgb_place_prob_calib = lgb_place.predict_proba(X_calib)[:, 1]
+            ensemble_place_prob_calib = (xgb_place_prob_calib + lgb_place_prob_calib) / 2
 
-            # Top-3カバー率（レースごとに勝ち馬が予測TOP3に入っているか）
-            val_df = df.iloc[split_idx:].copy()
-            val_df['pred_score'] = ensemble_pred
-            val_df['win_prob'] = ensemble_win_prob
-
-            top3_hits = 0
-            total_races = 0
-            for race_code, group in val_df.groupby('race_code'):
-                if len(group) < 3:
-                    continue
-                # 勝ち馬を特定
-                winner = group[group['target'] == 1]
-                if len(winner) == 0:
-                    continue
-                # 予測スコアでソート（低いほど上位）
-                sorted_group = group.sort_values('pred_score')
-                top3_horses = sorted_group.head(3).index.tolist()
-                # 勝ち馬がTOP3に含まれるか
-                if winner.index[0] in top3_horses:
-                    top3_hits += 1
-                total_races += 1
-
-            top3_coverage = top3_hits / total_races if total_races > 0 else 0
-
-            # 評価結果をログ出力
-            logger.info("=" * 50)
-            logger.info("📊 モデル評価指標")
-            logger.info("=" * 50)
-            logger.info(f"勝利AUC:      {win_auc:.4f}  {'✅ 良好' if win_auc >= 0.70 else '⚠️ 要改善'} {'🌟 優秀' if win_auc >= 0.80 else ''}")
-            logger.info(f"複勝AUC:      {place_auc:.4f}  {'✅ 良好' if place_auc >= 0.65 else '⚠️ 要改善'} {'🌟 優秀' if place_auc >= 0.75 else ''}")
-            logger.info(f"Brier(勝利):  {win_brier:.4f}  {'✅ 良好' if win_brier <= 0.07 else '⚠️ 要改善'} {'🌟 優秀' if win_brier <= 0.05 else ''}")
-            logger.info(f"Top-3カバー率: {top3_coverage*100:.1f}%  {'✅ 良好' if top3_coverage >= 0.55 else '⚠️ 要改善'} {'🌟 優秀' if top3_coverage >= 0.65 else ''}")
-            logger.info("=" * 50)
-
-            # ===== 4. キャリブレーション =====
-            logger.info("キャリブレーション学習中...")
+            # キャリブレーター学習
             win_calibrator = IsotonicRegression(out_of_bounds='clip')
-            win_calibrator.fit(ensemble_win_prob, y_win_val)
+            win_calibrator.fit(ensemble_win_prob_calib, y_win_calib)
             models['win_calibrator'] = win_calibrator
 
             place_calibrator = IsotonicRegression(out_of_bounds='clip')
-            place_calibrator.fit(ensemble_place_prob, y_place_val)
+            place_calibrator.fit(ensemble_place_prob_calib, y_place_calib)
             models['place_calibrator'] = place_calibrator
 
-            calibrated_win = win_calibrator.predict(ensemble_win_prob)
-            calibrated_place = place_calibrator.predict(ensemble_place_prob)
-            logger.info(f"キャリブレーション後 - 勝率平均: {calibrated_win.mean():.4f}, 複勝率平均: {calibrated_place.mean():.4f}")
+            # ===== 5. 最終評価（testデータ）=====
+            logger.info("最終評価中（testデータ使用）...")
+            from sklearn.metrics import roc_auc_score, brier_score_loss
+
+            # testデータで予測
+            xgb_pred_test = xgb_reg.predict(X_test)
+            lgb_pred_test = lgb_reg.predict(X_test)
+            ensemble_pred_test = (xgb_pred_test + lgb_pred_test) / 2
+
+            xgb_win_prob_test = xgb_win.predict_proba(X_test)[:, 1]
+            lgb_win_prob_test = lgb_win.predict_proba(X_test)[:, 1]
+            ensemble_win_prob_test = (xgb_win_prob_test + lgb_win_prob_test) / 2
+
+            xgb_place_prob_test = xgb_place.predict_proba(X_test)[:, 1]
+            lgb_place_prob_test = lgb_place.predict_proba(X_test)[:, 1]
+            ensemble_place_prob_test = (xgb_place_prob_test + lgb_place_prob_test) / 2
+
+            # キャリブレーション適用
+            calibrated_win_test = win_calibrator.predict(ensemble_win_prob_test)
+            calibrated_place_test = place_calibrator.predict(ensemble_place_prob_test)
+
+            # AUC-ROC（キャリブレーション前後）
+            win_auc_raw = roc_auc_score(y_win_test, ensemble_win_prob_test)
+            win_auc = roc_auc_score(y_win_test, calibrated_win_test)
+            place_auc_raw = roc_auc_score(y_place_test, ensemble_place_prob_test)
+            place_auc = roc_auc_score(y_place_test, calibrated_place_test)
+
+            # Brier Score（キャリブレーション前後）
+            win_brier_raw = brier_score_loss(y_win_test, ensemble_win_prob_test)
+            win_brier = brier_score_loss(y_win_test, calibrated_win_test)
+            place_brier_raw = brier_score_loss(y_place_test, ensemble_place_prob_test)
+            place_brier = brier_score_loss(y_place_test, calibrated_place_test)
+
+            # Top-3カバー率（testデータで評価）
+            top3_coverage = 0.0
+            if 'race_code' in df.columns:
+                test_df = df.iloc[calib_end:].copy()
+                test_df['pred_score'] = ensemble_pred_test
+                test_df['win_prob'] = calibrated_win_test
+
+                top3_hits = 0
+                total_races = 0
+                for race_code, group in test_df.groupby('race_code'):
+                    if len(group) < 3:
+                        continue
+                    winner = group[group['target'] == 1]
+                    if len(winner) == 0:
+                        continue
+                    sorted_group = group.sort_values('pred_score')
+                    top3_horses = sorted_group.head(3).index.tolist()
+                    if winner.index[0] in top3_horses:
+                        top3_hits += 1
+                    total_races += 1
+
+                top3_coverage = top3_hits / total_races if total_races > 0 else 0
+            else:
+                logger.warning("race_codeカラムがないためTop-3カバー率をスキップ")
+
+            # 評価結果をログ出力
+            logger.info("=" * 50)
+            logger.info("📊 モデル評価指標（testデータ）")
+            logger.info("=" * 50)
+            logger.info(f"勝利AUC:      {win_auc:.4f} (raw: {win_auc_raw:.4f})  {'✅ 良好' if win_auc >= 0.70 else '⚠️ 要改善'}")
+            logger.info(f"複勝AUC:      {place_auc:.4f} (raw: {place_auc_raw:.4f})  {'✅ 良好' if place_auc >= 0.65 else '⚠️ 要改善'}")
+            logger.info(f"勝利Brier:    {win_brier:.4f} (raw: {win_brier_raw:.4f}, 改善: {(win_brier_raw - win_brier) / win_brier_raw * 100:.1f}%)")
+            logger.info(f"複勝Brier:    {place_brier:.4f} (raw: {place_brier_raw:.4f}, 改善: {(place_brier_raw - place_brier) / place_brier_raw * 100:.1f}%)")
+            logger.info(f"Top-3カバー率: {top3_coverage*100:.1f}%  {'✅ 良好' if top3_coverage >= 0.55 else '⚠️ 要改善'}")
+            logger.info(f"キャリブ後 - 勝率平均: {calibrated_win_test.mean():.4f}, 複勝率平均: {calibrated_place_test.mean():.4f}")
+            logger.info("=" * 50)
 
             # 一時保存
             temp_model_path = self.model_dir / "ensemble_model_new.pkl"
@@ -265,16 +319,20 @@ class WeeklyRetrain:
                 'feature_names': feature_cols,
                 'trained_at': datetime.now().isoformat(),
                 'training_samples': len(df),
+                'train_size': len(X_train),
+                'calib_size': len(X_calib),
+                'test_size': len(X_test),
                 'validation_rmse': float(rmse),
                 'win_accuracy': float(win_accuracy),
                 'place_accuracy': float(place_accuracy),
-                # 評価指標
+                # 評価指標（testデータ、キャリブレーション後）
                 'win_auc': float(win_auc),
                 'place_auc': float(place_auc),
                 'win_brier': float(win_brier),
+                'place_brier': float(place_brier),
                 'top3_coverage': float(top3_coverage),
                 'years': years,
-                'version': 'v2_enhanced_ensemble'
+                'version': 'v3_calibrated_ensemble'  # バージョン更新
             }
             joblib.dump(model_data, temp_model_path)
 

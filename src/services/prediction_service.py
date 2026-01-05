@@ -763,19 +763,27 @@ def _compute_ml_predictions(
                 place_probs = (xgb_place_prob + lgb_place_prob) / 2
 
                 # キャリブレーション適用（モデル内蔵キャリブレーター）
-                # 注意: IsotonicRegressionが小さい値を0に変換するバグがあるため一時無効化
-                # if win_calibrator is not None:
-                #     win_probs = win_calibrator.predict(win_probs)
-                #     logger.info("Applied win_calibrator")
-                # if place_calibrator is not None:
-                #     place_probs = place_calibrator.predict(place_probs)
-                #     logger.info("Applied place_calibrator")
-                logger.info("Internal calibrators skipped (temporary fix)")
+                # 注意: 3分割学習で適切に訓練されたキャリブレーターを使用
+                if win_calibrator is not None:
+                    win_probs = win_calibrator.predict(win_probs)
+                    logger.info("Applied win_calibrator")
+                if place_calibrator is not None:
+                    place_probs = place_calibrator.predict(place_probs)
+                    logger.info("Applied place_calibrator")
 
-                # 確率の正規化（勝率の合計を1に）
+                # 確率の正規化
+                # 勝率: 合計を1.0に（1頭だけが勝つ）
                 win_sum = win_probs.sum()
                 if win_sum > 0:
                     win_probs = win_probs / win_sum
+
+                # 複勝率: 合計を約3.0に（3頭が複勝圏内）
+                n_horses = len(win_probs)
+                expected_place_sum = min(3.0, n_horses * 0.3)  # 頭数が少ない場合は調整
+                place_sum = place_probs.sum()
+                if place_sum > 0:
+                    place_probs = place_probs * expected_place_sum / place_sum
+                    logger.info(f"Place probs normalized: sum={expected_place_sum:.2f}")
             else:
                 # 旧形式: スコアを確率に変換（softmax風）
                 logger.info("Using regression scores for probability (legacy mode)")
@@ -1024,10 +1032,9 @@ def _generate_ml_only_prediction(
             "out_of_place": round(out, 4),
         }
 
-    # キャリブレーターを読み込み
-    calibrators = _load_calibrators()
-
     # ランキングエントリを生成
+    # 注意: 外部キャリブレーターは二重適用になるため使用しない
+    # モデル内蔵キャリブレーター（3分割学習）で適切にキャリブレーション済み
     ranked_horses = []
     for i, h in enumerate(scored_horses):
         rank = i + 1
@@ -1043,16 +1050,6 @@ def _generate_ml_only_prediction(
             place_prob = model_place_prob
         else:
             place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
-
-        # キャリブレーション適用（外部キャリブレーター）
-        # 注意: 内部キャリブレーターは一時的に無効化されているため、外部キャリブレーターを適用
-        if calibrators:
-            if 'win' in calibrators:
-                win_prob = float(calibrators['win'].predict(np.array([[win_prob]]).ravel())[0])
-            if 'quinella' in calibrators:
-                quinella_prob = float(calibrators['quinella'].predict(np.array([[quinella_prob]]).ravel())[0])
-            if 'place' in calibrators:
-                place_prob = float(calibrators['place'].predict(np.array([[place_prob]]).ravel())[0])
 
         # 保守的な確率上限（過信防止）
         # キャリブレーションファイルから動的に取得、なければデフォルト値を使用

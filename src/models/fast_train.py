@@ -642,6 +642,9 @@ class FastFeatureExtractor:
 
         features = {}
 
+        # レース識別情報（グループ化・評価用、特徴量として使用しない）
+        features['race_code'] = race_code
+
         # 基本情報
         features['umaban'] = self._safe_int(entry.get('umaban'), 0)
         features['wakuban'] = self._safe_int(entry.get('wakuban'), 0)
@@ -1523,6 +1526,11 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
     """
     モデルを学習（回帰 + 分類 + キャリブレーション）
 
+    3分割構成（時系列順）:
+    - train (70%): モデル学習用
+    - calib (15%): キャリブレーター学習用（データリーク防止）
+    - test  (15%): 最終評価用
+
     Args:
         df: 特徴量DataFrame（target列含む）
         use_gpu: GPU使用フラグ
@@ -1543,14 +1551,32 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
     y_win = (y == 1).astype(int)  # 1着かどうか
     y_place = (y <= 3).astype(int)  # 3着以内かどうか
 
-    # 訓練/検証分割（時系列を考慮して後ろ20%を検証用）
-    split_idx = int(len(X) * 0.8)
-    X_train, X_val = X.iloc[:split_idx], X.iloc[split_idx:]
-    y_train, y_val = y.iloc[:split_idx], y.iloc[split_idx:]
-    y_win_train, y_win_val = y_win.iloc[:split_idx], y_win.iloc[split_idx:]
-    y_place_train, y_place_val = y_place.iloc[:split_idx], y_place.iloc[split_idx:]
+    # ===== 3分割（時系列順）=====
+    n = len(X)
+    train_end = int(n * 0.70)
+    calib_end = int(n * 0.85)
 
-    logger.info(f"訓練データ: {len(X_train)}, 検証データ: {len(X_val)}")
+    X_train = X.iloc[:train_end]
+    X_calib = X.iloc[train_end:calib_end]  # キャリブレーション用
+    X_test = X.iloc[calib_end:]             # 最終評価用
+    X_val = X_calib  # early stoppingにはcalibデータを使用
+
+    y_train = y.iloc[:train_end]
+    y_calib = y.iloc[train_end:calib_end]
+    y_test = y.iloc[calib_end:]
+    y_val = y_calib
+
+    y_win_train = y_win.iloc[:train_end]
+    y_win_calib = y_win.iloc[train_end:calib_end]
+    y_win_test = y_win.iloc[calib_end:]
+    y_win_val = y_win_calib
+
+    y_place_train = y_place.iloc[:train_end]
+    y_place_calib = y_place.iloc[train_end:calib_end]
+    y_place_test = y_place.iloc[calib_end:]
+    y_place_val = y_place_calib
+
+    logger.info(f"訓練: {len(X_train)}, キャリブ: {len(X_calib)}, テスト: {len(X_test)}")
 
     # 共通パラメータ
     base_params = {
@@ -1636,23 +1662,52 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
     place_accuracy = ((pred_place_prob > 0.5) == y_place_val).mean()
     logger.info(f"複勝分類モデル精度: {place_accuracy:.4f}")
 
-    # ===== 4. キャリブレーション =====
+    # ===== 4. キャリブレーション（calibデータで学習）=====
     logger.info("キャリブレーション学習中...")
+
+    # calibデータで予測（キャリブレーター学習用）
+    pred_win_prob_calib = win_model.predict_proba(X_calib)[:, 1]
+    pred_place_prob_calib = place_model.predict_proba(X_calib)[:, 1]
 
     # 勝利確率のキャリブレーション
     win_calibrator = IsotonicRegression(out_of_bounds='clip')
-    win_calibrator.fit(pred_win_prob, y_win_val)
+    win_calibrator.fit(pred_win_prob_calib, y_win_calib)
     models['win_calibrator'] = win_calibrator
 
     # 複勝確率のキャリブレーション
     place_calibrator = IsotonicRegression(out_of_bounds='clip')
-    place_calibrator.fit(pred_place_prob, y_place_val)
+    place_calibrator.fit(pred_place_prob_calib, y_place_calib)
     models['place_calibrator'] = place_calibrator
 
-    # キャリブレーション後の確率
-    calibrated_win = win_calibrator.predict(pred_win_prob)
-    calibrated_place = place_calibrator.predict(pred_place_prob)
-    logger.info(f"キャリブレーション後 - 勝利確率平均: {calibrated_win.mean():.4f}, 複勝確率平均: {calibrated_place.mean():.4f}")
+    # ===== 5. 最終評価（testデータ）=====
+    logger.info("最終評価中（testデータ）...")
+    from sklearn.metrics import roc_auc_score, brier_score_loss
+
+    # testデータで予測
+    pred_win_prob_test = win_model.predict_proba(X_test)[:, 1]
+    pred_place_prob_test = place_model.predict_proba(X_test)[:, 1]
+
+    # キャリブレーション適用
+    calibrated_win_test = win_calibrator.predict(pred_win_prob_test)
+    calibrated_place_test = place_calibrator.predict(pred_place_prob_test)
+
+    # 評価指標（キャリブレーション前）
+    win_auc_raw = roc_auc_score(y_win_test, pred_win_prob_test)
+    win_brier_raw = brier_score_loss(y_win_test, pred_win_prob_test)
+    place_auc_raw = roc_auc_score(y_place_test, pred_place_prob_test)
+    place_brier_raw = brier_score_loss(y_place_test, pred_place_prob_test)
+
+    # 評価指標（キャリブレーション後）
+    win_auc = roc_auc_score(y_win_test, calibrated_win_test)
+    win_brier = brier_score_loss(y_win_test, calibrated_win_test)
+    place_auc = roc_auc_score(y_place_test, calibrated_place_test)
+    place_brier = brier_score_loss(y_place_test, calibrated_place_test)
+
+    logger.info(f"勝利 AUC: {win_auc:.4f} (raw: {win_auc_raw:.4f})")
+    logger.info(f"勝利 Brier: {win_brier:.4f} (raw: {win_brier_raw:.4f}, 改善: {(win_brier_raw - win_brier) / win_brier_raw * 100:.1f}%)")
+    logger.info(f"複勝 AUC: {place_auc:.4f} (raw: {place_auc_raw:.4f})")
+    logger.info(f"複勝 Brier: {place_brier:.4f} (raw: {place_brier_raw:.4f}, 改善: {(place_brier_raw - place_brier) / place_brier_raw * 100:.1f}%)")
+    logger.info(f"キャリブ後 - 勝利確率平均: {calibrated_win_test.mean():.4f}, 複勝確率平均: {calibrated_place_test.mean():.4f}")
 
     # 特徴量重要度（回帰モデルから）
     importance = dict(sorted(
@@ -1666,9 +1721,14 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
         'rmse': rmse,
         'win_accuracy': win_accuracy,
         'place_accuracy': place_accuracy,
+        'win_auc': win_auc,
+        'win_brier': win_brier,
+        'place_auc': place_auc,
+        'place_brier': place_brier,
         'importance': importance,
         'train_size': len(X_train),
-        'val_size': len(X_val)
+        'calib_size': len(X_calib),
+        'test_size': len(X_test)
     }
 
 
