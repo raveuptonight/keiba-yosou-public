@@ -395,9 +395,9 @@ def find_latest_bias(target_date: date) -> Optional[str]:
     """
     適切なバイアスファイルを検索
 
-    検索順序:
-    1. 今週のバイアス（土曜始まり）
-    2. 前週の最後の開催日のバイアス
+    今週のバイアスのみ検索（土曜始まり）
+    - 土曜の傾向 → 日曜に反映
+    - 週をまたいだ傾向反映は行わない
 
     Args:
         target_date: 予想対象日
@@ -406,7 +406,6 @@ def find_latest_bias(target_date: date) -> Optional[str]:
         バイアスファイルの日付（YYYY-MM-DD）、見つからなければNone
     """
     from pathlib import Path
-    import json
 
     # 今週の土曜日を計算（土曜始まり）
     # weekday(): 月=0, 火=1, 水=2, 木=3, 金=4, 土=5, 日=6
@@ -429,7 +428,7 @@ def find_latest_bias(target_date: date) -> Optional[str]:
                 return path
         return None
 
-    # 1. 今週のバイアスを検索（今週土曜から予想対象日の前日まで）
+    # 今週のバイアスのみ検索（今週土曜から予想対象日の前日まで）
     check_date = target_date - timedelta(days=1)  # 予想対象日の前日から
     while check_date >= this_week_saturday:
         bias_file = find_bias_file(check_date)
@@ -438,19 +437,7 @@ def find_latest_bias(target_date: date) -> Optional[str]:
             return check_date.isoformat()
         check_date -= timedelta(days=1)
 
-    # 2. 前週のバイアスを検索（前週日曜から前週土曜まで遡る）
-    last_week_sunday = this_week_saturday - timedelta(days=1)
-    last_week_saturday = last_week_sunday - timedelta(days=6)
-
-    check_date = last_week_sunday
-    while check_date >= last_week_saturday:
-        bias_file = find_bias_file(check_date)
-        if bias_file:
-            logger.info(f"前週のバイアス発見: {check_date}")
-            return check_date.isoformat()
-        check_date -= timedelta(days=1)
-
-    logger.warning(f"バイアスファイルが見つかりません")
+    logger.info(f"今週のバイアスなし → 通常予想")
     return None
 
 
