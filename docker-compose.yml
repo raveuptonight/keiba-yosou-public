@@ -64,6 +64,7 @@ services:
     container_name: keiba-discord-bot
     command: python -m src.discord.bot
     environment:
+      - TZ=Asia/Tokyo
       - PYTHONDONTWRITEBYTECODE=1
       - DB_MODE=${DB_MODE:-mock}
       - DB_HOST=host.docker.internal

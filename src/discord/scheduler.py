@@ -6,7 +6,10 @@ Discord Bot自動予想スケジューラー
 
 import os
 import logging
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, date, time, timedelta, timezone
+
+# 日本標準時
+JST = timezone(timedelta(hours=9))
 from typing import List, Dict, Any, Optional
 import asyncio
 import requests
@@ -155,7 +158,7 @@ class PredictionScheduler(commands.Cog):
         self.bot = bot
         self.api_base_url = os.getenv("API_BASE_URL", API_BASE_URL_DEFAULT)
         self.notification_channel_id = notification_channel_id or int(
-            os.getenv("DISCORD_CHANNEL_ID", "0")
+            os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID", "0")
         )
 
         # 実行済みレースID記録（重複予想防止）
@@ -337,7 +340,7 @@ class PredictionScheduler(commands.Cog):
 
         try:
             # 翌日のレース一覧を取得
-            tomorrow = date.today() + timedelta(days=1)
+            tomorrow = datetime.now(JST).date() + timedelta(days=1)
             races = await self._fetch_races_for_date(tomorrow)
 
             if not races:
@@ -387,12 +390,12 @@ class PredictionScheduler(commands.Cog):
         レース1時間前（馬体重発表後）に再予想を実行します。
         通常、馬体重は発走約75分前に発表されるため、1時間前に再予想。
         """
-        now = datetime.now()
+        now = datetime.now(JST)
         logger.debug(f"レース時刻チェック: {now}")
 
         try:
             # 当日のレース一覧を取得
-            today = date.today()
+            today = datetime.now(JST).date()
             races = await self._fetch_races_for_date(today)
 
             if not races:
@@ -414,7 +417,7 @@ class PredictionScheduler(commands.Cog):
                         race_minute = int(race_time_str[2:])
                     else:
                         raise ValueError(f"Unknown time format: {race_time_str}")
-                    race_datetime = datetime.combine(today, time(hour=race_hour, minute=race_minute))
+                    race_datetime = datetime.combine(today, time(hour=race_hour, minute=race_minute), tzinfo=JST)
                 except (ValueError, IndexError) as e:
                     logger.warning(f"レース時刻パース失敗: {race_time_str} ({e})")
                     continue
@@ -486,19 +489,17 @@ class PredictionScheduler(commands.Cog):
 
             # FastAPI経由で予想実行
             response = requests.post(
-                f"{self.api_base_url}/api/predictions/",
+                f"{self.api_base_url}/api/v1/predictions/generate",
                 json={
                     "race_id": race_id,
-                    "temperature": 0.3,
-                    "phase": "all",
                     "is_final": is_final  # 最終予想フラグ
                 },
                 timeout=DISCORD_REQUEST_TIMEOUT,
             )
 
-            if response.status_code == 201:
+            if response.status_code == 200:
                 prediction = response.json()
-                pred_id = prediction.get('id')
+                pred_id = prediction.get('prediction_id')
                 logger.info(f"予想成功: prediction_id={pred_id}")
 
                 # 通知チャンネルに送信
@@ -506,29 +507,23 @@ class PredictionScheduler(commands.Cog):
                 if channel:
                     if is_final:
                         # 最終予想: 詳細フォーマットで通知
-                        # 予想詳細を取得
-                        detail_response = requests.get(
-                            f"{self.api_base_url}/api/v1/predictions/{pred_id}",
-                            timeout=DISCORD_REQUEST_TIMEOUT,
-                        )
+                        # 予想結果は既に取得済み
+                        result = prediction.get("prediction_result", {})
+                        ranked = result.get("ranked_horses", [])
 
-                        if detail_response.status_code == 200:
-                            data = detail_response.json()
-                            result = data.get("prediction_result", {})
-                            ranked = result.get("ranked_horses", [])
-
+                        if ranked:
                             # 最終予想通知フォーマット
                             message = format_final_prediction_notification(
-                                venue=data.get("venue", "不明"),
-                                race_number=data.get("race_number", "?"),
-                                race_time=data.get("race_time", ""),
-                                race_name=data.get("race_name", ""),
+                                venue=prediction.get("venue", "不明"),
+                                race_number=prediction.get("race_number", "?"),
+                                race_time=prediction.get("race_time", ""),
+                                race_name=prediction.get("race_name", ""),
                                 ranked_horses=ranked,
                             )
                             await channel.send(message)
                         else:
-                            # 詳細取得失敗時はシンプルな通知
-                            logger.warning(f"最終予想詳細取得失敗: {detail_response.status_code}")
+                            # 予想結果が空の場合
+                            logger.warning(f"最終予想結果が空: race_id={race_id}")
                             await channel.send(
                                 f"🔥 **{prediction.get('venue', '?')} {prediction.get('race_number', '?')}R 最終予想完了**"
                             )
