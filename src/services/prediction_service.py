@@ -1268,7 +1268,7 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
         from src.db.async_connection import get_connection
 
         async with get_connection() as conn:
-            # predictions テーブルに保存（確率ベース形式）
+            # predictions テーブルに保存（UPSERT: race_id + is_final でユニーク）
             sql = """
                 INSERT INTO predictions (
                     prediction_id,
@@ -1279,6 +1279,9 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
                     predicted_at
                 )
                 VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (race_id, is_final) DO UPDATE SET
+                    prediction_result = EXCLUDED.prediction_result,
+                    predicted_at = EXCLUDED.predicted_at
                 RETURNING prediction_id;
             """
 
@@ -1310,7 +1313,7 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
                 raise DatabaseQueryError("予想結果の保存に失敗しました")
 
             saved_id = result["prediction_id"]
-            logger.info(f"Prediction saved: prediction_id={saved_id}")
+            logger.info(f"Prediction saved/updated: prediction_id={saved_id}")
             return saved_id
 
     except asyncpg.PostgresError as e:

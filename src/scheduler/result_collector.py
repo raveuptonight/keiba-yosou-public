@@ -445,6 +445,195 @@ class ResultCollector:
         logger.info(f"分析結果保存: {output_path}")
         return str(output_path)
 
+    def save_analysis_to_db(self, analysis: Dict) -> bool:
+        """分析結果をDBに保存"""
+        if analysis.get('status') != 'success':
+            return False
+
+        acc = analysis.get('accuracy', {})
+        if 'error' in acc:
+            return False
+
+        db = get_db()
+        conn = db.get_connection()
+        if not conn:
+            logger.error("DB接続失敗")
+            return False
+
+        try:
+            cur = conn.cursor()
+            analysis_date = acc.get('date')
+            raw_stats = acc.get('raw_stats', {})
+            accuracy = acc.get('accuracy', {})
+
+            # UPSERT (ON CONFLICT UPDATE)
+            cur.execute('''
+                INSERT INTO analysis_results (
+                    analysis_date, total_races, analyzed_races,
+                    tansho_hit, fukusho_hit, umaren_hit, sanrenpuku_hit, top3_cover,
+                    tansho_rate, fukusho_rate, umaren_rate, sanrenpuku_rate, top3_cover_rate, mrr,
+                    detail_data
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (analysis_date) DO UPDATE SET
+                    total_races = EXCLUDED.total_races,
+                    analyzed_races = EXCLUDED.analyzed_races,
+                    tansho_hit = EXCLUDED.tansho_hit,
+                    fukusho_hit = EXCLUDED.fukusho_hit,
+                    umaren_hit = EXCLUDED.umaren_hit,
+                    sanrenpuku_hit = EXCLUDED.sanrenpuku_hit,
+                    top3_cover = EXCLUDED.top3_cover,
+                    tansho_rate = EXCLUDED.tansho_rate,
+                    fukusho_rate = EXCLUDED.fukusho_rate,
+                    umaren_rate = EXCLUDED.umaren_rate,
+                    sanrenpuku_rate = EXCLUDED.sanrenpuku_rate,
+                    top3_cover_rate = EXCLUDED.top3_cover_rate,
+                    mrr = EXCLUDED.mrr,
+                    detail_data = EXCLUDED.detail_data,
+                    analyzed_at = CURRENT_TIMESTAMP
+            ''', (
+                analysis_date,
+                acc.get('total_races', 0),
+                acc.get('analyzed_races', 0),
+                raw_stats.get('tansho_hit', 0),
+                raw_stats.get('fukusho_hit', 0),
+                raw_stats.get('umaren_hit', 0),
+                raw_stats.get('sanrenpuku_hit', 0),
+                raw_stats.get('top3_cover', 0),
+                accuracy.get('tansho_hit_rate'),
+                accuracy.get('fukusho_hit_rate'),
+                accuracy.get('umaren_hit_rate'),
+                accuracy.get('sanrenpuku_hit_rate'),
+                accuracy.get('top3_cover_rate'),
+                accuracy.get('mrr'),
+                json.dumps({
+                    'by_venue': acc.get('by_venue', {}),
+                    'by_distance': acc.get('by_distance', {}),
+                    'by_track': acc.get('by_track', {}),
+                    'calibration': acc.get('calibration', {}),
+                    'misses': acc.get('misses', [])
+                }, ensure_ascii=False)
+            ))
+
+            conn.commit()
+            logger.info(f"分析結果DB保存: {analysis_date}")
+            return True
+
+        except Exception as e:
+            logger.error(f"分析結果DB保存エラー: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def update_accuracy_tracking(self, stats: Dict) -> bool:
+        """累積精度トラッキングを更新"""
+        db = get_db()
+        conn = db.get_connection()
+        if not conn:
+            logger.error("DB接続失敗")
+            return False
+
+        try:
+            cur = conn.cursor()
+
+            # 現在の累積値を取得
+            cur.execute('SELECT * FROM accuracy_tracking LIMIT 1')
+            row = cur.fetchone()
+
+            if row:
+                # 更新
+                new_total = row[1] + stats.get('analyzed_races', 0)
+                new_tansho = row[2] + stats.get('tansho_hit', 0)
+                new_fukusho = row[3] + stats.get('fukusho_hit', 0)
+                new_umaren = row[4] + stats.get('umaren_hit', 0)
+                new_sanrenpuku = row[5] + stats.get('sanrenpuku_hit', 0)
+
+                cur.execute('''
+                    UPDATE accuracy_tracking SET
+                        total_races = %s,
+                        total_tansho_hit = %s,
+                        total_fukusho_hit = %s,
+                        total_umaren_hit = %s,
+                        total_sanrenpuku_hit = %s,
+                        cumulative_tansho_rate = CASE WHEN %s > 0 THEN %s::float / %s * 100 ELSE 0 END,
+                        cumulative_fukusho_rate = CASE WHEN %s > 0 THEN %s::float / %s * 100 ELSE 0 END,
+                        cumulative_umaren_rate = CASE WHEN %s > 0 THEN %s::float / %s * 100 ELSE 0 END,
+                        cumulative_sanrenpuku_rate = CASE WHEN %s > 0 THEN %s::float / %s * 100 ELSE 0 END,
+                        last_updated = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                ''', (
+                    new_total, new_tansho, new_fukusho, new_umaren, new_sanrenpuku,
+                    new_total, new_tansho, new_total,
+                    new_total, new_fukusho, new_total,
+                    new_total, new_umaren, new_total,
+                    new_total, new_sanrenpuku, new_total,
+                    row[0]
+                ))
+            else:
+                # 初期挿入
+                n = stats.get('analyzed_races', 0)
+                cur.execute('''
+                    INSERT INTO accuracy_tracking (
+                        total_races, total_tansho_hit, total_fukusho_hit,
+                        total_umaren_hit, total_sanrenpuku_hit
+                    ) VALUES (%s, %s, %s, %s, %s)
+                ''', (
+                    n,
+                    stats.get('tansho_hit', 0),
+                    stats.get('fukusho_hit', 0),
+                    stats.get('umaren_hit', 0),
+                    stats.get('sanrenpuku_hit', 0)
+                ))
+
+            conn.commit()
+            logger.info("累積トラッキング更新完了")
+            return True
+
+        except Exception as e:
+            logger.error(f"累積トラッキング更新エラー: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def get_cumulative_stats(self) -> Optional[Dict]:
+        """累積統計を取得"""
+        db = get_db()
+        conn = db.get_connection()
+        if not conn:
+            return None
+
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT * FROM accuracy_tracking LIMIT 1')
+            row = cur.fetchone()
+
+            if row:
+                return {
+                    'total_races': row[1],
+                    'tansho_hit': row[2],
+                    'fukusho_hit': row[3],
+                    'umaren_hit': row[4],
+                    'sanrenpuku_hit': row[5],
+                    'tansho_rate': row[6],
+                    'fukusho_rate': row[7],
+                    'umaren_rate': row[8],
+                    'sanrenpuku_rate': row[9],
+                    'last_updated': row[10]
+                }
+            return None
+
+        except Exception as e:
+            logger.error(f"累積統計取得エラー: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+
     def send_discord_notification(self, analysis: Dict):
         """Discord通知を送信（詳細版）"""
         import os
@@ -528,7 +717,7 @@ class ResultCollector:
         except Exception as e:
             logger.error(f"Discord通知エラー: {e}")
 
-    def send_weekend_notification(self, saturday: date, sunday: date, stats: Dict, accuracy: Dict):
+    def send_weekend_notification(self, saturday: date, sunday: date, stats: Dict, accuracy: Dict, cumulative: Optional[Dict] = None):
         """週末合計のDiscord通知を送信"""
         import os
         import requests
@@ -545,11 +734,21 @@ class ResultCollector:
 
 分析レース数: {stats.get('analyzed_races', 0)}R
 
-🎯 的中率:
+🎯 今週の的中率:
   単勝: {accuracy.get('tansho_hit_rate', 0):.1f}%
   複勝: {accuracy.get('fukusho_hit_rate', 0):.1f}%
   馬連: {accuracy.get('umaren_hit_rate', 0):.1f}%
   三連複: {accuracy.get('sanrenpuku_hit_rate', 0):.1f}%
+"""
+
+        # 累積成績を追加
+        if cumulative and cumulative.get('total_races', 0) > 0:
+            message += f"""
+📈 累積成績 ({cumulative['total_races']}R):
+  単勝: {cumulative.get('tansho_rate', 0):.1f}%
+  複勝: {cumulative.get('fukusho_rate', 0):.1f}%
+  馬連: {cumulative.get('umaren_rate', 0):.1f}%
+  三連複: {cumulative.get('sanrenpuku_rate', 0):.1f}%
 """
 
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
@@ -590,7 +789,7 @@ def collect_today_results():
 
 
 def collect_weekend_results():
-    """先週末（土日）のレース結果を収集"""
+    """先週末（土日）のレース結果を収集してDBに保存"""
     collector = ResultCollector()
     today = date.today()
 
@@ -617,7 +816,11 @@ def collect_weekend_results():
         analysis = collector.collect_and_analyze(target_date)
 
         if analysis['status'] == 'success':
+            # ファイル保存
             collector.save_analysis(analysis)
+            # DB保存
+            collector.save_analysis_to_db(analysis)
+
             acc = analysis['accuracy']
             total_stats['total_races'] += acc['total_races']
             total_stats['analyzed_races'] += acc['analyzed_races']
@@ -626,7 +829,7 @@ def collect_weekend_results():
             total_stats['umaren_hit'] += acc['raw_stats']['umaren_hit']
             total_stats['sanrenpuku_hit'] += acc['raw_stats']['sanrenpuku_hit']
 
-            print(f"\n{acc['date']}: {acc['analyzed_races']}R分析")
+            print(f"\n{acc['date']}: {acc['analyzed_races']}R分析 → DB保存済")
             print(f"  単勝: {acc['accuracy']['tansho_hit_rate']:.1f}%")
             print(f"  複勝: {acc['accuracy']['fukusho_hit_rate']:.1f}%")
         else:
@@ -642,6 +845,12 @@ def collect_weekend_results():
             'sanrenpuku_hit_rate': total_stats['sanrenpuku_hit'] / n * 100,
         }
 
+        # 累積トラッキング更新
+        collector.update_accuracy_tracking(total_stats)
+
+        # 累積統計を取得
+        cumulative = collector.get_cumulative_stats()
+
         print(f"\n=== 週末合計 ===")
         print(f"分析レース数: {n}R")
         print(f"単勝的中率: {weekend_accuracy['tansho_hit_rate']:.1f}%")
@@ -649,8 +858,15 @@ def collect_weekend_results():
         print(f"馬連的中率: {weekend_accuracy['umaren_hit_rate']:.1f}%")
         print(f"三連複的中率: {weekend_accuracy['sanrenpuku_hit_rate']:.1f}%")
 
-        # Discord通知（週末合計）
-        collector.send_weekend_notification(last_saturday, last_sunday, total_stats, weekend_accuracy)
+        if cumulative:
+            print(f"\n=== 累積成績 ({cumulative['total_races']}R) ===")
+            print(f"単勝: {cumulative['tansho_rate']:.1f}%")
+            print(f"複勝: {cumulative['fukusho_rate']:.1f}%")
+            print(f"馬連: {cumulative['umaren_rate']:.1f}%")
+            print(f"三連複: {cumulative['sanrenpuku_rate']:.1f}%")
+
+        # Discord通知（週末合計 + 累積）
+        collector.send_weekend_notification(last_saturday, last_sunday, total_stats, weekend_accuracy, cumulative)
 
 
 def collect_yesterday_results():

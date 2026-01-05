@@ -1,118 +1,99 @@
 -- ===========================================
--- マイグレーション: predictions テーブル作成
+-- マイグレーション: 予想・分析結果テーブル作成
 -- ===========================================
--- 作成日: 2024-12-28
--- 説明: LLM予想結果を保存するテーブル
+-- 作成日: 2026-01-06
+-- 説明: レース予想結果と分析結果を保存するテーブル
 
--- predictions テーブル作成
+-- predictions テーブル作成（レース毎の予想結果）
 CREATE TABLE IF NOT EXISTS predictions (
-    -- 主キー
-    prediction_id TEXT PRIMARY KEY,
-
-    -- レース情報
-    race_id TEXT NOT NULL,
-    race_name TEXT NOT NULL,
-    race_date TEXT NOT NULL,
-    venue TEXT NOT NULL,
+    id SERIAL PRIMARY KEY,
+    race_code TEXT NOT NULL,
+    race_date DATE NOT NULL,
+    keibajo TEXT NOT NULL,
     race_number TEXT NOT NULL,
-    race_time TEXT NOT NULL,
-
-    -- 予想種別
-    is_final BOOLEAN NOT NULL DEFAULT FALSE,
-
-    -- 投資情報
-    total_investment INTEGER NOT NULL,
-    expected_return INTEGER NOT NULL,
-    expected_roi FLOAT NOT NULL,
+    kyori INTEGER,
 
     -- 予想結果（JSONB形式で保存）
-    prediction_result JSONB NOT NULL,
+    -- 各馬: umaban, bamei, pred_score, win_prob, place_prob, pred_rank
+    prediction_data JSONB NOT NULL,
 
     -- メタデータ
+    model_version TEXT,
     predicted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+
+    -- ユニーク制約（同一レースに対する予想は1つ）
+    CONSTRAINT uq_predictions_race UNIQUE (race_code)
 );
 
 -- インデックス作成
-CREATE INDEX IF NOT EXISTS idx_predictions_race_id
-    ON predictions (race_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_race_date ON predictions (race_date DESC);
+CREATE INDEX IF NOT EXISTS idx_predictions_keibajo ON predictions (keibajo);
+CREATE INDEX IF NOT EXISTS idx_predictions_predicted_at ON predictions (predicted_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_predictions_race_date
-    ON predictions (race_date DESC);
+-- analysis_results テーブル作成（日別の分析結果）
+CREATE TABLE IF NOT EXISTS analysis_results (
+    id SERIAL PRIMARY KEY,
+    analysis_date DATE NOT NULL,
 
-CREATE INDEX IF NOT EXISTS idx_predictions_is_final
-    ON predictions (is_final);
+    -- 統計情報
+    total_races INTEGER NOT NULL DEFAULT 0,
+    analyzed_races INTEGER NOT NULL DEFAULT 0,
 
-CREATE INDEX IF NOT EXISTS idx_predictions_predicted_at
-    ON predictions (predicted_at DESC);
+    -- 的中数
+    tansho_hit INTEGER NOT NULL DEFAULT 0,
+    fukusho_hit INTEGER NOT NULL DEFAULT 0,
+    umaren_hit INTEGER NOT NULL DEFAULT 0,
+    sanrenpuku_hit INTEGER NOT NULL DEFAULT 0,
+    top3_cover INTEGER NOT NULL DEFAULT 0,
 
--- 複合インデックス（レースID + 予想種別）
-CREATE INDEX IF NOT EXISTS idx_predictions_race_final
-    ON predictions (race_id, is_final);
+    -- 的中率
+    tansho_rate FLOAT,
+    fukusho_rate FLOAT,
+    umaren_rate FLOAT,
+    sanrenpuku_rate FLOAT,
+    top3_cover_rate FLOAT,
+    mrr FLOAT,
 
--- JSONB フィールドのインデックス
-CREATE INDEX IF NOT EXISTS idx_predictions_result_gin
-    ON predictions USING GIN (prediction_result);
+    -- 詳細データ（JSONB）
+    -- by_venue, by_distance, by_track, calibration, misses
+    detail_data JSONB,
+
+    -- メタデータ
+    analyzed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- ユニーク制約（同一日の分析は1つ）
+    CONSTRAINT uq_analysis_date UNIQUE (analysis_date)
+);
+
+-- インデックス作成
+CREATE INDEX IF NOT EXISTS idx_analysis_date ON analysis_results (analysis_date DESC);
+CREATE INDEX IF NOT EXISTS idx_analysis_analyzed_at ON analysis_results (analyzed_at DESC);
+
+-- accuracy_tracking テーブル作成（累積精度トラッキング）
+CREATE TABLE IF NOT EXISTS accuracy_tracking (
+    id SERIAL PRIMARY KEY,
+
+    -- 累積統計
+    total_races INTEGER NOT NULL DEFAULT 0,
+    total_tansho_hit INTEGER NOT NULL DEFAULT 0,
+    total_fukusho_hit INTEGER NOT NULL DEFAULT 0,
+    total_umaren_hit INTEGER NOT NULL DEFAULT 0,
+    total_sanrenpuku_hit INTEGER NOT NULL DEFAULT 0,
+
+    -- 累積的中率
+    cumulative_tansho_rate FLOAT,
+    cumulative_fukusho_rate FLOAT,
+    cumulative_umaren_rate FLOAT,
+    cumulative_sanrenpuku_rate FLOAT,
+
+    -- 更新情報
+    last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 初期レコード挿入（1レコードのみ）
+INSERT INTO accuracy_tracking (total_races) VALUES (0) ON CONFLICT DO NOTHING;
 
 -- コメント追加
-COMMENT ON TABLE predictions IS 'LLM予想結果を保存するテーブル';
-COMMENT ON COLUMN predictions.prediction_id IS '予想ID（UUID形式）';
-COMMENT ON COLUMN predictions.race_id IS 'レースID（16桁）';
-COMMENT ON COLUMN predictions.is_final IS '最終予想フラグ（馬体重反映後）';
-COMMENT ON COLUMN predictions.prediction_result IS '予想結果JSON（win_prediction, betting_strategy）';
-COMMENT ON COLUMN predictions.expected_roi IS '期待ROI（回収率）';
-
--- 更新日時自動更新トリガー
-CREATE OR REPLACE FUNCTION update_predictions_updated_at()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trigger_update_predictions_updated_at
-    BEFORE UPDATE ON predictions
-    FOR EACH ROW
-    EXECUTE FUNCTION update_predictions_updated_at();
-
--- サンプルデータ挿入（開発用）
--- INSERT INTO predictions (
---     prediction_id,
---     race_id,
---     race_name,
---     race_date,
---     venue,
---     race_number,
---     race_time,
---     is_final,
---     total_investment,
---     expected_return,
---     expected_roi,
---     prediction_result
--- ) VALUES (
---     'abc123def456',
---     '202412280506',
---     '中山金杯',
---     '2024-12-28',
---     '中山',
---     '11R',
---     '15:25',
---     false,
---     10000,
---     15000,
---     1.5,
---     '{
---         "win_prediction": {
---             "first": {"horse_number": 3, "horse_name": "ディープボンド", "expected_odds": 3.5, "confidence": 0.85},
---             "second": {"horse_number": 7, "horse_name": "エフフォーリア", "expected_odds": 5.2, "confidence": 0.72},
---             "third": {"horse_number": 12, "horse_name": "タイトルホルダー", "expected_odds": 8.1, "confidence": 0.65}
---         },
---         "betting_strategy": {
---             "recommended_tickets": [
---                 {"ticket_type": "3連複", "numbers": [3, 7, 12], "amount": 1000, "expected_payout": 8500}
---             ]
---         }
---     }'::jsonb
--- );
+COMMENT ON TABLE predictions IS 'レース毎の予想結果';
+COMMENT ON TABLE analysis_results IS '日別の予想精度分析結果';
+COMMENT ON TABLE accuracy_tracking IS '累積精度トラッキング';
