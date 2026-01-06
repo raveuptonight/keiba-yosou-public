@@ -24,7 +24,6 @@ async def setup(bot: commands.Bot):
         # 各Cogモジュールをロード
         await bot.load_extension("src.discord.commands.prediction")
         await bot.load_extension("src.discord.commands.stats")
-        await bot.load_extension("src.discord.commands.betting")
         await bot.load_extension("src.discord.commands.help")
 
         logger.info("全Cogの登録完了")

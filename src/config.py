@@ -87,32 +87,6 @@ SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 45  # 最終予想のタ
 SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # 最終予想の時刻許容範囲（分）
 
 # =====================================
-# 馬券設定
-# =====================================
-# 馬券タイプ定義
-BETTING_TICKET_TYPES: Final[dict] = {
-    "単勝": {"code": "WIN", "min_horses": 1, "max_horses": 1},
-    "複勝": {"code": "PLACE", "min_horses": 1, "max_horses": 1},
-    "枠連": {"code": "BRACKET_QUINELLA", "min_horses": 2, "max_horses": 2},
-    "馬連": {"code": "QUINELLA", "min_horses": 2, "max_horses": 2},
-    "ワイド": {"code": "WIDE", "min_horses": 2, "max_horses": 2},
-    "馬単": {"code": "EXACTA", "min_horses": 2, "max_horses": 2},
-    "3連複": {"code": "TRIO", "min_horses": 3, "max_horses": 3},
-    "3連単": {"code": "TRIFECTA", "min_horses": 3, "max_horses": 3},
-}
-
-# 馬券購入設定
-BETTING_MIN_AMOUNT: Final[int] = 100  # 最小購入金額（円）
-BETTING_MAX_AMOUNT: Final[int] = 1000000  # 最大購入金額（円）
-BETTING_UNIT_AMOUNT: Final[int] = 100  # 購入単位（円）
-BETTING_MAX_COMBINATIONS: Final[int] = 50  # 最大組み合わせ数
-BETTING_DEFAULT_BUDGET: Final[int] = 10000  # デフォルト予算（円）
-
-# 買い目選定設定
-BETTING_TOP_HORSES_COUNT: Final[int] = 8  # 買い目候補の馬数（上位N頭）
-BETTING_MIN_CONFIDENCE: Final[float] = 0.3  # 最小信頼度（30%以上）
-
-# =====================================
 # CORS設定（セキュリティ）
 # =====================================
 CORS_ALLOW_ORIGINS_DEV: Final[list] = ["*"]  # 開発環境
