@@ -1,9 +1,9 @@
 """
 機械学習モデルモジュール
 
-XGBoost等の機械学習モデルによる予想
+特徴量抽出・予想出力フォーマット
 """
 
-from src.models.xgboost_model import HorseRacingXGBoost
+from src.models.fast_train import FastFeatureExtractor
 
-__all__ = ['HorseRacingXGBoost']
+__all__ = ['FastFeatureExtractor']
