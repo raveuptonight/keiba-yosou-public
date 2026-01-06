@@ -472,17 +472,12 @@ def run_result_analysis():
     today = date.today()
     logger.info(f"結果分析開始: {today}")
 
-    # ローカル実行時のパス
-    analysis_dir = "./analysis"
-    if Path("/app/analysis").exists():
-        analysis_dir = "/app/analysis"
-
     try:
-        collector = ResultCollector(analysis_dir=analysis_dir)
+        collector = ResultCollector()
         analysis = collector.collect_and_analyze(today)
 
         if analysis['status'] == 'success':
-            collector.save_analysis(analysis)
+            collector.save_analysis_to_db(analysis)
             collector.send_discord_notification(analysis)
 
             acc = analysis['accuracy']

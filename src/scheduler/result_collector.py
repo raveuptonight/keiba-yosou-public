@@ -24,8 +24,7 @@ logger = logging.getLogger(__name__)
 class ResultCollector:
     """レース結果収集クラス"""
 
-    def __init__(self, analysis_dir: str = "/app/analysis"):
-        self.analysis_dir = Path(analysis_dir)
+    def __init__(self):
         self.keibajo_names = {
             '01': '札幌', '02': '函館', '03': '福島', '04': '新潟', '05': '東京',
             '06': '中山', '07': '中京', '08': '京都', '09': '阪神', '10': '小倉'
@@ -426,25 +425,6 @@ class ResultCollector:
             'accuracy': accuracy
         }
 
-    def save_analysis(self, analysis: Dict, output_dir: str = None):
-        """分析結果を保存"""
-        if output_dir is None:
-            output_dir = str(self.analysis_dir)
-
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-        date_str = analysis.get('accuracy', {}).get('date', 'unknown')
-        if date_str == 'unknown' and 'comparison' in analysis:
-            date_str = analysis['comparison'].get('date', 'unknown')
-
-        output_path = Path(output_dir) / f"analysis_{date_str.replace('-', '')}.json"
-
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(analysis, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"分析結果保存: {output_path}")
-        return str(output_path)
-
     def save_analysis_to_db(self, analysis: Dict) -> bool:
         """分析結果をDBに保存"""
         if analysis.get('status') != 'success':
@@ -775,7 +755,7 @@ def collect_today_results():
     analysis = collector.collect_and_analyze(today)
 
     if analysis['status'] == 'success':
-        collector.save_analysis(analysis)
+        collector.save_analysis_to_db(analysis)
         collector.send_discord_notification(analysis)
         acc = analysis['accuracy']
         print(f"\n=== {acc['date']} 予想精度 ===")
@@ -817,7 +797,7 @@ def collect_weekend_results():
 
         if analysis['status'] == 'success':
             # ファイル保存
-            collector.save_analysis(analysis)
+            collector.save_analysis_to_db(analysis)
             # DB保存
             collector.save_analysis_to_db(analysis)
 
@@ -877,7 +857,7 @@ def collect_yesterday_results():
     analysis = collector.collect_and_analyze(yesterday)
 
     if analysis['status'] == 'success':
-        collector.save_analysis(analysis)
+        collector.save_analysis_to_db(analysis)
         collector.send_discord_notification(analysis)
         acc = analysis['accuracy']
         print(f"\n=== {acc['date']} 予想精度 ===")
@@ -921,7 +901,7 @@ def main():
     analysis = collector.collect_and_analyze(target_date)
 
     if analysis['status'] == 'success':
-        collector.save_analysis(analysis)
+        collector.save_analysis_to_db(analysis)
         collector.send_discord_notification(analysis)
         acc = analysis['accuracy']
         print(f"\n=== {acc['date']} 予想精度 ===")

@@ -48,7 +48,7 @@ _bias_cache = {}
 
 def _load_bias_for_date(target_date: str) -> Optional[Dict]:
     """
-    指定日のバイアスデータを読み込む
+    指定日のバイアスデータをDBから読み込む
 
     Args:
         target_date: YYYY-MM-DD形式の日付
@@ -56,31 +56,28 @@ def _load_bias_for_date(target_date: str) -> Optional[Dict]:
     Returns:
         バイアスデータ辞書、または None
     """
-    from pathlib import Path
-    import json
+    from datetime import datetime
+    from src.features.daily_bias import DailyBiasAnalyzer
 
     if target_date in _bias_cache:
         return _bias_cache[target_date]
 
-    date_str = target_date.replace("-", "")
+    try:
+        # 日付をdateオブジェクトに変換
+        date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
 
-    # 複数パスを試行
-    paths = [
-        Path(f"./analysis/bias_{date_str}.json"),
-        Path(f"/app/analysis/bias_{date_str}.json"),
-        Path(__file__).parent.parent.parent / "analysis" / f"bias_{date_str}.json",
-    ]
+        # DBからバイアスを読み込み
+        analyzer = DailyBiasAnalyzer()
+        bias_result = analyzer.load_bias(date_obj)
 
-    for path in paths:
-        if path.exists():
-            try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                _bias_cache[target_date] = data
-                logger.info(f"バイアスデータ読み込み: {path}")
-                return data
-            except Exception as e:
-                logger.error(f"バイアスデータ読み込みエラー: {e}")
+        if bias_result:
+            data = bias_result.to_dict()
+            _bias_cache[target_date] = data
+            logger.info(f"バイアスデータをDBから読み込み: {target_date}")
+            return data
+
+    except Exception as e:
+        logger.error(f"バイアスデータ読み込みエラー: {e}")
 
     return None
 

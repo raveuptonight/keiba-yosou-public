@@ -228,10 +228,5 @@ data/learning/
 predictions/*.json
 !predictions/.gitkeep
 
-# 分析結果
-analysis/*.json
-analysis/*.txt
-!analysis/.gitkeep
-
 # Claude Code設定
 .claude/

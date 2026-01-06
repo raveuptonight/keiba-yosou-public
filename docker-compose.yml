@@ -36,7 +36,6 @@ services:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
-      - ./analysis:/app/analysis:ro  # バイアスファイル（読み取り専用）
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     restart: unless-stopped
     extra_hosts:
@@ -114,7 +113,6 @@ services:
       - ./data:/app/data
       - ./backtest_results:/app/backtest_results
       - ./predictions:/app/predictions
-      - ./analysis:/app/analysis
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:
