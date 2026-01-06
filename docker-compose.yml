@@ -111,7 +111,6 @@ services:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
-      - ./predictions:/app/predictions
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:

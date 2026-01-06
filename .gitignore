@@ -221,12 +221,5 @@ backtest_results/
 # ログディレクトリ
 logs/
 
-# 学習データ
-data/learning/
-
-# 予想結果
-predictions/*.json
-!predictions/.gitkeep
-
 # Claude Code設定
 .claude/

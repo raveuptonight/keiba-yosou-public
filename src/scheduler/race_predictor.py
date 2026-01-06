@@ -405,20 +405,6 @@ class RacePredictor:
         return results
 
 
-def save_predictions(results: Dict, output_dir: str = "/app/predictions"):
-    """予想結果を保存"""
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-    date_str = results['date'].replace('-', '')
-    output_path = Path(output_dir) / f"predictions_{date_str}.json"
-
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-    logger.info(f"予想結果保存: {output_path}")
-    return str(output_path)
-
-
 def print_predictions(results: Dict):
     """予想結果を表示"""
     print("\n" + "=" * 60)
@@ -451,7 +437,6 @@ def main():
     parser = argparse.ArgumentParser(description="レース予想スケジューラ")
     parser.add_argument("--date", "-d", help="対象日 (YYYY-MM-DD)")
     parser.add_argument("--tomorrow", "-t", action="store_true", help="明日のレースを予想")
-    parser.add_argument("--output", "-o", default="/app/predictions", help="出力ディレクトリ")
     parser.add_argument("--model", "-m", default="/app/models/ensemble_model_latest.pkl")
 
     args = parser.parse_args()
@@ -472,10 +457,6 @@ def main():
 
     # 結果表示
     print_predictions(results)
-
-    # 結果保存
-    if results['status'] == 'success' and results['races']:
-        save_predictions(results, args.output)
 
 
 if __name__ == "__main__":
