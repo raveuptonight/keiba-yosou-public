@@ -103,8 +103,6 @@ LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 # =====================================
 # ファイルパス
 # =====================================
-DATA_DIR: Final[str] = "data"
-LEARNING_DATA_DIR: Final[str] = "data/learning"
 MODEL_DIR: Final[str] = "models"
 MIGRATION_DIR: Final[str] = "src/db/migrations"
 
