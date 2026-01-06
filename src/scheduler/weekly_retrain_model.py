@@ -22,6 +22,8 @@ from sklearn.isotonic import IsotonicRegression
 
 from src.db.connection import get_db
 from src.models.fast_train import FastFeatureExtractor
+import psycopg2
+import psycopg2.extras
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +51,77 @@ class WeeklyRetrain:
         self.model_dir = Path(model_dir)
         self.backup_dir = Path(backup_dir)
         self.current_model_path = self.model_dir / "ensemble_model_latest.pkl"
+
+    def _calc_bin_stats(
+        self, predicted: np.ndarray, actual: np.ndarray, calibrated: np.ndarray,
+        n_bins: int = 20
+    ) -> Dict:
+        """キャリブレーション用のビン統計を計算"""
+        from sklearn.metrics import brier_score_loss
+
+        bin_stats = []
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+
+        for i in range(n_bins):
+            bin_start = bin_edges[i]
+            bin_end = bin_edges[i + 1]
+
+            mask = (predicted >= bin_start) & (predicted < bin_end)
+            count = mask.sum()
+
+            if count > 0:
+                bin_stats.append({
+                    'bin_start': float(bin_start),
+                    'bin_end': float(bin_end),
+                    'count': int(count),
+                    'avg_predicted': float(predicted[mask].mean()),
+                    'avg_actual': float(actual[mask].mean()),
+                    'calibrated': float(calibrated[mask].mean())
+                })
+
+        brier_before = brier_score_loss(actual, predicted)
+        brier_after = brier_score_loss(actual, calibrated)
+        improvement = (brier_before - brier_after) / brier_before * 100 if brier_before > 0 else 0
+
+        return {
+            'total_samples': int(len(predicted)),
+            'avg_predicted': float(predicted.mean()),
+            'avg_actual': float(actual.mean()),
+            'brier_before': float(brier_before),
+            'brier_after': float(brier_after),
+            'improvement': float(improvement),
+            'bin_stats': bin_stats
+        }
+
+    def save_calibration_to_db(self, calibration_data: Dict, model_version: str) -> bool:
+        """キャリブレーション統計をDBに保存"""
+        try:
+            db = get_db()
+            conn = db.get_connection()
+            cur = conn.cursor()
+
+            # 既存のアクティブなキャリブレーションを非アクティブ化
+            cur.execute("UPDATE model_calibration SET is_active = FALSE WHERE is_active = TRUE")
+
+            # 新しいキャリブレーションを保存
+            cur.execute('''
+                INSERT INTO model_calibration (
+                    model_version, calibration_data, created_at, is_active
+                ) VALUES (%s, %s, %s, TRUE)
+            ''', (
+                model_version,
+                psycopg2.extras.Json(calibration_data),
+                datetime.now()
+            ))
+
+            conn.commit()
+            cur.close()
+            conn.close()
+            logger.info(f"キャリブレーション統計をDBに保存しました（version: {model_version}）")
+            return True
+        except Exception as e:
+            logger.error(f"キャリブレーション保存エラー: {e}")
+            return False
 
     def backup_current_model(self) -> Optional[str]:
         """現在のモデルをバックアップ"""
@@ -352,6 +425,24 @@ class WeeklyRetrain:
             logger.info(f"Top-3カバー率: {top3_coverage*100:.1f}%  {'✅ 良好' if top3_coverage >= 0.55 else '⚠️ 要改善'}")
             logger.info(f"キャリブ後 - 勝率平均: {calibrated_win_test.mean():.4f}, 連対率平均: {calibrated_quinella_test.mean():.4f}, 複勝率平均: {calibrated_place_test.mean():.4f}")
             logger.info("=" * 50)
+
+            # ===== 7. キャリブレーション統計をDBに保存 =====
+            logger.info("キャリブレーション統計を計算中...")
+            calibration_stats = {
+                'created_at': datetime.now().isoformat(),
+                'win_stats': self._calc_bin_stats(
+                    ensemble_win_prob_test, y_win_test.values, calibrated_win_test
+                ),
+                'quinella_stats': self._calc_bin_stats(
+                    ensemble_quinella_prob_test, y_quinella_test.values, calibrated_quinella_test
+                ),
+                'place_stats': self._calc_bin_stats(
+                    ensemble_place_prob_test, y_place_test.values, calibrated_place_test
+                )
+            }
+
+            model_version = f"v4_quinella_ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.save_calibration_to_db(calibration_stats, model_version)
 
             # 一時保存
             temp_model_path = self.model_dir / "ensemble_model_new.pkl"
