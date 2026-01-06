@@ -1687,3 +1687,116 @@
 | sanchimei | character varying | 20 |
 | chichi_hanshoku_toroku_bango | character | 10 |
 | haha_hanshoku_toroku_bango | character | 10 |
+
+---
+
+# アプリケーション独自テーブル
+
+2026/01/06 更新
+
+## predictions
+
+レース毎の予想結果を保存
+
+| カラム名 | データ型 | 説明 |
+|----------|----------|------|
+| prediction_id | TEXT (PK) | 予想ID（UUID） |
+| race_id | TEXT | レースID（16桁） |
+| race_date | DATE | レース日 |
+| is_final | BOOLEAN | 最終予想フラグ（馬体重反映後） |
+| prediction_result | JSONB | 予想結果（ranked_horses, quinella_ranking等） |
+| predicted_at | TIMESTAMP | 予想日時 |
+
+**ユニーク制約**: `(race_id, is_final)`
+
+## analysis_results
+
+日別の予想精度分析結果
+
+| カラム名 | データ型 | 説明 |
+|----------|----------|------|
+| id | SERIAL (PK) | ID |
+| analysis_date | DATE | 分析対象日 |
+| total_races | INTEGER | 総レース数 |
+| analyzed_races | INTEGER | 分析レース数 |
+| tansho_hit | INTEGER | 単勝的中数 |
+| fukusho_hit | INTEGER | 複勝的中数 |
+| umaren_hit | INTEGER | 馬連的中数 |
+| sanrenpuku_hit | INTEGER | 三連複的中数 |
+| top3_cover | INTEGER | Top3カバー数 |
+| tansho_rate | FLOAT | 単勝的中率(%) |
+| fukusho_rate | FLOAT | 複勝的中率(%) |
+| umaren_rate | FLOAT | 馬連的中率(%) |
+| sanrenpuku_rate | FLOAT | 三連複的中率(%) |
+| top3_cover_rate | FLOAT | Top3カバー率(%) |
+| mrr | FLOAT | MRR（平均逆順位） |
+| detail_data | JSONB | 詳細データ（by_venue, by_track等） |
+| analyzed_at | TIMESTAMP | 分析日時 |
+
+**ユニーク制約**: `(analysis_date)`
+
+## accuracy_tracking
+
+累積精度トラッキング（1レコードのみ）
+
+| カラム名 | データ型 | 説明 |
+|----------|----------|------|
+| id | SERIAL (PK) | ID |
+| total_races | INTEGER | 累積レース数 |
+| total_tansho_hit | INTEGER | 累積単勝的中数 |
+| total_fukusho_hit | INTEGER | 累積複勝的中数 |
+| total_umaren_hit | INTEGER | 累積馬連的中数 |
+| total_sanrenpuku_hit | INTEGER | 累積三連複的中数 |
+| cumulative_tansho_rate | FLOAT | 累積単勝的中率(%) |
+| cumulative_fukusho_rate | FLOAT | 累積複勝的中率(%) |
+| cumulative_umaren_rate | FLOAT | 累積馬連的中率(%) |
+| cumulative_sanrenpuku_rate | FLOAT | 累積三連複的中率(%) |
+| last_updated | TIMESTAMP | 最終更新日時 |
+
+## daily_bias
+
+日次バイアス分析結果（枠順・脚質・騎手）
+
+| カラム名 | データ型 | 説明 |
+|----------|----------|------|
+| id | SERIAL (PK) | ID |
+| target_date | DATE | 分析対象日 |
+| analyzed_at | TIMESTAMP | 分析日時 |
+| total_races | INTEGER | 分析レース数 |
+| venue_biases | JSONB | 競馬場別バイアス |
+| jockey_performances | JSONB | 騎手当日成績 |
+
+**ユニーク制約**: `(target_date)`
+
+### venue_biases 構造
+
+```json
+{
+  "06": {
+    "venue_code": "06",
+    "venue_name": "中山",
+    "race_count": 12,
+    "inner_waku_win_rate": 0.25,
+    "outer_waku_win_rate": 0.15,
+    "waku_bias": 0.10,
+    "zenso_win_rate": 0.30,
+    "koshi_win_rate": 0.20,
+    "pace_bias": 0.10,
+    "track_condition": "良",
+    "turf_results": 6,
+    "dirt_results": 6
+  }
+}
+```
+
+## model_calibration
+
+モデルキャリブレーション設定
+
+| カラム名 | データ型 | 説明 |
+|----------|----------|------|
+| id | SERIAL (PK) | ID |
+| model_version | TEXT | モデルバージョン |
+| calibration_data | JSONB | キャリブレーションデータ |
+| created_at | TIMESTAMP | 作成日時 |
+| is_active | BOOLEAN | 有効フラグ |

@@ -393,7 +393,7 @@ def check_races_today() -> bool:
 
 def find_latest_bias(target_date: date) -> Optional[str]:
     """
-    適切なバイアスファイルを検索
+    適切なバイアスをDBから検索
 
     今週のバイアスのみ検索（土曜始まり）
     - 土曜の傾向 → 日曜に反映
@@ -403,9 +403,9 @@ def find_latest_bias(target_date: date) -> Optional[str]:
         target_date: 予想対象日
 
     Returns:
-        バイアスファイルの日付（YYYY-MM-DD）、見つからなければNone
+        バイアスの日付（YYYY-MM-DD）、見つからなければNone
     """
-    from pathlib import Path
+    from src.db.connection import get_db
 
     # 今週の土曜日を計算（土曜始まり）
     # weekday(): 月=0, 火=1, 水=2, 木=3, 金=4, 土=5, 日=6
@@ -414,31 +414,38 @@ def find_latest_bias(target_date: date) -> Optional[str]:
 
     logger.info(f"バイアス検索: 対象日={target_date}, 今週土曜={this_week_saturday}")
 
-    # バイアスファイルの検索パス
-    analysis_paths = [
-        Path("./analysis"),
-        Path("/app/analysis"),
-    ]
+    try:
+        db = get_db()
+        conn = db.get_connection()
+        if not conn:
+            logger.error("DB接続失敗")
+            return None
 
-    def find_bias_file(check_date: date) -> Optional[Path]:
-        date_str = check_date.strftime("%Y%m%d")
-        for base_path in analysis_paths:
-            path = base_path / f"bias_{date_str}.json"
-            if path.exists():
-                return path
+        cur = conn.cursor()
+
+        # 今週のバイアスをDBから検索（今週土曜から予想対象日の前日まで）
+        cur.execute('''
+            SELECT target_date
+            FROM daily_bias
+            WHERE target_date >= %s AND target_date < %s
+            ORDER BY target_date DESC
+            LIMIT 1
+        ''', (this_week_saturday.isoformat(), target_date.isoformat()))
+
+        row = cur.fetchone()
+        conn.close()
+
+        if row:
+            bias_date = str(row[0])
+            logger.info(f"今週のバイアス発見: {bias_date}")
+            return bias_date
+
+        logger.info(f"今週のバイアスなし → 通常予想")
         return None
 
-    # 今週のバイアスのみ検索（今週土曜から予想対象日の前日まで）
-    check_date = target_date - timedelta(days=1)  # 予想対象日の前日から
-    while check_date >= this_week_saturday:
-        bias_file = find_bias_file(check_date)
-        if bias_file:
-            logger.info(f"今週のバイアス発見: {check_date}")
-            return check_date.isoformat()
-        check_date -= timedelta(days=1)
-
-    logger.info(f"今週のバイアスなし → 通常予想")
-    return None
+    except Exception as e:
+        logger.error(f"バイアス検索エラー: {e}")
+        return None
 
 
 def set_bias_for_prediction(bias_date: str):

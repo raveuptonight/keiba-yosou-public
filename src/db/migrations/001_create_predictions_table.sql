@@ -1,41 +1,25 @@
 -- ===========================================
 -- マイグレーション: 予想・分析結果テーブル作成
 -- ===========================================
--- 作成日: 2026-01-06
--- 説明: レース予想結果と分析結果を保存するテーブル
+-- 更新日: 2026-01-06
+-- 説明: レース予想・分析・バイアス結果を保存するテーブル
 
--- predictions テーブル作成（レース毎の予想結果）
-CREATE TABLE IF NOT EXISTS predictions (
-    id SERIAL PRIMARY KEY,
-    race_code TEXT NOT NULL,
-    race_date DATE NOT NULL,
-    keibajo TEXT NOT NULL,
-    race_number TEXT NOT NULL,
-    kyori INTEGER,
+-- predictions テーブル（レース毎の予想結果）
+-- ※ 既存テーブルは変更しない（race_id + is_final でUPSERT）
+-- CREATE TABLE IF NOT EXISTS predictions (
+--     prediction_id TEXT PRIMARY KEY,
+--     race_id TEXT NOT NULL,
+--     race_date DATE NOT NULL,
+--     is_final BOOLEAN NOT NULL DEFAULT FALSE,
+--     prediction_result JSONB NOT NULL,
+--     predicted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+--     CONSTRAINT uq_predictions_race_final UNIQUE (race_id, is_final)
+-- );
 
-    -- 予想結果（JSONB形式で保存）
-    -- 各馬: umaban, bamei, pred_score, win_prob, place_prob, pred_rank
-    prediction_data JSONB NOT NULL,
-
-    -- メタデータ
-    model_version TEXT,
-    predicted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    -- ユニーク制約（同一レースに対する予想は1つ）
-    CONSTRAINT uq_predictions_race UNIQUE (race_code)
-);
-
--- インデックス作成
-CREATE INDEX IF NOT EXISTS idx_predictions_race_date ON predictions (race_date DESC);
-CREATE INDEX IF NOT EXISTS idx_predictions_keibajo ON predictions (keibajo);
-CREATE INDEX IF NOT EXISTS idx_predictions_predicted_at ON predictions (predicted_at DESC);
-
--- analysis_results テーブル作成（日別の分析結果）
+-- analysis_results テーブル（日別の予想精度分析結果）
 CREATE TABLE IF NOT EXISTS analysis_results (
     id SERIAL PRIMARY KEY,
     analysis_date DATE NOT NULL,
-
-    -- 統計情報
     total_races INTEGER NOT NULL DEFAULT 0,
     analyzed_races INTEGER NOT NULL DEFAULT 0,
 
@@ -55,45 +39,58 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     mrr FLOAT,
 
     -- 詳細データ（JSONB）
-    -- by_venue, by_distance, by_track, calibration, misses
     detail_data JSONB,
 
     -- メタデータ
     analyzed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    -- ユニーク制約（同一日の分析は1つ）
     CONSTRAINT uq_analysis_date UNIQUE (analysis_date)
 );
 
--- インデックス作成
 CREATE INDEX IF NOT EXISTS idx_analysis_date ON analysis_results (analysis_date DESC);
-CREATE INDEX IF NOT EXISTS idx_analysis_analyzed_at ON analysis_results (analyzed_at DESC);
 
--- accuracy_tracking テーブル作成（累積精度トラッキング）
+-- accuracy_tracking テーブル（累積精度トラッキング）
 CREATE TABLE IF NOT EXISTS accuracy_tracking (
     id SERIAL PRIMARY KEY,
-
-    -- 累積統計
     total_races INTEGER NOT NULL DEFAULT 0,
     total_tansho_hit INTEGER NOT NULL DEFAULT 0,
     total_fukusho_hit INTEGER NOT NULL DEFAULT 0,
     total_umaren_hit INTEGER NOT NULL DEFAULT 0,
     total_sanrenpuku_hit INTEGER NOT NULL DEFAULT 0,
-
-    -- 累積的中率
     cumulative_tansho_rate FLOAT,
     cumulative_fukusho_rate FLOAT,
     cumulative_umaren_rate FLOAT,
     cumulative_sanrenpuku_rate FLOAT,
-
-    -- 更新情報
     last_updated TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- 初期レコード挿入（1レコードのみ）
-INSERT INTO accuracy_tracking (total_races) VALUES (0) ON CONFLICT DO NOTHING;
+-- daily_bias テーブル（日次バイアス分析結果）
+CREATE TABLE IF NOT EXISTS daily_bias (
+    id SERIAL PRIMARY KEY,
+    target_date DATE NOT NULL,
+    analyzed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    total_races INTEGER NOT NULL DEFAULT 0,
 
--- コメント追加
-COMMENT ON TABLE predictions IS 'レース毎の予想結果';
+    -- バイアスデータ（JSONB）
+    venue_biases JSONB,
+    jockey_performances JSONB,
+
+    CONSTRAINT uq_daily_bias_date UNIQUE (target_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_bias_date ON daily_bias (target_date DESC);
+
+-- model_calibration テーブル（モデルキャリブレーション設定）
+CREATE TABLE IF NOT EXISTS model_calibration (
+    id SERIAL PRIMARY KEY,
+    model_version TEXT NOT NULL,
+    calibration_data JSONB NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+-- コメント
 COMMENT ON TABLE analysis_results IS '日別の予想精度分析結果';
-COMMENT ON TABLE accuracy_tracking IS '累積精度トラッキング';
+COMMENT ON TABLE accuracy_tracking IS '累積精度トラッキング（1レコードのみ）';
+COMMENT ON TABLE daily_bias IS '日次バイアス分析結果（枠順・脚質・騎手）';
+COMMENT ON TABLE model_calibration IS 'モデルキャリブレーション設定';

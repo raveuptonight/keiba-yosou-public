@@ -269,52 +269,93 @@ class DailyBiasAnalyzer:
         finally:
             conn.close()
 
-    def save_bias(self, bias_result: DailyBiasResult, output_path: str = None) -> str:
-        """バイアス結果を保存"""
-        from pathlib import Path
+    def save_bias(self, bias_result: DailyBiasResult, output_path: str = None) -> bool:
+        """バイアス結果をDBに保存"""
+        conn = self.db.get_connection()
+        if not conn:
+            logger.error("DB接続失敗")
+            return False
 
-        if output_path is None:
-            output_path = f"./analysis/bias_{bias_result.target_date.replace('-', '')}.json"
+        try:
+            cur = conn.cursor()
+            data = bias_result.to_dict()
 
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            # UPSERT
+            cur.execute('''
+                INSERT INTO daily_bias (
+                    target_date, analyzed_at, total_races,
+                    venue_biases, jockey_performances
+                ) VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (target_date) DO UPDATE SET
+                    analyzed_at = EXCLUDED.analyzed_at,
+                    total_races = EXCLUDED.total_races,
+                    venue_biases = EXCLUDED.venue_biases,
+                    jockey_performances = EXCLUDED.jockey_performances
+            ''', (
+                bias_result.target_date,
+                bias_result.analyzed_at,
+                bias_result.total_races,
+                json.dumps(data['venue_biases'], ensure_ascii=False),
+                json.dumps(data['jockey_performances'], ensure_ascii=False)
+            ))
 
-        with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(bias_result.to_dict(), f, ensure_ascii=False, indent=2)
+            conn.commit()
+            logger.info(f"バイアス結果DB保存: {bias_result.target_date}")
+            return True
 
-        logger.info(f"バイアス結果保存: {output_path}")
-        return output_path
+        except Exception as e:
+            logger.error(f"バイアス保存エラー: {e}")
+            if conn:
+                conn.rollback()
+            return False
+        finally:
+            conn.close()
 
     def load_bias(self, target_date: date) -> Optional[DailyBiasResult]:
-        """保存されたバイアス結果を読み込み"""
-        from pathlib import Path
-
-        date_str = target_date.strftime("%Y%m%d")
-        path = Path(f"./analysis/bias_{date_str}.json")
-
-        if not path.exists():
-            # Docker環境用パス
-            path = Path(f"/app/analysis/bias_{date_str}.json")
-
-        if not path.exists():
+        """DBからバイアス結果を読み込み"""
+        conn = self.db.get_connection()
+        if not conn:
+            logger.error("DB接続失敗")
             return None
 
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        try:
+            cur = conn.cursor()
+            date_str = target_date.strftime("%Y-%m-%d")
 
-        venue_biases = {
-            k: VenueBias(**v) for k, v in data['venue_biases'].items()
-        }
-        jockey_performances = {
-            k: JockeyDayPerformance(**v) for k, v in data['jockey_performances'].items()
-        }
+            cur.execute('''
+                SELECT target_date, analyzed_at, total_races,
+                       venue_biases, jockey_performances
+                FROM daily_bias
+                WHERE target_date = %s
+            ''', (date_str,))
 
-        return DailyBiasResult(
-            target_date=data['target_date'],
-            analyzed_at=data['analyzed_at'],
-            total_races=data['total_races'],
-            venue_biases=venue_biases,
-            jockey_performances=jockey_performances,
-        )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            venue_biases_data = row[3] if isinstance(row[3], dict) else json.loads(row[3]) if row[3] else {}
+            jockey_data = row[4] if isinstance(row[4], dict) else json.loads(row[4]) if row[4] else {}
+
+            venue_biases = {
+                k: VenueBias(**v) for k, v in venue_biases_data.items()
+            }
+            jockey_performances = {
+                k: JockeyDayPerformance(**v) for k, v in jockey_data.items()
+            }
+
+            return DailyBiasResult(
+                target_date=str(row[0]),
+                analyzed_at=str(row[1]),
+                total_races=row[2],
+                venue_biases=venue_biases,
+                jockey_performances=jockey_performances,
+            )
+
+        except Exception as e:
+            logger.error(f"バイアス読み込みエラー: {e}")
+            return None
+        finally:
+            conn.close()
 
     def get_bias_features(self, bias_result: DailyBiasResult, venue_code: str,
                           wakuban: int, kishu_code: str) -> Dict[str, float]:
