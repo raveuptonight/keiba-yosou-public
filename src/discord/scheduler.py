@@ -27,6 +27,7 @@ from src.config import (
     SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES,
 )
 from src.discord.formatters import format_prediction_notification, format_final_prediction_notification
+from src.models.ev_recommender import EVRecommender, format_ev_recommendations
 
 # ロガー設定
 logger = logging.getLogger(__name__)
@@ -292,6 +293,92 @@ class PredictionScheduler(commands.Cog):
 
         logger.info(f"PredictionScheduler初期化: channel_id={self.notification_channel_id}")
 
+    async def _handle_weekend_result_select(self, interaction: discord.Interaction):
+        """週末結果の日付選択インタラクションを処理"""
+        values = interaction.data.get("values", [])
+        if not values:
+            return
+
+        selected_date = values[0]
+        logger.info(f"週末結果詳細リクエスト: date={selected_date}, user={interaction.user}")
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # 選択された日付のデータを取得
+            from datetime import datetime
+            from src.scheduler.result_collector import ResultCollector
+
+            target_date = datetime.strptime(selected_date, "%Y-%m-%d").date()
+            collector = ResultCollector()
+            analysis = collector.collect_and_analyze(target_date)
+
+            if analysis['status'] != 'success':
+                await interaction.followup.send(f"❌ {selected_date} のデータが見つかりません", ephemeral=True)
+                return
+
+            acc = analysis['accuracy']
+
+            # 詳細メッセージを作成
+            lines = [
+                f"📊 **{selected_date} 予想精度レポート**",
+                f"分析レース数: {acc['analyzed_races']}R",
+                "",
+                "**【ランキング別成績】**",
+            ]
+
+            # ランキング別
+            for rank in [1, 2, 3]:
+                if rank in acc.get('ranking_stats', {}):
+                    r = acc['ranking_stats'][rank]
+                    lines.append(
+                        f"  {rank}位予想: 1着{r['1着']}回 2着{r['2着']}回 3着{r['3着']}回 "
+                        f"(複勝率{r['複勝率']:.1f}%)"
+                    )
+
+            # 人気別
+            if acc.get('popularity_stats'):
+                lines.append("")
+                lines.append("**【人気別成績】** (1位予想馬)")
+                for pop_cat in ['1-3番人気', '4-6番人気', '7-9番人気', '10番人気以下']:
+                    if pop_cat in acc['popularity_stats']:
+                        p = acc['popularity_stats'][pop_cat]
+                        lines.append(f"  {pop_cat}: {p['対象']}R → 複勝圏{p['複勝圏']}回 ({p['複勝率']:.0f}%)")
+
+            # 信頼度別
+            if acc.get('confidence_stats'):
+                lines.append("")
+                lines.append("**【信頼度別成績】**")
+                for conf_cat in ['高(80%以上)', '中(60-80%)', '低(60%未満)']:
+                    if conf_cat in acc['confidence_stats']:
+                        c = acc['confidence_stats'][conf_cat]
+                        lines.append(f"  {conf_cat}: {c['対象']}R → 複勝圏{c['複勝圏']}回 ({c['複勝率']:.0f}%)")
+
+            # 芝/ダート別
+            if acc.get('by_track'):
+                lines.append("")
+                lines.append("**【芝/ダート別】**")
+                for track in ['芝', 'ダ']:
+                    if track in acc['by_track']:
+                        t = acc['by_track'][track]
+                        lines.append(f"  {track}: {t['races']}R → 複勝率{t['top3_rate']:.0f}%")
+
+            # 回収率
+            rr = acc.get('return_rates', {})
+            if rr.get('tansho_investment', 0) > 0:
+                lines.append("")
+                lines.append("**【回収率】** (1位予想に各100円)")
+                lines.append(f"  単勝: {rr['tansho_return']:,}円 / {rr['tansho_investment']:,}円 = {rr['tansho_roi']:.1f}%")
+                lines.append(f"  複勝: {rr['fukusho_return']:,}円 / {rr['fukusho_investment']:,}円 = {rr['fukusho_roi']:.1f}%")
+
+            message = "\n".join(lines)
+            await interaction.followup.send(message, ephemeral=True)
+            logger.info(f"週末結果詳細送信完了: date={selected_date}")
+
+        except Exception as e:
+            logger.exception(f"週末結果詳細取得エラー: date={selected_date}, error={e}")
+            await interaction.followup.send(f"❌ エラー: {str(e)}", ephemeral=True)
+
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         """
@@ -299,12 +386,21 @@ class PredictionScheduler(commands.Cog):
 
         daily_scheduler.pyから送信されたSelectメニューのインタラクションを処理
         """
+        logger.info(f"インタラクション受信: type={interaction.type}, data={interaction.data}")
+
         # Selectメニューのインタラクションのみ処理
         if interaction.type != discord.InteractionType.component:
             return
 
-        # prediction_selectのみ処理
         custom_id = interaction.data.get("custom_id")
+        logger.info(f"コンポーネントインタラクション: custom_id={custom_id}")
+
+        # 週末結果の日付選択
+        if custom_id == "weekend_result_select":
+            await self._handle_weekend_result_select(interaction)
+            return
+
+        # prediction_selectのみ処理
         if custom_id != "prediction_select":
             return
 
@@ -690,6 +786,21 @@ class PredictionScheduler(commands.Cog):
                             )
 
                             await channel.send(message, view=view)
+
+                            # 期待値ベース馬券推奨を取得・送信
+                            try:
+                                race_code = prediction.get("race_code") or race_id
+                                ev_recommender = EVRecommender()
+                                ev_recs = ev_recommender.get_recommendations(
+                                    race_code=race_code,
+                                    ranked_horses=ranked,
+                                    use_realtime_odds=True,
+                                )
+                                ev_message = format_ev_recommendations(ev_recs)
+                                await channel.send(ev_message)
+                                logger.info(f"EV推奨送信完了: race_id={race_id}")
+                            except Exception as ev_err:
+                                logger.error(f"EV推奨取得エラー: race_id={race_id}, error={ev_err}")
                         else:
                             # 予想結果が空の場合
                             logger.warning(f"最終予想結果が空: race_id={race_id}")

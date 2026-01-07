@@ -83,7 +83,7 @@ DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # 統計表示最大件数
 SCHEDULER_EVENING_PREDICTION_HOUR: Final[int] = 21  # 前日予想の実行時刻（時）
 SCHEDULER_EVENING_PREDICTION_MINUTE: Final[int] = 0  # 前日予想の実行時刻（分）
 SCHEDULER_CHECK_INTERVAL_MINUTES: Final[int] = 10  # レース時刻チェック間隔（分）
-SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 45  # 最終予想のタイミング（レース何分前）
+SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 30  # 最終予想のタイミング（レース何分前）
 SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # 最終予想の時刻許容範囲（分）
 
 # =====================================
