@@ -56,9 +56,9 @@ class ResultCollector:
             for row in cur.fetchall():
                 race_code = row[0]
 
-                # 各レースの着順を取得（速報または確定）
+                # 各レースの着順・人気を取得（速報または確定）
                 cur.execute('''
-                    SELECT umaban, kakutei_chakujun, bamei
+                    SELECT umaban, kakutei_chakujun, bamei, tansho_ninkijun
                     FROM umagoto_race_joho
                     WHERE race_code = %s
                       AND data_kubun IN ('6', '7')
@@ -67,10 +67,17 @@ class ResultCollector:
 
                 results = []
                 for r in cur.fetchall():
+                    ninki = None
+                    if r[3] and r[3].strip():
+                        try:
+                            ninki = int(r[3])
+                        except:
+                            pass
                     results.append({
                         'umaban': r[0],
                         'chakujun': int(r[1]) if r[1] else 99,
-                        'bamei': r[2]
+                        'bamei': r[2],
+                        'ninki': ninki,  # 単勝人気順
                     })
 
                 races.append({
@@ -85,6 +92,66 @@ class ResultCollector:
             cur.close()
             return races
 
+        finally:
+            conn.close()
+
+    def get_payouts(self, target_date: date) -> Dict[str, Dict]:
+        """指定日の払戻データを取得"""
+        db = get_db()
+        conn = db.get_connection()
+
+        try:
+            cur = conn.cursor()
+            kaisai_gappi = target_date.strftime("%m%d")
+            kaisai_nen = str(target_date.year)
+
+            # 払戻を取得（単勝・複勝のみ）
+            # data_kubun: '1'=登録/速報, '2'=速報, '7'=確定（確定優先）
+            cur.execute('''
+                SELECT DISTINCT ON (race_code) race_code,
+                       tansho1_umaban, tansho1_haraimodoshikin,
+                       fukusho1_umaban, fukusho1_haraimodoshikin,
+                       fukusho2_umaban, fukusho2_haraimodoshikin,
+                       fukusho3_umaban, fukusho3_haraimodoshikin
+                FROM haraimodoshi
+                WHERE kaisai_nen = %s
+                  AND kaisai_gappi = %s
+                  AND data_kubun IN ('1', '2', '7')
+                ORDER BY race_code, data_kubun DESC
+            ''', (kaisai_nen, kaisai_gappi))
+
+            payouts = {}
+            for row in cur.fetchall():
+                race_code = row[0]
+
+                # 単勝払戻
+                tansho_umaban = row[1].strip() if row[1] else None
+                tansho_payout = int(row[2]) if row[2] and row[2].strip() else 0
+
+                # 複勝払戻（最大3頭）
+                fukusho = []
+                for i in range(3):
+                    umaban = row[3 + i * 2]
+                    payout = row[4 + i * 2]
+                    if umaban and umaban.strip():
+                        fukusho.append({
+                            'umaban': umaban.strip(),
+                            'payout': int(payout) if payout and payout.strip() else 0
+                        })
+
+                payouts[race_code] = {
+                    'tansho_umaban': tansho_umaban,
+                    'tansho_payout': tansho_payout,
+                    'fukusho': fukusho,
+                }
+
+            cur.close()
+            logger.info(f"払戻データ取得: {len(payouts)}レース")
+            return payouts
+
+        except Exception as e:
+            logger.error(f"払戻データ取得エラー: {e}")
+            return {}
         finally:
             conn.close()
 
@@ -163,8 +230,8 @@ class ResultCollector:
         finally:
             conn.close()
 
-    def compare_results(self, predictions: Dict, results: List[Dict]) -> Dict:
-        """予想と結果を比較（詳細分析付き）"""
+    def compare_results(self, predictions: Dict, results: List[Dict], payouts: Dict = None) -> Dict:
+        """予想と結果を比較（ランキング別分析付き）"""
         comparison = {
             'date': predictions['date'],
             'total_races': 0,
@@ -180,6 +247,34 @@ class ResultCollector:
                 'sanrenpuku_hit': 0,  # 三連複的中
                 'mrr_sum': 0.0,  # MRR計算用
             },
+            # ランキング別成績（1位〜5位予想の着順分布）
+            'ranking_stats': {
+                1: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+                2: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+                3: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+                4: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+                5: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+            },
+            # 回収率計算用（1位予想に100円ずつ賭けた場合）
+            'return_stats': {
+                'tansho_investment': 0,  # 単勝投資額
+                'tansho_return': 0,       # 単勝回収額
+                'fukusho_investment': 0,  # 複勝投資額
+                'fukusho_return': 0,      # 複勝回収額
+            },
+            # 人気別成績（1位予想馬の人気と着順）
+            'popularity_stats': {
+                '1-3番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+                '4-6番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+                '7-9番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+                '10番人気以下': {'的中': 0, '複勝圏': 0, '対象': 0},
+            },
+            # 信頼度別成績（予想の信頼度スコアで分類）
+            'confidence_stats': {
+                '高(80%以上)': {'的中': 0, '複勝圏': 0, '対象': 0},
+                '中(60-80%)': {'的中': 0, '複勝圏': 0, '対象': 0},
+                '低(60%未満)': {'的中': 0, '複勝圏': 0, '対象': 0},
+            },
             'races': [],
             'misses': [],  # 取りこぼしリスト
             'by_venue': {},  # 競馬場別
@@ -191,6 +286,8 @@ class ResultCollector:
                 'place_prob_bins': {},  # 複勝確率帯別実績
             },
         }
+
+        payouts = payouts or {}
 
         # レースコードでマッピング
         results_map = {r['race_code']: r for r in results}
@@ -305,6 +402,94 @@ class ResultCollector:
                     comparison['stats']['umaren_hit'] += 1
                     race_result['hits']['umaren'] = True
 
+            # ランキング別成績の集計（1位〜5位予想がそれぞれ何着だったか）
+            actual_results_map = {str(int(r['umaban'])): r['chakujun'] for r in actual_results}
+            for rank in range(1, 6):  # 1位〜5位予想
+                if rank <= len(all_horses):
+                    pred_umaban = str(all_horses[rank - 1].get('horse_number', ''))
+                    comparison['ranking_stats'][rank]['出走'] += 1
+
+                    if pred_umaban in actual_results_map:
+                        actual_pos = actual_results_map[pred_umaban]
+                        if actual_pos == 1:
+                            comparison['ranking_stats'][rank]['1着'] += 1
+                        elif actual_pos == 2:
+                            comparison['ranking_stats'][rank]['2着'] += 1
+                        elif actual_pos == 3:
+                            comparison['ranking_stats'][rank]['3着'] += 1
+                        else:
+                            comparison['ranking_stats'][rank]['4着以下'] += 1
+                    else:
+                        # 出走取消など
+                        comparison['ranking_stats'][rank]['4着以下'] += 1
+
+            # 回収率計算（払戻データがある場合）
+            race_payout = payouts.get(race_code, {})
+            if race_payout and all_horses:
+                # 馬番を数値として比較（"6" == "06" を正しくマッチさせる）
+                pred_1st_num = str(int(all_horses[0].get('horse_number', 0))) if len(all_horses) > 0 else None
+
+                # 単勝（1位予想に100円）
+                comparison['return_stats']['tansho_investment'] += 100
+                tansho_umaban = race_payout.get('tansho_umaban', '')
+                if pred_1st_num and tansho_umaban:
+                    tansho_umaban_num = str(int(tansho_umaban)) if tansho_umaban.strip() else ''
+                    if tansho_umaban_num == pred_1st_num:
+                        comparison['return_stats']['tansho_return'] += race_payout.get('tansho_payout', 0)
+
+                # 複勝（1位予想に100円）
+                comparison['return_stats']['fukusho_investment'] += 100
+                fukusho_hits = race_payout.get('fukusho', [])
+                for fk in fukusho_hits:
+                    fk_umaban = fk.get('umaban', '')
+                    if fk_umaban:
+                        fk_umaban_num = str(int(fk_umaban)) if fk_umaban.strip() else ''
+                        if fk_umaban_num == pred_1st_num:
+                            comparison['return_stats']['fukusho_return'] += fk.get('payout', 0)
+                            break
+
+            # 人気別成績（1位予想馬の人気から）
+            pred_1st_umaban = str(int(all_horses[0].get('horse_number', 0))) if all_horses else None
+            pred_1st_ninki = None
+            for res in actual_results:
+                if str(int(res['umaban'])) == pred_1st_umaban:
+                    pred_1st_ninki = res.get('ninki')
+                    break
+
+            if pred_1st_ninki:
+                # 人気カテゴリを決定
+                if pred_1st_ninki <= 3:
+                    pop_cat = '1-3番人気'
+                elif pred_1st_ninki <= 6:
+                    pop_cat = '4-6番人気'
+                elif pred_1st_ninki <= 9:
+                    pop_cat = '7-9番人気'
+                else:
+                    pop_cat = '10番人気以下'
+
+                comparison['popularity_stats'][pop_cat]['対象'] += 1
+                if race_result['hits'].get('tansho'):
+                    comparison['popularity_stats'][pop_cat]['的中'] += 1
+                if race_result['hits'].get('fukusho'):
+                    comparison['popularity_stats'][pop_cat]['複勝圏'] += 1
+                race_result['pred_1st_ninki'] = pred_1st_ninki
+
+            # 信頼度別成績（1位予想馬のconfidenceから）
+            pred_1st_confidence = all_horses[0].get('confidence', 0) if all_horses else 0
+            if pred_1st_confidence >= 0.80:
+                conf_cat = '高(80%以上)'
+            elif pred_1st_confidence >= 0.60:
+                conf_cat = '中(60-80%)'
+            else:
+                conf_cat = '低(60%未満)'
+
+            comparison['confidence_stats'][conf_cat]['対象'] += 1
+            if race_result['hits'].get('tansho'):
+                comparison['confidence_stats'][conf_cat]['的中'] += 1
+            if race_result['hits'].get('fukusho'):
+                comparison['confidence_stats'][conf_cat]['複勝圏'] += 1
+            race_result['pred_1st_confidence'] = pred_1st_confidence
+
             comparison['races'].append(race_result)
 
             # 条件別集計
@@ -373,6 +558,64 @@ class ResultCollector:
                     'actual_rate': data['hit'] / data['count'] * 100,
                 }
 
+        # ランキング別成績を整形
+        ranking_stats = comparison.get('ranking_stats', {})
+        ranking_formatted = {}
+        for rank, data in ranking_stats.items():
+            total = data.get('出走', 0)
+            if total > 0:
+                ranking_formatted[rank] = {
+                    '出走': total,
+                    '1着': data['1着'],
+                    '2着': data['2着'],
+                    '3着': data['3着'],
+                    '4着以下': data['4着以下'],
+                    '1着率': data['1着'] / total * 100,
+                    '連対率': (data['1着'] + data['2着']) / total * 100,
+                    '複勝率': (data['1着'] + data['2着'] + data['3着']) / total * 100,
+                }
+
+        # 回収率計算
+        return_stats = comparison.get('return_stats', {})
+        tansho_inv = return_stats.get('tansho_investment', 0)
+        fukusho_inv = return_stats.get('fukusho_investment', 0)
+        return_rates = {
+            'tansho_roi': (return_stats.get('tansho_return', 0) / tansho_inv * 100) if tansho_inv > 0 else 0,
+            'fukusho_roi': (return_stats.get('fukusho_return', 0) / fukusho_inv * 100) if fukusho_inv > 0 else 0,
+            'tansho_investment': tansho_inv,
+            'tansho_return': return_stats.get('tansho_return', 0),
+            'fukusho_investment': fukusho_inv,
+            'fukusho_return': return_stats.get('fukusho_return', 0),
+        }
+
+        # 人気別成績を整形
+        popularity_stats = comparison.get('popularity_stats', {})
+        popularity_formatted = {}
+        for pop_cat, data in popularity_stats.items():
+            total = data.get('対象', 0)
+            if total > 0:
+                popularity_formatted[pop_cat] = {
+                    '対象': total,
+                    '的中': data['的中'],
+                    '複勝圏': data['複勝圏'],
+                    '的中率': data['的中'] / total * 100,
+                    '複勝率': data['複勝圏'] / total * 100,
+                }
+
+        # 信頼度別成績を整形
+        confidence_stats = comparison.get('confidence_stats', {})
+        confidence_formatted = {}
+        for conf_cat, data in confidence_stats.items():
+            total = data.get('対象', 0)
+            if total > 0:
+                confidence_formatted[conf_cat] = {
+                    '対象': total,
+                    '的中': data['的中'],
+                    '複勝圏': data['複勝圏'],
+                    '的中率': data['的中'] / total * 100,
+                    '複勝率': data['複勝圏'] / total * 100,
+                }
+
         return {
             'date': comparison['date'],
             'total_races': comparison['total_races'],
@@ -387,6 +630,10 @@ class ResultCollector:
                 'umaren_hit_rate': stats['umaren_hit'] / n * 100,
                 'sanrenpuku_hit_rate': stats['sanrenpuku_hit'] / n * 100,
             },
+            'ranking_stats': ranking_formatted,
+            'return_rates': return_rates,
+            'popularity_stats': popularity_formatted,
+            'confidence_stats': confidence_formatted,
             'by_venue': calc_rates(comparison.get('by_venue', {})),
             'by_distance': calc_rates(comparison.get('by_distance', {})),
             'by_field_size': calc_rates(comparison.get('by_field_size', {})),
@@ -413,8 +660,11 @@ class ResultCollector:
 
         logger.info(f"{len(results)}レースの結果を取得")
 
-        # 比較
-        comparison = self.compare_results(predictions, results)
+        # 払戻データを取得
+        payouts = self.get_payouts(target_date)
+
+        # 比較（払戻データ含む）
+        comparison = self.compare_results(predictions, results, payouts)
 
         # 精度計算
         accuracy = self.calculate_accuracy(comparison)
@@ -630,22 +880,65 @@ class ResultCollector:
         if 'error' in acc:
             return
 
-        accuracy = acc.get('accuracy', {})
         date_str = acc.get('date', '不明')
         n = acc.get('analyzed_races', 0)
-        raw_stats = acc.get('raw_stats', {})
+        ranking_stats = acc.get('ranking_stats', {})
+        return_rates = acc.get('return_rates', {})
+        popularity_stats = acc.get('popularity_stats', {})
+        confidence_stats = acc.get('confidence_stats', {})
+        by_track = acc.get('by_track', {})
 
         # 基本メッセージ
         lines = [
             f"📊 **{date_str} 予想精度レポート**",
             f"分析レース数: {n}R",
             "",
-            "**【的中率】**",
-            f"1位予想 → 1着: {raw_stats.get('top1_hit', 0)}/{n} ({accuracy.get('top1_hit_rate', 0):.1f}%)",
-            f"1位予想 → 3着内: {raw_stats.get('top1_in_top3', 0)}/{n} ({accuracy.get('top1_in_top3_rate', 0):.1f}%)",
-            f"上位3頭に勝ち馬含む: {raw_stats.get('top3_cover', 0)}/{n} ({accuracy.get('top3_cover_rate', 0):.1f}%)",
-            f"MRR: {accuracy.get('mrr', 0):.3f}",
+            "**【ランキング別成績】**",
         ]
+
+        # ランキング別成績（1位〜3位予想）
+        for rank in [1, 2, 3]:
+            if rank in ranking_stats:
+                data = ranking_stats[rank]
+                lines.append(
+                    f"  {rank}位予想: "
+                    f"1着{data['1着']}回 2着{data['2着']}回 3着{data['3着']}回 "
+                    f"(複勝率{data['複勝率']:.1f}%)"
+                )
+
+        # 人気別成績（穴馬狙い）
+        if popularity_stats:
+            lines.append("")
+            lines.append("**【人気別成績】** (1位予想馬)")
+            for pop_cat in ['1-3番人気', '4-6番人気', '7-9番人気', '10番人気以下']:
+                if pop_cat in popularity_stats:
+                    p = popularity_stats[pop_cat]
+                    lines.append(f"  {pop_cat}: {p['対象']}R → 的中{p['的中']}回 複勝圏{p['複勝圏']}回 ({p['複勝率']:.0f}%)")
+
+        # 信頼度別成績
+        if confidence_stats:
+            lines.append("")
+            lines.append("**【信頼度別成績】**")
+            for conf_cat in ['高(80%以上)', '中(60-80%)', '低(60%未満)']:
+                if conf_cat in confidence_stats:
+                    c = confidence_stats[conf_cat]
+                    lines.append(f"  {conf_cat}: {c['対象']}R → 的中{c['的中']}回 複勝圏{c['複勝圏']}回 ({c['複勝率']:.0f}%)")
+
+        # 芝/ダート別
+        if by_track:
+            lines.append("")
+            lines.append("**【芝/ダート別】**")
+            for track in ['芝', 'ダ']:
+                if track in by_track:
+                    t = by_track[track]
+                    lines.append(f"  {track}: {t['races']}R → 複勝率{t['top3_rate']:.0f}%")
+
+        # 回収率
+        if return_rates.get('tansho_investment', 0) > 0:
+            lines.append("")
+            lines.append("**【回収率】** (1位予想に各100円)")
+            lines.append(f"  単勝: {return_rates['tansho_return']:,}円 / {return_rates['tansho_investment']:,}円 = {return_rates['tansho_roi']:.1f}%")
+            lines.append(f"  複勝: {return_rates['fukusho_return']:,}円 / {return_rates['fukusho_investment']:,}円 = {return_rates['fukusho_roi']:.1f}%")
 
         # 取りこぼしリスト
         misses = acc.get('misses', [])
@@ -654,31 +947,6 @@ class ResultCollector:
             lines.append("**【取りこぼし】**")
             for miss in misses[:5]:  # 最大5件
                 lines.append(f"- {miss['race']}: 勝ち馬を{miss['winner_rank']}位評価")
-
-        # 条件別（競馬場別）
-        by_venue = acc.get('by_venue', {})
-        if by_venue:
-            lines.append("")
-            lines.append("**【競馬場別】**")
-            for venue, data in sorted(by_venue.items()):
-                lines.append(f"  {venue}: {data['races']}R / 単勝{data['top1_rate']:.0f}% / カバー{data['cover_rate']:.0f}%")
-
-        # 条件別（トラック別）
-        by_track = acc.get('by_track', {})
-        if by_track:
-            lines.append("")
-            lines.append("**【トラック別】**")
-            for track, data in sorted(by_track.items()):
-                lines.append(f"  {track}: {data['races']}R / 単勝{data['top1_rate']:.0f}% / カバー{data['cover_rate']:.0f}%")
-
-        # キャリブレーション
-        calibration = acc.get('calibration', {})
-        if calibration:
-            lines.append("")
-            lines.append("**【キャリブレーション】**")
-            for bin_name in sorted(calibration.keys(), key=lambda x: int(x.replace('%', ''))):
-                data = calibration[bin_name]
-                lines.append(f"  予測{bin_name}: 実際{data['actual_rate']:.0f}% ({data['count']}件)")
 
         message = "\n".join(lines)
 
@@ -697,8 +965,20 @@ class ResultCollector:
         except Exception as e:
             logger.error(f"Discord通知エラー: {e}")
 
-    def send_weekend_notification(self, saturday: date, sunday: date, stats: Dict, accuracy: Dict, cumulative: Optional[Dict] = None):
-        """週末合計のDiscord通知を送信"""
+    def send_weekend_notification(
+        self,
+        saturday: date,
+        sunday: date,
+        stats: Dict,
+        ranking_stats: Dict,
+        return_rates: Dict,
+        popularity_stats: Dict = None,
+        confidence_stats: Dict = None,
+        by_track: Dict = None,
+        daily_data: Dict = None,  # 日付別データ（インタラクション用）
+        cumulative: Optional[Dict] = None
+    ):
+        """週末合計のDiscord通知を送信（詳細分析付き・日付選択メニュー付き）"""
         import os
         import requests
 
@@ -709,27 +989,64 @@ class ResultCollector:
             logger.warning("Discord通知設定がありません")
             return
 
-        message = f"""📊 **週末予想精度レポート**
-期間: {saturday} - {sunday}
+        lines = [
+            f"📊 **週末予想精度レポート**",
+            f"期間: {saturday} - {sunday}",
+            f"分析レース数: {stats.get('analyzed_races', 0)}R",
+            "",
+            "**【ランキング別成績】**",
+        ]
 
-分析レース数: {stats.get('analyzed_races', 0)}R
+        # ランキング別成績
+        for rank in [1, 2, 3]:
+            if rank in ranking_stats:
+                r = ranking_stats[rank]
+                lines.append(
+                    f"  {rank}位予想: "
+                    f"1着{r['1着']}回 2着{r['2着']}回 3着{r['3着']}回 "
+                    f"(複勝率{r['複勝率']:.1f}%)"
+                )
 
-🎯 今週の的中率:
-  単勝: {accuracy.get('tansho_hit_rate', 0):.1f}%
-  複勝: {accuracy.get('fukusho_hit_rate', 0):.1f}%
-  馬連: {accuracy.get('umaren_hit_rate', 0):.1f}%
-  三連複: {accuracy.get('sanrenpuku_hit_rate', 0):.1f}%
-"""
+        # 人気別成績
+        if popularity_stats:
+            lines.append("")
+            lines.append("**【人気別成績】** (1位予想馬)")
+            for pop_cat in ['1-3番人気', '4-6番人気', '7-9番人気', '10番人気以下']:
+                if pop_cat in popularity_stats:
+                    p = popularity_stats[pop_cat]
+                    lines.append(f"  {pop_cat}: {p['対象']}R → 複勝圏{p['複勝圏']}回 ({p['複勝率']:.0f}%)")
 
-        # 累積成績を追加
-        if cumulative and cumulative.get('total_races', 0) > 0:
-            message += f"""
-📈 累積成績 ({cumulative['total_races']}R):
-  単勝: {cumulative.get('tansho_rate', 0):.1f}%
-  複勝: {cumulative.get('fukusho_rate', 0):.1f}%
-  馬連: {cumulative.get('umaren_rate', 0):.1f}%
-  三連複: {cumulative.get('sanrenpuku_rate', 0):.1f}%
-"""
+        # 信頼度別成績
+        if confidence_stats:
+            lines.append("")
+            lines.append("**【信頼度別成績】**")
+            for conf_cat in ['高(80%以上)', '中(60-80%)', '低(60%未満)']:
+                if conf_cat in confidence_stats:
+                    c = confidence_stats[conf_cat]
+                    lines.append(f"  {conf_cat}: {c['対象']}R → 複勝圏{c['複勝圏']}回 ({c['複勝率']:.0f}%)")
+
+        # 芝/ダート別
+        if by_track:
+            lines.append("")
+            lines.append("**【芝/ダート別】**")
+            for track in ['芝', 'ダ']:
+                if track in by_track:
+                    t = by_track[track]
+                    lines.append(f"  {track}: {t['races']}R → 複勝率{t['top3_rate']:.0f}%")
+
+        # 回収率
+        if return_rates:
+            lines.append("")
+            lines.append("**【回収率】** (1位予想に各100円)")
+            lines.append(f"  単勝: {return_rates.get('tansho_return', 0):,}円 / {return_rates.get('tansho_investment', 0):,}円 = {return_rates.get('tansho_roi', 0):.1f}%")
+            lines.append(f"  複勝: {return_rates.get('fukusho_return', 0):,}円 / {return_rates.get('fukusho_investment', 0):,}円 = {return_rates.get('fukusho_roi', 0):.1f}%")
+
+        # 日付選択メニューがある場合は案内を追加
+        if daily_data:
+            lines.append("")
+            lines.append("▼ 日付を選択して詳細を表示")
+
+        message = "\n".join(lines)
 
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         headers = {
@@ -737,12 +1054,45 @@ class ResultCollector:
             "Content-Type": "application/json"
         }
 
+        # リクエストボディ
+        payload = {"content": message}
+
+        # 日付別データがある場合はセレクトメニューを追加
+        if daily_data and len(daily_data) > 0:
+            options = []
+            for date_str in sorted(daily_data.keys()):
+                data = daily_data[date_str]
+                n = data.get('analyzed_races', 0)
+                fukusho_rate = 0
+                if data.get('ranking_stats') and 1 in data['ranking_stats']:
+                    fukusho_rate = data['ranking_stats'][1].get('複勝率', 0)
+                options.append({
+                    "label": f"{date_str} ({n}R)",
+                    "value": date_str,
+                    "description": f"1位予想複勝率: {fukusho_rate:.0f}%"
+                })
+
+            if options:
+                payload["components"] = [
+                    {
+                        "type": 1,  # Action Row
+                        "components": [
+                            {
+                                "type": 3,  # Select Menu
+                                "custom_id": "weekend_result_select",
+                                "placeholder": "日付を選択して詳細を表示...",
+                                "options": options
+                            }
+                        ]
+                    }
+                ]
+
         try:
-            response = requests.post(url, headers=headers, json={"content": message}, timeout=10)
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
             if response.status_code in (200, 201):
                 logger.info("週末Discord通知送信完了")
             else:
-                logger.warning(f"週末Discord通知失敗: {response.status_code}")
+                logger.warning(f"週末Discord通知失敗: {response.status_code} - {response.text}")
         except Exception as e:
             logger.error(f"週末Discord通知エラー: {e}")
 
@@ -768,19 +1118,40 @@ def collect_today_results():
         print(f"結果収集失敗: {analysis['status']}")
 
 
+def get_recent_race_dates(days_back: int = 7) -> list:
+    """直近のレース日（予想データがある日）を取得"""
+    db = get_db()
+    conn = db.get_connection()
+
+    try:
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT DISTINCT race_date
+            FROM predictions
+            WHERE race_date >= %s AND race_date < %s
+            ORDER BY race_date
+        ''', (date.today() - timedelta(days=days_back), date.today()))
+
+        dates = [row[0] for row in cur.fetchall()]
+        cur.close()
+        return dates
+    finally:
+        conn.close()
+
+
 def collect_weekend_results():
-    """先週末（土日）のレース結果を収集してDBに保存"""
+    """先週末のレース結果を収集してDBに保存（開催日を自動検出）"""
     collector = ResultCollector()
-    today = date.today()
 
-    # 直近の日曜日を計算
-    days_since_sunday = today.weekday() + 1
-    if days_since_sunday == 7:
-        days_since_sunday = 0
-    last_sunday = today - timedelta(days=days_since_sunday)
-    last_saturday = last_sunday - timedelta(days=1)
+    # 予想データがある直近の日を取得（最大7日前まで）
+    weekend_dates = get_recent_race_dates(days_back=7)
 
-    weekend_dates = [last_saturday, last_sunday]
+    if not weekend_dates:
+        print("直近7日間に予想データがありません")
+        return
+
+    first_date = weekend_dates[0]
+    last_date = weekend_dates[-1]
     total_stats = {
         'total_races': 0,
         'analyzed_races': 0,
@@ -789,15 +1160,48 @@ def collect_weekend_results():
         'umaren_hit': 0,
         'sanrenpuku_hit': 0,
     }
+    # ランキング別成績の集計用
+    total_ranking_stats = {
+        1: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+        2: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+        3: {'1着': 0, '2着': 0, '3着': 0, '4着以下': 0, '出走': 0},
+    }
+    # 回収率集計用
+    total_return = {
+        'tansho_investment': 0,
+        'tansho_return': 0,
+        'fukusho_investment': 0,
+        'fukusho_return': 0,
+    }
+    # 人気別成績集計用
+    total_popularity = {
+        '1-3番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+        '4-6番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+        '7-9番人気': {'的中': 0, '複勝圏': 0, '対象': 0},
+        '10番人気以下': {'的中': 0, '複勝圏': 0, '対象': 0},
+    }
+    # 信頼度別成績集計用
+    total_confidence = {
+        '高(80%以上)': {'的中': 0, '複勝圏': 0, '対象': 0},
+        '中(60-80%)': {'的中': 0, '複勝圏': 0, '対象': 0},
+        '低(60%未満)': {'的中': 0, '複勝圏': 0, '対象': 0},
+    }
+    # 芝/ダート別集計用
+    total_track = {
+        '芝': {'races': 0, 'top1_hit': 0, 'top1_in_top3': 0, 'top3_cover': 0},
+        'ダ': {'races': 0, 'top1_hit': 0, 'top1_in_top3': 0, 'top3_cover': 0},
+    }
 
-    print(f"\n=== 週末レース結果収集 ({last_saturday} - {last_sunday}) ===")
+    # 日付別データ（インタラクション用）
+    daily_data = {}
+
+    print(f"\n=== 週末レース結果収集 ({first_date} - {last_date}) ===")
+    print(f"対象日: {', '.join(str(d) for d in weekend_dates)}")
 
     for target_date in weekend_dates:
         analysis = collector.collect_and_analyze(target_date)
 
         if analysis['status'] == 'success':
-            # ファイル保存
-            collector.save_analysis_to_db(analysis)
             # DB保存
             collector.save_analysis_to_db(analysis)
 
@@ -809,21 +1213,130 @@ def collect_weekend_results():
             total_stats['umaren_hit'] += acc['raw_stats']['umaren_hit']
             total_stats['sanrenpuku_hit'] += acc['raw_stats']['sanrenpuku_hit']
 
+            # ランキング別成績を集計
+            ranking_stats = acc.get('ranking_stats', {})
+            for rank in [1, 2, 3]:
+                if rank in ranking_stats:
+                    for key in ['1着', '2着', '3着', '4着以下', '出走']:
+                        total_ranking_stats[rank][key] += ranking_stats[rank].get(key, 0)
+
+            # 回収率を集計
+            return_rates = acc.get('return_rates', {})
+            total_return['tansho_investment'] += return_rates.get('tansho_investment', 0)
+            total_return['tansho_return'] += return_rates.get('tansho_return', 0)
+            total_return['fukusho_investment'] += return_rates.get('fukusho_investment', 0)
+            total_return['fukusho_return'] += return_rates.get('fukusho_return', 0)
+
+            # 人気別成績を集計
+            popularity_stats = acc.get('popularity_stats', {})
+            for pop_cat in total_popularity.keys():
+                if pop_cat in popularity_stats:
+                    for key in ['的中', '複勝圏', '対象']:
+                        total_popularity[pop_cat][key] += popularity_stats[pop_cat].get(key, 0)
+
+            # 信頼度別成績を集計
+            confidence_stats = acc.get('confidence_stats', {})
+            for conf_cat in total_confidence.keys():
+                if conf_cat in confidence_stats:
+                    for key in ['的中', '複勝圏', '対象']:
+                        total_confidence[conf_cat][key] += confidence_stats[conf_cat].get(key, 0)
+
+            # 芝/ダート別成績を集計（%を回数に戻す）
+            by_track = acc.get('by_track', {})
+            for track in total_track.keys():
+                if track in by_track:
+                    t = by_track[track]
+                    races = t.get('races', 0)
+                    total_track[track]['races'] += races
+                    # %から回数を計算
+                    total_track[track]['top1_hit'] += int(round(t.get('top1_rate', 0) * races / 100))
+                    total_track[track]['top1_in_top3'] += int(round(t.get('top3_rate', 0) * races / 100))
+                    total_track[track]['top3_cover'] += int(round(t.get('cover_rate', 0) * races / 100))
+
+            # 日付別データを保存（インタラクション用）
+            daily_data[str(target_date)] = {
+                'analyzed_races': acc['analyzed_races'],
+                'ranking_stats': acc.get('ranking_stats', {}),
+                'return_rates': acc.get('return_rates', {}),
+                'popularity_stats': acc.get('popularity_stats', {}),
+                'confidence_stats': acc.get('confidence_stats', {}),
+                'by_track': acc.get('by_track', {}),
+            }
+
             print(f"\n{acc['date']}: {acc['analyzed_races']}R分析 → DB保存済")
-            print(f"  単勝: {acc['accuracy']['tansho_hit_rate']:.1f}%")
-            print(f"  複勝: {acc['accuracy']['fukusho_hit_rate']:.1f}%")
+            # ランキング別表示
+            for rank in [1, 2, 3]:
+                if rank in ranking_stats:
+                    r = ranking_stats[rank]
+                    print(f"  {rank}位予想: 1着{r['1着']} 2着{r['2着']} 3着{r['3着']} (複勝率{r['複勝率']:.1f}%)")
         else:
             print(f"\n{target_date}: {analysis['status']}")
 
     # 週末合計を通知
     if total_stats['analyzed_races'] > 0:
         n = total_stats['analyzed_races']
-        weekend_accuracy = {
-            'tansho_hit_rate': total_stats['tansho_hit'] / n * 100,
-            'fukusho_hit_rate': total_stats['fukusho_hit'] / n * 100,
-            'umaren_hit_rate': total_stats['umaren_hit'] / n * 100,
-            'sanrenpuku_hit_rate': total_stats['sanrenpuku_hit'] / n * 100,
-        }
+
+        # ランキング別成績を整形
+        weekend_ranking = {}
+        for rank in [1, 2, 3]:
+            total = total_ranking_stats[rank]['出走']
+            if total > 0:
+                weekend_ranking[rank] = {
+                    '出走': total,
+                    '1着': total_ranking_stats[rank]['1着'],
+                    '2着': total_ranking_stats[rank]['2着'],
+                    '3着': total_ranking_stats[rank]['3着'],
+                    '複勝率': (total_ranking_stats[rank]['1着'] + total_ranking_stats[rank]['2着'] + total_ranking_stats[rank]['3着']) / total * 100,
+                }
+
+        # 回収率を計算
+        weekend_return = {}
+        if total_return['tansho_investment'] > 0:
+            weekend_return['tansho_roi'] = total_return['tansho_return'] / total_return['tansho_investment'] * 100
+            weekend_return['tansho_investment'] = total_return['tansho_investment']
+            weekend_return['tansho_return'] = total_return['tansho_return']
+        if total_return['fukusho_investment'] > 0:
+            weekend_return['fukusho_roi'] = total_return['fukusho_return'] / total_return['fukusho_investment'] * 100
+            weekend_return['fukusho_investment'] = total_return['fukusho_investment']
+            weekend_return['fukusho_return'] = total_return['fukusho_return']
+
+        # 人気別成績を整形
+        weekend_popularity = {}
+        for pop_cat, data in total_popularity.items():
+            total = data['対象']
+            if total > 0:
+                weekend_popularity[pop_cat] = {
+                    '対象': total,
+                    '的中': data['的中'],
+                    '複勝圏': data['複勝圏'],
+                    '的中率': data['的中'] / total * 100,
+                    '複勝率': data['複勝圏'] / total * 100,
+                }
+
+        # 信頼度別成績を整形
+        weekend_confidence = {}
+        for conf_cat, data in total_confidence.items():
+            total = data['対象']
+            if total > 0:
+                weekend_confidence[conf_cat] = {
+                    '対象': total,
+                    '的中': data['的中'],
+                    '複勝圏': data['複勝圏'],
+                    '的中率': data['的中'] / total * 100,
+                    '複勝率': data['複勝圏'] / total * 100,
+                }
+
+        # 芝/ダート別成績を整形
+        weekend_track = {}
+        for track, data in total_track.items():
+            races = data['races']
+            if races > 0:
+                weekend_track[track] = {
+                    'races': races,
+                    'top1_rate': data['top1_hit'] / races * 100,
+                    'top3_rate': data['top1_in_top3'] / races * 100,
+                    'cover_rate': data['top3_cover'] / races * 100,
+                }
 
         # 累積トラッキング更新
         collector.update_accuracy_tracking(total_stats)
@@ -833,20 +1346,56 @@ def collect_weekend_results():
 
         print(f"\n=== 週末合計 ===")
         print(f"分析レース数: {n}R")
-        print(f"単勝的中率: {weekend_accuracy['tansho_hit_rate']:.1f}%")
-        print(f"複勝的中率: {weekend_accuracy['fukusho_hit_rate']:.1f}%")
-        print(f"馬連的中率: {weekend_accuracy['umaren_hit_rate']:.1f}%")
-        print(f"三連複的中率: {weekend_accuracy['sanrenpuku_hit_rate']:.1f}%")
+        print("\n【ランキング別成績】")
+        for rank in [1, 2, 3]:
+            if rank in weekend_ranking:
+                r = weekend_ranking[rank]
+                print(f"  {rank}位予想: 1着{r['1着']}回 2着{r['2着']}回 3着{r['3着']}回 (複勝率{r['複勝率']:.1f}%)")
+        print("\n【回収率】")
+        if weekend_return:
+            print(f"  単勝: {weekend_return.get('tansho_return', 0):,}円 / {weekend_return.get('tansho_investment', 0):,}円 = {weekend_return.get('tansho_roi', 0):.1f}%")
+            print(f"  複勝: {weekend_return.get('fukusho_return', 0):,}円 / {weekend_return.get('fukusho_investment', 0):,}円 = {weekend_return.get('fukusho_roi', 0):.1f}%")
 
-        if cumulative:
-            print(f"\n=== 累積成績 ({cumulative['total_races']}R) ===")
-            print(f"単勝: {cumulative['tansho_rate']:.1f}%")
-            print(f"複勝: {cumulative['fukusho_rate']:.1f}%")
-            print(f"馬連: {cumulative['umaren_rate']:.1f}%")
-            print(f"三連複: {cumulative['sanrenpuku_rate']:.1f}%")
+        # Discord通知（週末合計 + 詳細分析 + 日付選択メニュー）
+        collector.send_weekend_notification(
+            first_date, last_date, total_stats,
+            weekend_ranking, weekend_return,
+            weekend_popularity, weekend_confidence, weekend_track,
+            daily_data, cumulative
+        )
 
-        # Discord通知（週末合計 + 累積）
-        collector.send_weekend_notification(last_saturday, last_sunday, total_stats, weekend_accuracy, cumulative)
+        # SHAP分析を実行（オプション）
+        try:
+            from src.scheduler.shap_analyzer import ShapAnalyzer, SHAP_AVAILABLE
+            if SHAP_AVAILABLE:
+                print("\n=== SHAP特徴量分析 ===")
+                shap_analyzer = ShapAnalyzer()
+                shap_analysis = shap_analyzer.analyze_dates(weekend_dates)
+                if shap_analysis.get('status') == 'success':
+                    # レポート生成・通知・DB保存
+                    report = shap_analyzer.generate_report(shap_analysis)
+                    print(report)
+                    shap_analyzer.send_discord_notification(report)
+                    shap_analyzer.save_analysis_to_db(shap_analysis)
+
+                    # 特徴量調整係数を計算・保存
+                    print("\n=== 特徴量調整係数 ===")
+                    adjustments = shap_analyzer.calculate_feature_adjustments(shap_analysis)
+                    adjusted_count = sum(1 for v in adjustments.values() if v != 1.0)
+                    print(f"調整対象: {adjusted_count}特徴量")
+                    if adjusted_count > 0:
+                        # 調整された特徴量を表示
+                        for fname, adj in sorted(adjustments.items(), key=lambda x: x[1]):
+                            if adj != 1.0:
+                                direction = "↓抑制" if adj < 1.0 else "↑強化"
+                                print(f"  {fname}: {adj:.2f} ({direction})")
+                        shap_analyzer.save_adjustments_to_db(adjustments)
+                else:
+                    print("SHAP分析データがありません")
+            else:
+                logger.info("SHAPライブラリが利用できないため分析をスキップ")
+        except Exception as e:
+            logger.warning(f"SHAP分析エラー（スキップ）: {e}")
 
 
 def collect_yesterday_results():

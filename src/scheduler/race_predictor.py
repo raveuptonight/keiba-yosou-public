@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 class RacePredictor:
     """レース予想クラス（ensemble_model対応 - 分類モデル+キャリブレーション）"""
 
-    def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl"):
+    def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl", use_adjustments: bool = True):
         self.model_path = model_path
         # 回帰モデル
         self.xgb_model = None
@@ -46,7 +46,11 @@ class RacePredictor:
         # 特徴量
         self.feature_names = None
         self.has_classifiers = False
+        # 特徴量調整係数
+        self.feature_adjustments = {}
         self._load_model()
+        if use_adjustments:
+            self._load_feature_adjustments()
 
     def _load_model(self):
         """ensemble_modelを読み込み（新旧形式対応）"""
@@ -88,6 +92,30 @@ class RacePredictor:
         except Exception as e:
             logger.error(f"モデル読み込み失敗: {e}")
             raise
+
+    def _load_feature_adjustments(self):
+        """特徴量調整係数をDBから読み込み"""
+        try:
+            from src.scheduler.shap_analyzer import ShapAnalyzer
+            self.feature_adjustments = ShapAnalyzer.load_adjustments_from_db()
+            if self.feature_adjustments:
+                adjusted_count = sum(1 for v in self.feature_adjustments.values() if v != 1.0)
+                logger.info(f"特徴量調整係数を適用: {adjusted_count}件の調整")
+        except Exception as e:
+            logger.warning(f"特徴量調整係数の読み込みに失敗（デフォルト使用）: {e}")
+            self.feature_adjustments = {}
+
+    def _apply_feature_adjustments(self, X: pd.DataFrame) -> pd.DataFrame:
+        """特徴量に調整係数を適用"""
+        if not self.feature_adjustments:
+            return X
+
+        X_adjusted = X.copy()
+        for fname, adjustment in self.feature_adjustments.items():
+            if fname in X_adjusted.columns and adjustment != 1.0:
+                X_adjusted[fname] = X_adjusted[fname] * adjustment
+
+        return X_adjusted
 
     def get_upcoming_races(self, target_date: date = None) -> List[Dict]:
         """指定日の出馬表を取得"""
@@ -278,6 +306,9 @@ class RacePredictor:
             # 予測（ensemble: XGBoost + LightGBM の平均）
             df = pd.DataFrame(features_list)
             X = df[self.feature_names].fillna(0)
+
+            # 特徴量調整係数を適用
+            X = self._apply_feature_adjustments(X)
 
             # 回帰予測（着順スコア）
             xgb_pred = self.xgb_model.predict(X)

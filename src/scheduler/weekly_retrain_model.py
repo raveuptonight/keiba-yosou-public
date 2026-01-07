@@ -498,12 +498,25 @@ class WeeklyRetrain:
         finally:
             conn.close()
 
-    def compare_models(self, new_model_path: str, test_year: int = None) -> Dict:
-        """新旧モデルを比較"""
-        if test_year is None:
-            test_year = date.today().year
+    def compare_models(self, new_model_path: str, test_year: int = 2022) -> Dict:
+        """
+        新旧モデルを総合評価で比較
 
-        logger.info(f"モデル比較（テスト年: {test_year}）")
+        評価指標:
+        - AUC (勝利/連対/複勝)
+        - Top-3カバー率
+        - 回収率シミュレーション（単勝・複勝）
+        - RMSE
+
+        総合スコアで判断（AUC重視、回収率も考慮）
+
+        注意: test_yearは学習データに含まれない年を指定すること
+              デフォルト2022年（学習は2023年以降を使用）
+        """
+        from sklearn.metrics import roc_auc_score
+
+        logger.info(f"モデル総合比較（テスト年: {test_year}）")
+        logger.info(f"※学習データ外の年でバックテスト")
 
         # モデル読み込み
         try:
@@ -513,15 +526,14 @@ class WeeklyRetrain:
             logger.error(f"モデル読み込みエラー: {e}")
             return {'status': 'error', 'message': str(e)}
 
-        old_xgb = old_model_data['xgb_model']
-        old_lgb = old_model_data['lgb_model']
         old_features = old_model_data['feature_names']
-
-        new_xgb = new_model_data['xgb_model']
-        new_lgb = new_model_data['lgb_model']
         new_features = new_model_data['feature_names']
 
-        # テストデータ取得
+        # 分類モデル取得
+        old_models = old_model_data.get('models', {})
+        new_models = new_model_data.get('models', {})
+
+        # テストデータ取得（払戻データも含む）
         db = get_db()
         conn = db.get_connection()
 
@@ -539,32 +551,270 @@ class WeeklyRetrain:
 
             logger.info(f"テストサンプル数: {len(df)}")
 
-            # 旧モデルで予測（アンサンブル）
-            X_old = df[old_features].fillna(0)
-            old_pred = (old_xgb.predict(X_old) + old_lgb.predict(X_old)) / 2
-            old_rmse = np.sqrt(np.mean((old_pred - df['target']) ** 2))
+            # 払戻データを取得
+            payouts = self._get_payouts_for_year(conn, test_year)
 
-            # 新モデルで予測（アンサンブル）
-            X_new = df[new_features].fillna(0)
-            new_pred = (new_xgb.predict(X_new) + new_lgb.predict(X_new)) / 2
-            new_rmse = np.sqrt(np.mean((new_pred - df['target']) ** 2))
+            # 両モデルの評価を実行
+            old_eval = self._evaluate_model(df, old_model_data, old_features, payouts, "旧モデル")
+            new_eval = self._evaluate_model(df, new_model_data, new_features, payouts, "新モデル")
 
-            improvement = (old_rmse - new_rmse) / old_rmse * 100
+            # 総合スコア計算
+            old_score = self._calculate_composite_score(old_eval)
+            new_score = self._calculate_composite_score(new_eval)
 
-            logger.info(f"旧モデル RMSE: {old_rmse:.4f}")
-            logger.info(f"新モデル RMSE: {new_rmse:.4f}")
-            logger.info(f"改善率: {improvement:.2f}%")
+            improvement = new_score - old_score
+
+            logger.info("=" * 50)
+            logger.info("📊 総合評価結果")
+            logger.info("=" * 50)
+            logger.info(f"旧モデル総合スコア: {old_score:.4f}")
+            logger.info(f"新モデル総合スコア: {new_score:.4f}")
+            logger.info(f"改善: {improvement:+.4f} ({'✅ 新モデル優位' if improvement > 0 else '❌ 旧モデル維持'})")
 
             return {
                 'status': 'success',
-                'old_rmse': float(old_rmse),
-                'new_rmse': float(new_rmse),
+                'old_eval': old_eval,
+                'new_eval': new_eval,
+                'old_score': float(old_score),
+                'new_score': float(new_score),
                 'improvement': float(improvement),
-                'test_samples': len(df)
+                'test_samples': len(df),
+                # 後方互換性のためRMSEも含める
+                'old_rmse': old_eval.get('rmse', 0),
+                'new_rmse': new_eval.get('rmse', 0)
             }
 
         finally:
             conn.close()
+
+    def _evaluate_model(self, df: pd.DataFrame, model_data: Dict, features: list,
+                        payouts: Dict, model_name: str) -> Dict:
+        """モデルの総合評価を実行"""
+        from sklearn.metrics import roc_auc_score
+
+        models = model_data.get('models', {})
+        X = df[features].fillna(0)
+
+        # 回帰予測（着順）
+        xgb_reg = models.get('xgb_regressor') or model_data.get('xgb_model')
+        lgb_reg = models.get('lgb_regressor') or model_data.get('lgb_model')
+        reg_pred = (xgb_reg.predict(X) + lgb_reg.predict(X)) / 2
+        rmse = float(np.sqrt(np.mean((reg_pred - df['target']) ** 2)))
+
+        # 分類予測（勝利/連対/複勝）
+        eval_result = {'rmse': rmse}
+
+        # 勝利AUC
+        if 'xgb_win' in models and 'lgb_win' in models:
+            win_prob = self._get_ensemble_proba(models['xgb_win'], models['lgb_win'], X,
+                                                 models.get('win_calibrator'))
+            win_actual = (df['target'] == 1).astype(int)
+            try:
+                eval_result['win_auc'] = float(roc_auc_score(win_actual, win_prob))
+            except:
+                eval_result['win_auc'] = 0.5
+
+        # 連対AUC
+        if 'xgb_quinella' in models and 'lgb_quinella' in models:
+            quinella_prob = self._get_ensemble_proba(models['xgb_quinella'], models['lgb_quinella'], X,
+                                                      models.get('quinella_calibrator'))
+            quinella_actual = (df['target'] <= 2).astype(int)
+            try:
+                eval_result['quinella_auc'] = float(roc_auc_score(quinella_actual, quinella_prob))
+            except:
+                eval_result['quinella_auc'] = 0.5
+
+        # 複勝AUC
+        if 'xgb_place' in models and 'lgb_place' in models:
+            place_prob = self._get_ensemble_proba(models['xgb_place'], models['lgb_place'], X,
+                                                   models.get('place_calibrator'))
+            place_actual = (df['target'] <= 3).astype(int)
+            try:
+                eval_result['place_auc'] = float(roc_auc_score(place_actual, place_prob))
+            except:
+                eval_result['place_auc'] = 0.5
+
+        # Top-3カバー率（レースごとに計算）
+        df_eval = df.copy()
+        df_eval['pred_rank'] = reg_pred
+
+        if 'race_code' in df_eval.columns:
+            top3_hits = 0
+            total_races = 0
+
+            for race_code, race_df in df_eval.groupby('race_code'):
+                race_df_sorted = race_df.sort_values('pred_rank')
+                top3_pred = race_df_sorted.head(3)['target'].values
+                if any(t == 1 for t in top3_pred):
+                    top3_hits += 1
+                total_races += 1
+
+            eval_result['top3_coverage'] = float(top3_hits / total_races) if total_races > 0 else 0
+
+        # 回収率シミュレーション
+        returns = self._simulate_returns(df_eval, reg_pred, payouts)
+        eval_result.update(returns)
+
+        # ログ出力
+        logger.info(f"【{model_name}】")
+        logger.info(f"  RMSE: {rmse:.4f}")
+        logger.info(f"  勝利AUC: {eval_result.get('win_auc', 0):.4f}")
+        logger.info(f"  連対AUC: {eval_result.get('quinella_auc', 0):.4f}")
+        logger.info(f"  複勝AUC: {eval_result.get('place_auc', 0):.4f}")
+        logger.info(f"  Top-3カバー率: {eval_result.get('top3_coverage', 0)*100:.1f}%")
+        logger.info(f"  単勝回収率: {eval_result.get('tansho_return', 0)*100:.1f}%")
+        logger.info(f"  複勝回収率: {eval_result.get('fukusho_return', 0)*100:.1f}%")
+
+        return eval_result
+
+    def _get_ensemble_proba(self, xgb_clf, lgb_clf, X, calibrator=None) -> np.ndarray:
+        """アンサンブル確率を取得（キャリブレーション適用）"""
+        xgb_prob = xgb_clf.predict_proba(X)[:, 1]
+        lgb_prob = lgb_clf.predict_proba(X)[:, 1]
+        raw_prob = (xgb_prob + lgb_prob) / 2
+
+        if calibrator is not None:
+            try:
+                return calibrator.predict(raw_prob)
+            except:
+                pass
+        return raw_prob
+
+    def _get_payouts_for_year(self, conn, year: int) -> Dict:
+        """年間の払戻データを取得"""
+        try:
+            cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+            cur.execute('''
+                SELECT race_code,
+                       tansho1_umaban, tansho1_haraimodoshikin,
+                       fukusho1_umaban, fukusho1_haraimodoshikin,
+                       fukusho2_umaban, fukusho2_haraimodoshikin,
+                       fukusho3_umaban, fukusho3_haraimodoshikin
+                FROM haraimodoshi
+                WHERE EXTRACT(YEAR FROM TO_DATE(SUBSTRING(race_code, 1, 8), 'YYYYMMDD')) = %s
+            ''', (year,))
+
+            payouts = {}
+            for row in cur.fetchall():
+                race_code = row['race_code']
+
+                # 単勝払戻金を安全に取得
+                tansho_umaban = row['tansho1_umaban']
+                tansho_payout = row['tansho1_haraimodoshikin']
+                tansho_umaban_str = str(tansho_umaban).strip() if tansho_umaban else None
+                try:
+                    tansho_payout_int = int(str(tansho_payout).strip()) if tansho_payout and str(tansho_payout).strip() else 0
+                except ValueError:
+                    tansho_payout_int = 0
+
+                payouts[race_code] = {
+                    'tansho': {
+                        'umaban': tansho_umaban_str,
+                        'payout': tansho_payout_int
+                    },
+                    'fukusho': []
+                }
+
+                # 複勝払戻金を安全に取得
+                for i in range(1, 4):
+                    umaban = row.get(f'fukusho{i}_umaban')
+                    payout = row.get(f'fukusho{i}_haraimodoshikin')
+                    if umaban and str(umaban).strip():
+                        try:
+                            payout_int = int(str(payout).strip()) if payout and str(payout).strip() else 0
+                        except ValueError:
+                            payout_int = 0
+                        if payout_int > 0:
+                            payouts[race_code]['fukusho'].append({
+                                'umaban': str(umaban).strip(),
+                                'payout': payout_int
+                            })
+            cur.close()
+            logger.info(f"払戻データ取得: {len(payouts)}レース")
+            return payouts
+        except Exception as e:
+            logger.warning(f"払戻データ取得エラー: {e}")
+            return {}
+
+    def _simulate_returns(self, df: pd.DataFrame, predictions: np.ndarray, payouts: Dict) -> Dict:
+        """回収率シミュレーション（各レース1位予想に100円賭け）"""
+        df_sim = df.copy()
+        df_sim['pred_rank'] = predictions
+
+        tansho_bet = 0
+        tansho_win = 0
+        fukusho_bet = 0
+        fukusho_win = 0
+
+        # 馬番カラムの確認（umaban または horse_number）
+        umaban_col = 'umaban' if 'umaban' in df_sim.columns else 'horse_number'
+        if 'race_code' not in df_sim.columns or umaban_col not in df_sim.columns:
+            logger.warning(f"回収率計算に必要なカラムがありません: race_code={('race_code' in df_sim.columns)}, {umaban_col}={(umaban_col in df_sim.columns)}")
+            return {'tansho_return': 0, 'fukusho_return': 0}
+
+        for race_code, race_df in df_sim.groupby('race_code'):
+            race_df_sorted = race_df.sort_values('pred_rank')
+            if len(race_df_sorted) == 0:
+                continue
+
+            top1 = race_df_sorted.iloc[0]
+            pred_umaban = str(int(top1[umaban_col]))
+
+            payout_data = payouts.get(race_code, {})
+
+            # 単勝
+            tansho_bet += 100
+            tansho_info = payout_data.get('tansho', {})
+            if tansho_info.get('umaban') == pred_umaban:
+                tansho_win += tansho_info.get('payout', 0)
+
+            # 複勝
+            fukusho_bet += 100
+            for fuku in payout_data.get('fukusho', []):
+                if fuku.get('umaban') == pred_umaban:
+                    fukusho_win += fuku.get('payout', 0)
+                    break
+
+        return {
+            'tansho_return': float(tansho_win / tansho_bet) if tansho_bet > 0 else 0,
+            'fukusho_return': float(fukusho_win / fukusho_bet) if fukusho_bet > 0 else 0,
+            'tansho_bet': tansho_bet,
+            'tansho_win': tansho_win,
+            'fukusho_bet': fukusho_bet,
+            'fukusho_win': fukusho_win
+        }
+
+    def _calculate_composite_score(self, eval_result: Dict) -> float:
+        """
+        総合スコアを計算
+
+        重み付け:
+        - 勝利AUC: 25%（分類精度の核心）
+        - 連対AUC: 15%
+        - 複勝AUC: 15%
+        - Top-3カバー率: 20%（実用性）
+        - 単勝回収率: 15%（収益性）
+        - 複勝回収率: 10%
+        """
+        weights = {
+            'win_auc': 0.25,
+            'quinella_auc': 0.15,
+            'place_auc': 0.15,
+            'top3_coverage': 0.20,
+            'tansho_return': 0.15,
+            'fukusho_return': 0.10
+        }
+
+        score = 0
+        for metric, weight in weights.items():
+            value = eval_result.get(metric, 0)
+            # AUCは0.5-1.0の範囲なので、0.5を引いて2倍してスケール
+            if 'auc' in metric:
+                value = (value - 0.5) * 2  # 0-1スケールに変換
+            # 回収率は1.0が100%なのでそのまま
+            score += value * weight
+
+        return score
 
     def deploy_new_model(self, new_model_path: str):
         """新モデルをデプロイ"""

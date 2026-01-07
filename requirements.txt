@@ -42,3 +42,4 @@ xgboost>=2.0.0             # XGBoostモデル
 lightgbm>=4.0.0            # LightGBMアンサンブル
 scipy>=1.11.0              # 科学計算（softmax等）
 joblib>=1.3.0              # モデル保存・読み込み
+shap>=0.44.0               # 特徴量寄与度分析
