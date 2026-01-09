@@ -590,6 +590,23 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
     # 競馬場別成績（予測時は全データ使用 - entriesを渡さない）
     venue_stats = extractor._get_venue_stats_batch(kettonums)
 
+    # 5.5 血統・種牡馬・騎手の新馬戦成績データ取得
+    pedigree_info = extractor._get_pedigree_batch(kettonums)
+    race_codes = [e['race_code'] for e in entries]
+    zenso_info = extractor._get_zenso_batch(kettonums, race_codes, entries)
+    jockey_codes = list(set(e.get('kishu_code', '') for e in entries if e.get('kishu_code')))
+    jockey_recent = extractor._get_jockey_recent_batch(jockey_codes, year)
+
+    # 種牡馬成績
+    sire_ids = [p.get('sire_id', '') for p in pedigree_info.values() if p.get('sire_id')]
+    sire_stats_turf = extractor._get_sire_stats_batch(sire_ids, year, is_turf=True)
+    sire_stats_dirt = extractor._get_sire_stats_batch(sire_ids, year, is_turf=False)
+
+    # 新馬・未勝利戦専用成績
+    sire_maiden_stats = extractor._get_sire_maiden_stats_batch(sire_ids, year)
+    jockey_maiden_stats = extractor._get_jockey_maiden_stats_batch(jockey_codes, year)
+    logger.info(f"Maiden stats: sire={len(sire_maiden_stats)}, jockey={len(jockey_maiden_stats)}")
+
     # 6. 特徴量生成（ダミーの着順を設定）
     features_list = []
     for entry in entries:
@@ -600,7 +617,15 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
             jockey_horse_stats=jockey_horse_stats,
             distance_stats=surface_stats,
             training_stats=training_stats,
-            venue_stats=venue_stats
+            venue_stats=venue_stats,
+            pedigree_info=pedigree_info,
+            zenso_info=zenso_info,
+            jockey_recent=jockey_recent,
+            sire_stats_turf=sire_stats_turf,
+            sire_stats_dirt=sire_stats_dirt,
+            sire_maiden_stats=sire_maiden_stats,
+            jockey_maiden_stats=jockey_maiden_stats,
+            year=year
         )
         if features:
             features['bamei'] = entry.get('bamei', '')

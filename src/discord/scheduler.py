@@ -88,16 +88,14 @@ class RankingSelectView(View):
         if ranking_type == "win":
             # 勝率順（全馬表示）
             lines = [header, "**勝率順ランキング（単勝向け）**\n"]
-            marks = ['◎', '○', '▲', '△', '△', '×', '×', '×', '☆', '☆']
             for h in ranked[:10]:
                 rank = h.get('rank', 0)
-                mark = marks[rank - 1] if rank <= len(marks) else '☆'
                 num = h.get('horse_number', '?')
                 name = h.get('horse_name', '?')[:8]
                 win = h.get('win_probability', 0)
                 quinella = h.get('quinella_probability', 0)
                 place = h.get('place_probability', 0)
-                lines.append(f"{mark} {rank}位 {num}番 {name} (単{win:.1%} 連{quinella:.1%} 複{place:.1%})")
+                lines.append(f"{rank}位 {num}番 {name} (単{win:.1%} 連{quinella:.1%} 複{place:.1%})")
             message = "\n".join(lines)
 
         elif ranking_type == "quinella":

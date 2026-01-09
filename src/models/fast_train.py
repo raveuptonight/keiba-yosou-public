@@ -138,6 +138,14 @@ class FastFeatureExtractor:
         sire_stats_dirt = self._get_sire_stats_batch(sire_ids, year, is_turf=False)
         logger.info(f"  種牡馬成績（芝）: {len(sire_stats_turf)}件, （ダート）: {len(sire_stats_dirt)}件")
 
+        # 種牡馬の新馬・未勝利戦成績
+        sire_maiden_stats = self._get_sire_maiden_stats_batch(sire_ids, year)
+        logger.info(f"  種牡馬新馬成績: {len(sire_maiden_stats)}件")
+
+        # 騎手の新馬・未勝利戦成績
+        jockey_maiden_stats = self._get_jockey_maiden_stats_batch(jockey_codes, year)
+        logger.info(f"  騎手新馬成績: {len(jockey_maiden_stats)}件")
+
         # 6. レースごとにグループ化して展開予想を計算
         entries_by_race = {}
         for entry in entries:
@@ -169,6 +177,8 @@ class FastFeatureExtractor:
                 jockey_recent=jockey_recent,
                 sire_stats_turf=sire_stats_turf,
                 sire_stats_dirt=sire_stats_dirt,
+                sire_maiden_stats=sire_maiden_stats,
+                jockey_maiden_stats=jockey_maiden_stats,
                 year=year
             )
             if features:
@@ -758,6 +768,8 @@ class FastFeatureExtractor:
         jockey_recent: Dict[str, Dict] = None,
         sire_stats_turf: Dict[str, Dict] = None,
         sire_stats_dirt: Dict[str, Dict] = None,
+        sire_maiden_stats: Dict[str, Dict] = None,
+        jockey_maiden_stats: Dict[str, Dict] = None,
         year: int = None
     ) -> Optional[Dict]:
         """特徴量を構築（改善版）"""
@@ -978,6 +990,28 @@ class FastFeatureExtractor:
         features['sire_place_rate'] = sire_stats['place_rate']
         features['sire_runs'] = min(sire_stats['runs'], 500)
 
+        # 種牡馬の新馬・未勝利戦成績
+        if sire_maiden_stats and sire_id:
+            sire_m_stats = sire_maiden_stats.get(sire_id, {})
+            features['sire_maiden_win_rate'] = sire_m_stats.get('win_rate', 0.10)
+            features['sire_maiden_place_rate'] = sire_m_stats.get('place_rate', 0.30)
+            features['sire_maiden_runs'] = min(sire_m_stats.get('runs', 0), 300)
+        else:
+            features['sire_maiden_win_rate'] = 0.10
+            features['sire_maiden_place_rate'] = 0.30
+            features['sire_maiden_runs'] = 0
+
+        # 馬の出走回数（past_statsから取得、新馬判定用）
+        race_count = past.get('race_count', 0)
+        features['race_count'] = min(race_count, 20)
+        # 経験カテゴリ: 0=新馬, 1=少経験(1-2戦), 2=経験馬(3戦以上)
+        if race_count == 0:
+            features['experience_category'] = 0
+        elif race_count <= 2:
+            features['experience_category'] = 1
+        else:
+            features['experience_category'] = 2
+
         # --- 2. 前走詳細特徴量 ---
         zenso = zenso_info.get(kettonum, {}) if zenso_info else {}
         features['zenso1_chakujun'] = zenso.get('zenso1_chakujun', 10)
@@ -1058,6 +1092,17 @@ class FastFeatureExtractor:
         features['jockey_recent_win_rate'] = j_recent.get('win_rate', 0.08)
         features['jockey_recent_place_rate'] = j_recent.get('place_rate', 0.25)
         features['jockey_recent_runs'] = min(j_recent.get('runs', 0), 30)
+
+        # 騎手の新馬・未勝利戦成績
+        if jockey_maiden_stats and jockey_code:
+            j_maiden = jockey_maiden_stats.get(jockey_code, {})
+            features['jockey_maiden_win_rate'] = j_maiden.get('win_rate', 0.08)
+            features['jockey_maiden_place_rate'] = j_maiden.get('place_rate', 0.25)
+            features['jockey_maiden_runs'] = min(j_maiden.get('runs', 0), 200)
+        else:
+            features['jockey_maiden_win_rate'] = 0.08
+            features['jockey_maiden_place_rate'] = 0.25
+            features['jockey_maiden_runs'] = 0
 
         # --- 6. 季節・時期特徴量 ---
         gappi = race_info.get('kaisai_gappi', '0601')
@@ -1566,6 +1611,57 @@ class FastFeatureExtractor:
             self.conn.rollback()
             return {}
 
+    def _get_sire_maiden_stats_batch(self, sire_ids: List[str], year: int) -> Dict[str, Dict]:
+        """種牡馬の新馬・未勝利戦成績をバッチ取得"""
+        if not sire_ids:
+            return {}
+
+        unique_ids = list(set(s for s in sire_ids if s))
+        if not unique_ids:
+            return {}
+
+        # 最大1000件に制限
+        unique_ids = unique_ids[:1000]
+        placeholders = ','.join(['%s'] * len(unique_ids))
+        year_from = str(year - 5)  # 新馬戦データは5年分取得
+
+        sql = f"""
+            SELECT
+                k.ketto1_hanshoku_toroku_bango as sire_id,
+                COUNT(*) as runs,
+                SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+            FROM umagoto_race_joho u
+            JOIN kyosoba_master2 k ON u.ketto_toroku_bango = k.ketto_toroku_bango
+            JOIN race_shosai rs ON u.race_code = rs.race_code AND rs.data_kubun = '7'
+            WHERE k.ketto1_hanshoku_toroku_bango IN ({placeholders})
+              AND u.data_kubun = '7'
+              AND u.kakutei_chakujun ~ '^[0-9]+$'
+              AND u.kaisai_nen >= %s
+              AND (rs.kyoso_joken_code_2sai IN ('701', '703')
+                   OR rs.kyoso_joken_code_3sai IN ('701', '703'))
+            GROUP BY k.ketto1_hanshoku_toroku_bango
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, unique_ids + [year_from])
+            for row in cur.fetchall():
+                sire_id, runs, wins, places = row
+                runs = int(runs or 0)
+                if runs >= 5:  # 最低5頭以上のデータがある種牡馬のみ
+                    result[sire_id] = {
+                        'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
+                        'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
+                        'runs': runs
+                    }
+            cur.close()
+            return result
+        except Exception as e:
+            logger.debug(f"Sire maiden stats batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
     def _get_venue_stats_batch(self, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
         """競馬場別成績をバッチ取得（データリーク防止版）
 
@@ -1884,6 +1980,54 @@ class FastFeatureExtractor:
             self.conn.rollback()
             return {}
 
+    def _get_jockey_maiden_stats_batch(self, jockey_codes: List[str], year: int) -> Dict[str, Dict]:
+        """騎手の新馬・未勝利戦成績をバッチ取得"""
+        if not jockey_codes:
+            return {}
+
+        unique_codes = list(set(c for c in jockey_codes if c))
+        if not unique_codes:
+            return {}
+
+        placeholders = ','.join(['%s'] * len(unique_codes))
+        year_from = str(year - 3)  # 3年分のデータ
+
+        sql = f"""
+            SELECT
+                u.kishu_code,
+                COUNT(*) as runs,
+                SUM(CASE WHEN u.kakutei_chakujun = '01' THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN u.kakutei_chakujun IN ('01','02','03') THEN 1 ELSE 0 END) as places
+            FROM umagoto_race_joho u
+            JOIN race_shosai rs ON u.race_code = rs.race_code AND rs.data_kubun = '7'
+            WHERE u.kishu_code IN ({placeholders})
+              AND u.data_kubun = '7'
+              AND u.kakutei_chakujun ~ '^[0-9]+$'
+              AND u.kaisai_nen >= %s
+              AND (rs.kyoso_joken_code_2sai IN ('701', '703')
+                   OR rs.kyoso_joken_code_3sai IN ('701', '703'))
+            GROUP BY u.kishu_code
+        """
+        result = {}
+        try:
+            cur = self.conn.cursor()
+            cur.execute(sql, unique_codes + [year_from])
+            for row in cur.fetchall():
+                code, runs, wins, places = row
+                runs = int(runs or 0)
+                if runs >= 10:  # 最低10騎乗以上
+                    result[code] = {
+                        'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
+                        'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
+                        'runs': runs
+                    }
+            cur.close()
+            return result
+        except Exception as e:
+            logger.debug(f"Jockey maiden stats batch failed: {e}")
+            self.conn.rollback()
+            return {}
+
     def _grade_to_rank(self, grade_code: str) -> int:
         """グレードコードをランクに変換"""
         mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
@@ -1914,7 +2058,8 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
 
     # 特徴量とターゲットを分離
     target_col = 'target'
-    feature_cols = [c for c in df.columns if c != target_col]
+    exclude_cols = {target_col, 'race_code'}  # race_codeは識別用でobject型のため除外
+    feature_cols = [c for c in df.columns if c not in exclude_cols]
 
     X = df[feature_cols].fillna(0)
     y = df[target_col]
