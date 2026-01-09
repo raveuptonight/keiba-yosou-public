@@ -515,7 +515,13 @@ class PredictionScheduler(commands.Cog):
             if len(message) > 2000:
                 message = message[:1950] + "\n...(省略)"
 
-            await interaction.followup.send(message, ephemeral=True)
+            # ランキングボタン付きで送信
+            view = RankingSelectView(
+                race_id=race_id,
+                prediction_data=data,
+                timeout=3600  # 1時間有効
+            )
+            await interaction.followup.send(message, view=view, ephemeral=True)
             logger.info(f"予想詳細送信完了: race_id={race_id}")
 
         except requests.exceptions.Timeout:

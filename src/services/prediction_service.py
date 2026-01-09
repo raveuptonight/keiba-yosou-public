@@ -1433,6 +1433,9 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
             ]
             prediction_result = PredictionResult(
                 ranked_horses=ranked_horses,
+                quinella_ranking=prediction_result_data.get("quinella_ranking"),
+                place_ranking=prediction_result_data.get("place_ranking"),
+                dark_horses=prediction_result_data.get("dark_horses"),
                 prediction_confidence=prediction_result_data.get("prediction_confidence", 0.5),
                 model_info=prediction_result_data.get("model_info", "unknown"),
             )
