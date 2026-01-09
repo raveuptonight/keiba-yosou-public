@@ -78,6 +78,7 @@ services:
       - ./src:/app/src:ro        # ソースコード（読み取り専用）
       - ./models:/app/models
       - ./logs:/app/logs
+      - /etc/localtime:/etc/localtime:ro  # ホストのタイムゾーンを使用
     depends_on:
       api:
         condition: service_healthy
@@ -91,6 +92,8 @@ services:
       context: .
       dockerfile: Dockerfile.ml
     container_name: keiba-ml-trainer
+    # コンテナを常駐させる（Ofeliaのjob-execに必要）
+    command: tail -f /dev/null
     environment:
       - TZ=Asia/Tokyo
       - DB_MODE=${DB_MODE:-mock}
@@ -134,4 +137,4 @@ services:
       # 翌日レースがあれば → 適切なバイアスを適用して予想実行
       ofelia.job-exec.nightly-predict.schedule: "0 0 21 * * *"
       ofelia.job-exec.nightly-predict.command: "python -m src.scheduler.daily_scheduler --nightly"
-    restart: "no"
+    restart: unless-stopped

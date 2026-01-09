@@ -550,7 +550,7 @@ class PredictionScheduler(commands.Cog):
 
         return channel
 
-    @tasks.loop(time=time(hour=SCHEDULER_EVENING_PREDICTION_HOUR, minute=SCHEDULER_EVENING_PREDICTION_MINUTE))
+    @tasks.loop(time=time(hour=SCHEDULER_EVENING_PREDICTION_HOUR, minute=SCHEDULER_EVENING_PREDICTION_MINUTE, tzinfo=JST))
     async def evening_prediction_task(self):
         """
         毎日21時に翌日開催レースの予想を実行
