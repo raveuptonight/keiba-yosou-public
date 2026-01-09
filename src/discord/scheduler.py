@@ -556,16 +556,21 @@ class PredictionScheduler(commands.Cog):
         毎日21時に翌日開催レースの予想を実行
 
         開催日前日の夜、全レースの初回予想を実行します。
+        日付が一致しないレースは除外されます。
         """
         logger.info("21時予想タスク実行")
 
         try:
-            # 翌日のレース一覧を取得
+            # 翌日のレース一覧を取得（日付厳密チェック有効）
             tomorrow = datetime.now(JST).date() + timedelta(days=1)
-            races = await self._fetch_races_for_date(tomorrow)
+            races = await self._fetch_races_for_date(tomorrow, strict_date_match=True)
 
             if not races:
-                logger.info(f"明日({tomorrow})はレース開催なし")
+                logger.info(f"明日({tomorrow})はレース開催なし - 予想スキップ")
+                # 通知チャンネルにも通知（オプション）
+                channel = self.get_notification_channel()
+                if channel:
+                    await channel.send(f"📅 明日({tomorrow})は中央競馬の開催がありません。")
                 return
 
             logger.info(f"明日のレース数: {len(races)}")
@@ -608,16 +613,17 @@ class PredictionScheduler(commands.Cog):
         """
         定期的にレース開始時刻をチェック
 
-        レース1時間前（馬体重発表後）に再予想を実行します。
-        通常、馬体重は発走約75分前に発表されるため、1時間前に再予想。
+        レース30分前（馬体重発表後）に再予想を実行します。
+        通常、馬体重は発走約75分前に発表されるため、30分前に再予想。
+        日付が一致しないレースは除外されます。
         """
         now = datetime.now(JST)
         logger.debug(f"レース時刻チェック: {now}")
 
         try:
-            # 当日のレース一覧を取得
+            # 当日のレース一覧を取得（日付厳密チェック有効）
             today = datetime.now(JST).date()
-            races = await self._fetch_races_for_date(today)
+            races = await self._fetch_races_for_date(today, strict_date_match=True)
 
             if not races:
                 return
@@ -665,12 +671,15 @@ class PredictionScheduler(commands.Cog):
         except Exception as e:
             logger.exception(f"レース時刻チェックタスクエラー: {e}")
 
-    async def _fetch_races_for_date(self, target_date: date) -> List[Dict[str, Any]]:
+    async def _fetch_races_for_date(
+        self, target_date: date, strict_date_match: bool = True
+    ) -> List[Dict[str, Any]]:
         """
         指定日のレース一覧を取得
 
         Args:
             target_date: 対象日
+            strict_date_match: Trueの場合、対象日と一致しないレースを除外
 
         Returns:
             レースリスト
@@ -685,6 +694,28 @@ class PredictionScheduler(commands.Cog):
                 data = response.json()
                 races = data.get("races", [])
                 logger.info(f"レース一覧取得成功: {target_date} -> {len(races)}件")
+
+                # 日付の厳密チェック
+                if strict_date_match and races:
+                    target_date_str = target_date.isoformat()  # "2026-01-10"
+                    filtered_races = []
+                    for race in races:
+                        race_date = race.get("race_date", "")
+                        if race_date == target_date_str:
+                            filtered_races.append(race)
+                        else:
+                            logger.warning(
+                                f"日付不一致のレースを除外: "
+                                f"expected={target_date_str}, actual={race_date}, "
+                                f"race_id={race.get('race_id')}"
+                            )
+
+                    if len(filtered_races) != len(races):
+                        logger.info(
+                            f"日付フィルタ適用: {len(races)}件 -> {len(filtered_races)}件"
+                        )
+                    return filtered_races
+
                 return races
             else:
                 logger.warning(f"レース一覧取得失敗: status={response.status_code}")
