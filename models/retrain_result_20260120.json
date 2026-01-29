@@ -1,0 +1,54 @@
+{
+  "date": "2026-01-20",
+  "deployed": false,
+  "training": {
+    "status": "success",
+    "model_path": "/app/models/ensemble_model_new.pkl",
+    "rmse": 3.7197286286702447,
+    "win_accuracy": 0.8166498301037745,
+    "quinella_accuracy": 0.7599871429883368,
+    "place_accuracy": 0.7494719441638351,
+    "win_auc": 0.7778385582285519,
+    "quinella_auc": 0.7535279424879496,
+    "place_auc": 0.7566605402823776,
+    "win_brier": 0.06136315951258846,
+    "quinella_brier": 0.11304496607570275,
+    "top3_coverage": 0.5293746051800379,
+    "samples": 145184
+  },
+  "comparison": {
+    "status": "success",
+    "old_eval": {
+      "rmse": 3.665061526731335,
+      "win_auc": 0.8423602301307183,
+      "quinella_auc": 0.7935128452406555,
+      "place_auc": 0.8024239589000117,
+      "top3_coverage": 0.6160300925925926,
+      "tansho_return": 0.5622685185185186,
+      "fukusho_return": 0.45619212962962963,
+      "tansho_bet": 345600,
+      "tansho_win": 194320,
+      "fukusho_bet": 345600,
+      "fukusho_win": 157660
+    },
+    "new_eval": {
+      "rmse": 3.6659635303652633,
+      "win_auc": 0.842937006636303,
+      "quinella_auc": 0.7929160389265301,
+      "place_auc": 0.8016823169623318,
+      "top3_coverage": 0.6134259259259259,
+      "tansho_return": 0.5498842592592592,
+      "fukusho_return": 0.4513020833333333,
+      "tansho_bet": 345600,
+      "tansho_win": 190040,
+      "fukusho_bet": 345600,
+      "fukusho_win": 155970
+    },
+    "old_score": 0.6031266655668186,
+    "new_score": 0.6001460424922175,
+    "improvement": -0.0029806230746011186,
+    "test_samples": 47220,
+    "old_rmse": 3.665061526731335,
+    "new_rmse": 3.6659635303652633
+  }
+}

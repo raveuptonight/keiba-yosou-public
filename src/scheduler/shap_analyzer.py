@@ -23,7 +23,7 @@ except ImportError:
     SHAP_AVAILABLE = False
 
 from src.db.connection import get_db
-from src.models.fast_train import FastFeatureExtractor
+from src.models.feature_extractor import FastFeatureExtractor
 
 logging.basicConfig(
     level=logging.INFO,

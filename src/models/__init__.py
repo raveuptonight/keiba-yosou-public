@@ -1,9 +1,9 @@
 """
-機械学習モデルモジュール
+Machine Learning Models Module
 
-特徴量抽出・予想出力フォーマット
+Feature extraction and model training for horse racing predictions.
 """
 
-from src.models.fast_train import FastFeatureExtractor
+from src.models.feature_extractor import FastFeatureExtractor
 
 __all__ = ['FastFeatureExtractor']
