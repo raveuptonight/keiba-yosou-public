@@ -101,6 +101,8 @@ class FastFeatureExtractor:
             if kettonum in past_stats:
                 past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
                 past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
+                past_stats[kettonum]['right_turn_runs'] = stats.get('right_turn_runs', 0)
+                past_stats[kettonum]['left_turn_runs'] = stats.get('left_turn_runs', 0)
 
         # 調教データ
         training_stats = self._get_training_stats_batch(kettonums)
@@ -695,8 +697,8 @@ class FastFeatureExtractor:
 
         placeholders = ','.join(['%s'] * len(kettonums))
 
-        # 右回り: 札幌(01), 函館(02), 福島(03), 中山(06), 阪神(09), 小倉(10)
-        # 左回り: 新潟(04), 東京(05), 中京(07), 京都(08)
+        # 右回り: 札幌(01), 函館(02), 福島(03), 中山(06), 京都(08), 阪神(09), 小倉(10)
+        # 左回り: 新潟(04), 東京(05), 中京(07)
         sql = f"""
             SELECT
                 u.ketto_toroku_bango,
@@ -716,8 +718,8 @@ class FastFeatureExtractor:
             rows = cur.fetchall()
             cur.close()
 
-            right_courses = {'01', '02', '03', '06', '09', '10'}
-            left_courses = {'04', '05', '07', '08'}
+            right_courses = {'01', '02', '03', '06', '08', '09', '10'}
+            left_courses = {'04', '05', '07'}
 
             # 集計
             horse_stats = {}
@@ -741,7 +743,9 @@ class FastFeatureExtractor:
                 l_runs = stats['left_runs']
                 result[kettonum] = {
                     'right_turn_rate': stats['right_places'] / r_runs if r_runs > 0 else 0.25,
-                    'left_turn_rate': stats['left_places'] / l_runs if l_runs > 0 else 0.25
+                    'left_turn_rate': stats['left_places'] / l_runs if l_runs > 0 else 0.25,
+                    'right_turn_runs': r_runs,
+                    'left_turn_runs': l_runs
                 }
             return result
         except Exception as e:
@@ -835,11 +839,19 @@ class FastFeatureExtractor:
         features['trainer_win_rate'] = trainer_stats['win_rate']
         features['trainer_place_rate'] = trainer_stats['place_rate']
 
-        # 騎手・馬コンビ成績（改善版）
+        # 騎手・馬コンビ成績（改善版 - 重み抑制）
+        # SHAP分析でマイナス影響のため、最小サンプル数閾値と勝率変換を適用
         combo_key = f"{jockey_code}_{kettonum}"
         combo = jockey_horse_stats.get(combo_key, {}) if jockey_horse_stats else {}
-        features['jockey_horse_runs'] = combo.get('runs', 0)
-        features['jockey_horse_wins'] = combo.get('wins', 0)
+        combo_runs = combo.get('runs', 0)
+        combo_wins = combo.get('wins', 0)
+        # 3回未満は信頼性低いため0扱い、値も0-1にスケーリング
+        if combo_runs >= 3:
+            features['jockey_horse_runs'] = min(combo_runs, 10) / 10.0  # 最大1.0
+            features['jockey_horse_wins'] = combo_wins / combo_runs  # 勝率に変換
+        else:
+            features['jockey_horse_runs'] = 0.0
+            features['jockey_horse_wins'] = 0.0
 
         # 騎手乗り替わり判定（改善版）
         last_jockey = past.get('last_jockey', '')
@@ -850,6 +862,17 @@ class FastFeatureExtractor:
         features['training_score'] = train.get('score', 50.0)
         features['training_time_4f'] = train.get('time_4f', 52.0)
         features['training_count'] = train.get('count', 0)
+        # 調教派生特徴量
+        t_count = features['training_count']
+        t_days = train.get('days_before', 7)
+        t_score = features['training_score']
+        # 調教密度（1日あたりの調教回数）
+        features['training_intensity'] = t_count / max(t_days, 1)
+        # 調教効率（スコア÷回数、正規化して0〜1程度に）
+        # t_score は通常50前後、t_count は1〜10程度 → 効率は5〜50程度 → /50で正規化
+        features['training_efficiency'] = (t_score / max(t_count, 1)) / 50.0 if t_count > 0 else 0.0
+        # 高頻度調教フラグ
+        features['high_volume_training'] = 1 if t_count >= 5 else 0
         features['distance_change'] = 0
 
         # コース情報
@@ -919,9 +942,44 @@ class FastFeatureExtractor:
         features['training_lap_1f'] = train.get('lap_1f', 12.5)
         features['training_days_before'] = train.get('days_before', 7)
 
-        # コーナー別成績
-        features['right_turn_rate'] = past.get('right_turn_rate', 0.25)
-        features['left_turn_rate'] = past.get('left_turn_rate', 0.25)
+        # 調教の質指標（量より質を重視）
+        time_3f = features['training_time_3f']
+        lap_1f = features['training_lap_1f']
+        # 加速度指標: 最終1Fが3F平均より速いほど高評価（負の値が良い）
+        avg_1f = time_3f / 3 if time_3f > 0 else 12.67
+        features['training_finishing_accel'] = avg_1f - lap_1f  # 正の値=加速している
+        # 調教強度（3Fタイム基準、36秒=標準）
+        features['training_intensity'] = max(0, (40.0 - time_3f) / 4.0)  # 0-1スケール
+        # 最終追い切りタイムの偏差値的評価（12.5秒基準）
+        features['training_lap_quality'] = max(0, (13.5 - lap_1f) / 1.0)  # 0-1スケール
+
+        # コーナー回り成績（レースの回り方向に合わせた成績を使用）
+        # 右回り: 札幌(01), 函館(02), 福島(03), 中山(06), 京都(08), 阪神(09), 小倉(10)
+        # 左回り: 新潟(04), 東京(05), 中京(07)
+        keibajo = race_info.get('keibajo_code', '')
+        is_right_turn = keibajo in {'01', '02', '03', '06', '08', '09', '10'}
+        right_rate = past.get('right_turn_rate', 0.25)
+        left_rate = past.get('left_turn_rate', 0.25)
+        right_runs = past.get('right_turn_runs', 0)
+        left_runs = past.get('left_turn_runs', 0)
+        # サンプル数に応じたベイズ平滑化（事前分布: 全体平均0.25）
+        BASE_RATE = 0.25
+        MIN_SAMPLES = 5  # 信頼性閾値
+        if is_right_turn:
+            raw_rate = right_rate
+            turn_runs = right_runs
+        else:
+            raw_rate = left_rate
+            turn_runs = left_runs
+        if turn_runs >= MIN_SAMPLES:
+            features['turn_direction_rate'] = raw_rate
+        elif turn_runs >= 2:
+            # ベイズ的に事前分布と混合
+            weight = turn_runs / MIN_SAMPLES
+            features['turn_direction_rate'] = weight * raw_rate + (1 - weight) * BASE_RATE
+        else:
+            features['turn_direction_rate'] = BASE_RATE
+        features['turn_direction_confidence'] = min(turn_runs / MIN_SAMPLES, 1.0)
 
         # ===== 新規特徴量 =====
 
@@ -975,7 +1033,7 @@ class FastFeatureExtractor:
         features['sire_id_hash'] = self._stable_hash(sire_id) if sire_id else 0
         features['broodmare_sire_id_hash'] = self._stable_hash(broodmare_sire_id) if broodmare_sire_id else 0
 
-        # 種牡馬×芝/ダート成績
+        # 種牡馬×芝/ダート成績（信頼度係数付き）
         is_turf = track_code.startswith('1') if track_code else True
         if is_turf and sire_stats_turf:
             sire_key = f"{sire_id}_turf"
@@ -986,19 +1044,34 @@ class FastFeatureExtractor:
         else:
             sire_stats = {'win_rate': 0.08, 'place_rate': 0.25, 'runs': 0}
 
-        features['sire_win_rate'] = sire_stats['win_rate']
-        features['sire_place_rate'] = sire_stats['place_rate']
-        features['sire_runs'] = min(sire_stats['runs'], 500)
+        # 信頼度係数: 出走数に応じたログスケール（50サンプル以上で1.0に収束）
+        sire_runs_raw = sire_stats['runs']
+        SIRE_CONFIDENCE_THRESHOLD = 50
+        BASE_WIN_RATE = 0.08
+        BASE_PLACE_RATE = 0.25
+        sire_confidence = min(1.0, np.log(sire_runs_raw + 1) / np.log(SIRE_CONFIDENCE_THRESHOLD + 1))
+        # サンプル数が少ない場合は全体平均に寄せる
+        features['sire_win_rate'] = sire_stats['win_rate'] * sire_confidence + BASE_WIN_RATE * (1 - sire_confidence)
+        features['sire_place_rate'] = sire_stats['place_rate'] * sire_confidence + BASE_PLACE_RATE * (1 - sire_confidence)
+        features['sire_runs'] = min(sire_runs_raw, 500)
+        features['sire_confidence'] = sire_confidence  # 信頼度を特徴量として追加
 
-        # 種牡馬の新馬・未勝利戦成績
+        # 種牡馬の新馬・未勝利戦成績（信頼度係数付き）
+        SIRE_MAIDEN_BASE_WIN = 0.10
+        SIRE_MAIDEN_BASE_PLACE = 0.30
+        SIRE_MAIDEN_CONFIDENCE_THRESHOLD = 30
         if sire_maiden_stats and sire_id:
             sire_m_stats = sire_maiden_stats.get(sire_id, {})
-            features['sire_maiden_win_rate'] = sire_m_stats.get('win_rate', 0.10)
-            features['sire_maiden_place_rate'] = sire_m_stats.get('place_rate', 0.30)
-            features['sire_maiden_runs'] = min(sire_m_stats.get('runs', 0), 300)
+            sire_m_runs = sire_m_stats.get('runs', 0)
+            sire_m_confidence = min(1.0, np.log(sire_m_runs + 1) / np.log(SIRE_MAIDEN_CONFIDENCE_THRESHOLD + 1))
+            raw_m_win = sire_m_stats.get('win_rate', SIRE_MAIDEN_BASE_WIN)
+            raw_m_place = sire_m_stats.get('place_rate', SIRE_MAIDEN_BASE_PLACE)
+            features['sire_maiden_win_rate'] = raw_m_win * sire_m_confidence + SIRE_MAIDEN_BASE_WIN * (1 - sire_m_confidence)
+            features['sire_maiden_place_rate'] = raw_m_place * sire_m_confidence + SIRE_MAIDEN_BASE_PLACE * (1 - sire_m_confidence)
+            features['sire_maiden_runs'] = min(sire_m_runs, 300)
         else:
-            features['sire_maiden_win_rate'] = 0.10
-            features['sire_maiden_place_rate'] = 0.30
+            features['sire_maiden_win_rate'] = SIRE_MAIDEN_BASE_WIN
+            features['sire_maiden_place_rate'] = SIRE_MAIDEN_BASE_PLACE
             features['sire_maiden_runs'] = 0
 
         # 馬の出走回数（past_statsから取得、新馬判定用）
@@ -1025,6 +1098,19 @@ class FastFeatureExtractor:
         features['zenso_chakujun_trend'] = zenso.get('zenso_chakujun_trend', 0)
         features['zenso_agari_trend'] = zenso.get('zenso_agari_trend', 0)
 
+        # 新規: 上がり順位特徴量
+        features['zenso1_agari_rank'] = zenso.get('zenso1_agari_rank', 9)
+        features['zenso2_agari_rank'] = zenso.get('zenso2_agari_rank', 9)
+        features['avg_agari_rank_3'] = zenso.get('avg_agari_rank_3', 9.0)
+
+        # 新規: コーナー位置推移特徴量
+        features['zenso1_position_up_1to2'] = zenso.get('zenso1_position_up_1to2', 0)
+        features['zenso1_position_up_2to3'] = zenso.get('zenso1_position_up_2to3', 0)
+        features['zenso1_position_up_3to4'] = zenso.get('zenso1_position_up_3to4', 0)
+        features['zenso1_early_position_avg'] = zenso.get('zenso1_early_position_avg', 8.0)
+        features['zenso1_late_position_avg'] = zenso.get('zenso1_late_position_avg', 8.0)
+        features['late_push_tendency'] = zenso.get('late_push_tendency', 0.0)
+
         # 距離差（今回 - 前走）
         current_distance = self._safe_int(race_info.get('kyori'), 1600)
         features['zenso1_distance_diff'] = current_distance - features['zenso1_distance']
@@ -1033,14 +1119,21 @@ class FastFeatureExtractor:
         current_grade = self._determine_class(race_info.get('grade_code', ''))
         features['zenso1_class_diff'] = current_grade - features['zenso1_grade']
 
-        # --- 3. 競馬場別成績 ---
+        # --- 3. 競馬場別成績 (最小サンプル閾値適用) ---
         venue_code = race_info.get('keibajo_code', '')
         surface_name = 'shiba' if is_turf else 'dirt'
         venue_key = f"{kettonum}_{venue_code}_{surface_name}"
         v_stats = venue_stats.get(venue_key, {}) if venue_stats else {}
-        features['venue_win_rate'] = v_stats.get('win_rate', 0.0)
-        features['venue_place_rate'] = v_stats.get('place_rate', 0.0)
-        features['venue_runs'] = min(v_stats.get('runs', 0), 50)
+        v_runs = v_stats.get('runs', 0)
+        # 3回未満は信頼性低いため0扱い
+        if v_runs >= 3:
+            features['venue_win_rate'] = v_stats.get('win_rate', 0.0)
+            features['venue_place_rate'] = v_stats.get('place_rate', 0.0)
+            features['venue_runs'] = min(v_runs, 20) / 20.0  # 0-1にスケーリング
+        else:
+            features['venue_win_rate'] = 0.0
+            features['venue_place_rate'] = 0.0
+            features['venue_runs'] = 0.0
 
         # 小回り/大回り適性
         features['small_track_rate'] = zenso.get('small_track_rate', 0.25)
@@ -1086,22 +1179,35 @@ class FastFeatureExtractor:
                 waku_style_score = 0.05
         features['waku_style_advantage'] = waku_style_score
 
-        # --- 5. 騎手直近成績 ---
+        # --- 5. 騎手直近成績（信頼度重み付け） ---
         jockey_code = entry.get('kishu_code', '')
         j_recent = jockey_recent.get(jockey_code, {}) if jockey_recent else {}
-        features['jockey_recent_win_rate'] = j_recent.get('win_rate', 0.08)
-        features['jockey_recent_place_rate'] = j_recent.get('place_rate', 0.25)
-        features['jockey_recent_runs'] = min(j_recent.get('runs', 0), 30)
+        JOCKEY_BASE_WIN = 0.08
+        JOCKEY_BASE_PLACE = 0.25
+        JOCKEY_RECENT_CONFIDENCE_THRESHOLD = 10  # 直近10騎乗で信頼度1.0
+        j_recent_runs = j_recent.get('runs', 0)
+        j_recent_confidence = min(1.0, j_recent_runs / JOCKEY_RECENT_CONFIDENCE_THRESHOLD)
+        j_raw_win = j_recent.get('win_rate', JOCKEY_BASE_WIN)
+        j_raw_place = j_recent.get('place_rate', JOCKEY_BASE_PLACE)
+        features['jockey_recent_win_rate'] = j_raw_win * j_recent_confidence + JOCKEY_BASE_WIN * (1 - j_recent_confidence)
+        features['jockey_recent_place_rate'] = j_raw_place * j_recent_confidence + JOCKEY_BASE_PLACE * (1 - j_recent_confidence)
+        features['jockey_recent_runs'] = min(j_recent_runs, 30)
+        features['jockey_recent_confidence'] = j_recent_confidence
 
-        # 騎手の新馬・未勝利戦成績
+        # 騎手の新馬・未勝利戦成績（信頼度重み付け）
+        JOCKEY_MAIDEN_CONFIDENCE_THRESHOLD = 30
         if jockey_maiden_stats and jockey_code:
             j_maiden = jockey_maiden_stats.get(jockey_code, {})
-            features['jockey_maiden_win_rate'] = j_maiden.get('win_rate', 0.08)
-            features['jockey_maiden_place_rate'] = j_maiden.get('place_rate', 0.25)
-            features['jockey_maiden_runs'] = min(j_maiden.get('runs', 0), 200)
+            j_maiden_runs = j_maiden.get('runs', 0)
+            j_maiden_confidence = min(1.0, np.log(j_maiden_runs + 1) / np.log(JOCKEY_MAIDEN_CONFIDENCE_THRESHOLD + 1))
+            j_m_raw_win = j_maiden.get('win_rate', JOCKEY_BASE_WIN)
+            j_m_raw_place = j_maiden.get('place_rate', JOCKEY_BASE_PLACE)
+            features['jockey_maiden_win_rate'] = j_m_raw_win * j_maiden_confidence + JOCKEY_BASE_WIN * (1 - j_maiden_confidence)
+            features['jockey_maiden_place_rate'] = j_m_raw_place * j_maiden_confidence + JOCKEY_BASE_PLACE * (1 - j_maiden_confidence)
+            features['jockey_maiden_runs'] = min(j_maiden_runs, 200)
         else:
-            features['jockey_maiden_win_rate'] = 0.08
-            features['jockey_maiden_place_rate'] = 0.25
+            features['jockey_maiden_win_rate'] = JOCKEY_BASE_WIN
+            features['jockey_maiden_place_rate'] = JOCKEY_BASE_PLACE
             features['jockey_maiden_runs'] = 0
 
         # --- 6. 季節・時期特徴量 ---
@@ -1787,22 +1893,24 @@ class FastFeatureExtractor:
                 WITH horse_filter AS (
                     SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
                 ),
-                ranked AS (
+                with_agari_rank AS (
                     SELECT
                         u.ketto_toroku_bango,
                         u.race_code,
                         u.kakutei_chakujun,
                         u.tansho_ninkijun,
                         u.kohan_3f,
+                        u.corner1_juni,
+                        u.corner2_juni,
                         u.corner3_juni,
                         u.corner4_juni,
                         r.kyori,
                         r.grade_code,
                         r.keibajo_code,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY u.ketto_toroku_bango
-                            ORDER BY u.race_code DESC
-                        ) as rn
+                        RANK() OVER (
+                            PARTITION BY u.race_code
+                            ORDER BY CAST(NULLIF(u.kohan_3f, '') AS INTEGER)
+                        ) as agari_rank
                     FROM umagoto_race_joho u
                     JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
                     JOIN horse_filter hf ON u.ketto_toroku_bango = hf.kettonum
@@ -1810,6 +1918,14 @@ class FastFeatureExtractor:
                       AND u.data_kubun = '7'
                       AND u.kakutei_chakujun ~ '^[0-9]+$'
                       AND u.race_code < hf.current_race_code
+                ),
+                ranked AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ketto_toroku_bango
+                            ORDER BY race_code DESC
+                        ) as rn
+                    FROM with_agari_rank
                 )
                 SELECT * FROM ranked WHERE rn <= 5
             """
@@ -1817,27 +1933,37 @@ class FastFeatureExtractor:
             params = kettonums
             # 各馬の直近5走を取得
             sql = f"""
-                WITH ranked AS (
+                WITH with_agari_rank AS (
                     SELECT
                         u.ketto_toroku_bango,
                         u.race_code,
                         u.kakutei_chakujun,
                         u.tansho_ninkijun,
                         u.kohan_3f,
+                        u.corner1_juni,
+                        u.corner2_juni,
                         u.corner3_juni,
                         u.corner4_juni,
                         r.kyori,
                         r.grade_code,
                         r.keibajo_code,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY u.ketto_toroku_bango
-                            ORDER BY u.race_code DESC
-                        ) as rn
+                        RANK() OVER (
+                            PARTITION BY u.race_code
+                            ORDER BY CAST(NULLIF(u.kohan_3f, '') AS INTEGER)
+                        ) as agari_rank
                     FROM umagoto_race_joho u
                     JOIN race_shosai r ON u.race_code = r.race_code AND u.data_kubun = r.data_kubun
                     WHERE u.ketto_toroku_bango IN ({placeholders})
                       AND u.data_kubun = '7'
                       AND u.kakutei_chakujun ~ '^[0-9]+$'
+                ),
+                ranked AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY ketto_toroku_bango
+                            ORDER BY race_code DESC
+                        ) as rn
+                    FROM with_agari_rank
                 )
                 SELECT * FROM ranked WHERE rn <= 5
             """
@@ -1860,11 +1986,14 @@ class FastFeatureExtractor:
                     'chakujun': self._safe_int(row[2], 10),
                     'ninki': self._safe_int(row[3], 10),
                     'kohan_3f': self._safe_int(row[4], 350) / 10.0,
-                    'corner3': self._safe_int(row[5], 8),
-                    'corner4': self._safe_int(row[6], 8),
-                    'kyori': self._safe_int(row[7], 1600),
-                    'grade_code': row[8] or '',
-                    'keibajo_code': row[9] or ''
+                    'corner1': self._safe_int(row[5], 8),
+                    'corner2': self._safe_int(row[6], 8),
+                    'corner3': self._safe_int(row[7], 8),
+                    'corner4': self._safe_int(row[8], 8),
+                    'kyori': self._safe_int(row[9], 1600),
+                    'grade_code': row[10] or '',
+                    'keibajo_code': row[11] or '',
+                    'agari_rank': self._safe_int(row[12], 9)
                 })
 
             # 特徴量を計算
@@ -1916,6 +2045,37 @@ class FastFeatureExtractor:
                         if chaku <= 3:
                             large_places += 1
 
+                # 上がり順位の計算
+                zenso1_agari_rank = z1.get('agari_rank', 9)
+                zenso2_agari_rank = z2.get('agari_rank', 9)
+                zenso3_agari_rank = z3.get('agari_rank', 9) if len(races) > 2 else 9
+                agari_ranks = [r.get('agari_rank', 9) for r in races[:3] if r.get('agari_rank', 0) > 0]
+                avg_agari_rank_3 = sum(agari_ranks) / len(agari_ranks) if agari_ranks else 9.0
+
+                # コーナー位置推移の計算
+                def calc_position_changes(race_data):
+                    c1 = race_data.get('corner1', 8)
+                    c2 = race_data.get('corner2', 8)
+                    c3 = race_data.get('corner3', 8)
+                    c4 = race_data.get('corner4', 8)
+                    return {
+                        'up_1to2': c1 - c2,  # 正=前に出た
+                        'up_2to3': c2 - c3,
+                        'up_3to4': c3 - c4,
+                        'early_avg': (c1 + c2) / 2.0,
+                        'late_avg': (c3 + c4) / 2.0
+                    }
+
+                z1_pos = calc_position_changes(z1) if z1 else {}
+                z2_pos = calc_position_changes(z2) if z2 else {}
+
+                # 後半追い込み傾向（3→4角で3位以上上げた割合）
+                late_push_count = 0
+                for r in races[:5]:
+                    if r.get('corner3', 8) - r.get('corner4', 8) >= 3:
+                        late_push_count += 1
+                late_push_tendency = late_push_count / len(races) if races else 0.0
+
                 result[kettonum] = {
                     'zenso1_chakujun': z1.get('chakujun', 10),
                     'zenso1_ninki': z1.get('ninki', 10),
@@ -1928,7 +2088,18 @@ class FastFeatureExtractor:
                     'zenso_chakujun_trend': trend,
                     'zenso_agari_trend': agari_trend,
                     'small_track_rate': small_places / small_runs if small_runs > 0 else 0.25,
-                    'large_track_rate': large_places / large_runs if large_runs > 0 else 0.25
+                    'large_track_rate': large_places / large_runs if large_runs > 0 else 0.25,
+                    # 新規: 上がり順位
+                    'zenso1_agari_rank': zenso1_agari_rank,
+                    'zenso2_agari_rank': zenso2_agari_rank,
+                    'avg_agari_rank_3': avg_agari_rank_3,
+                    # 新規: コーナー位置推移
+                    'zenso1_position_up_1to2': z1_pos.get('up_1to2', 0),
+                    'zenso1_position_up_2to3': z1_pos.get('up_2to3', 0),
+                    'zenso1_position_up_3to4': z1_pos.get('up_3to4', 0),
+                    'zenso1_early_position_avg': z1_pos.get('early_avg', 8.0),
+                    'zenso1_late_position_avg': z1_pos.get('late_avg', 8.0),
+                    'late_push_tendency': late_push_tendency
                 }
 
             return result

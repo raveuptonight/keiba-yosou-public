@@ -586,6 +586,8 @@ def _extract_future_race_features(conn, race_id: str, extractor, year: int):
         if kettonum in past_stats:
             past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
             past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
+            past_stats[kettonum]['right_turn_runs'] = stats.get('right_turn_runs', 0)
+            past_stats[kettonum]['left_turn_runs'] = stats.get('left_turn_runs', 0)
     training_stats = extractor._get_training_stats_batch(kettonums)
     # 競馬場別成績（予測時は全データ使用 - entriesを渡さない）
     venue_stats = extractor._get_venue_stats_batch(kettonums)
@@ -705,11 +707,24 @@ def _compute_ml_predictions(
         quinella_calibrator = models_dict.get('quinella_calibrator')
         place_calibrator = models_dict.get('place_calibrator')
 
+        # CatBoostモデル取得（v5以降）
+        cb_model = models_dict.get('cb_regressor')
+        cb_win = models_dict.get('cb_win')
+        cb_quinella = models_dict.get('cb_quinella')
+        cb_place = models_dict.get('cb_place')
+        has_catboost = cb_model is not None
+
+        # アンサンブル重み（デフォルト: XGB+LGB均等）
+        ensemble_weights = model_data.get('ensemble_weights', {
+            'xgb': 0.5, 'lgb': 0.5, 'cb': 0.0
+        })
+
         has_classifiers = xgb_win is not None and lgb_win is not None
         has_quinella = xgb_quinella is not None and lgb_quinella is not None
 
         feature_names = model_data.get('feature_names', [])
-        logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}")
+        logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}, "
+                   f"CatBoost={'あり' if has_catboost else 'なし'}")
 
         # DB接続を取得
         db = get_db()
@@ -751,7 +766,7 @@ def _compute_ml_predictions(
             X = race_df[feature_names].fillna(0)
             features_list = race_df.to_dict('records')
 
-            # ML予測（ensemble_model: XGBoost + LightGBM）
+            # ML予測（ensemble_model: XGBoost + LightGBM + CatBoost）
             if not xgb_model or not lgb_model:
                 logger.error("Ensemble model requires both XGBoost and LightGBM")
                 return {}
@@ -759,7 +774,19 @@ def _compute_ml_predictions(
             # 回帰予測（着順スコア）
             xgb_pred = xgb_model.predict(X)
             lgb_pred = lgb_model.predict(X)
-            rank_scores = (xgb_pred + lgb_pred) / 2
+
+            # CatBoostがある場合は3モデルアンサンブル
+            if has_catboost:
+                cb_pred = cb_model.predict(X)
+                w = ensemble_weights
+                rank_scores = (xgb_pred * w['xgb'] + lgb_pred * w['lgb'] + cb_pred * w['cb'])
+            else:
+                # 後方互換: XGB+LGBのみ
+                w = ensemble_weights
+                xgb_w = w.get('xgb', 0.5)
+                lgb_w = w.get('lgb', 0.5)
+                total = xgb_w + lgb_w
+                rank_scores = (xgb_pred * xgb_w + lgb_pred * lgb_w) / total
 
             # 分類モデルがある場合は確率を直接予測
             if has_classifiers:
@@ -769,13 +796,33 @@ def _compute_ml_predictions(
                 # 勝利確率
                 xgb_win_prob = xgb_win.predict_proba(X)[:, 1]
                 lgb_win_prob = lgb_win.predict_proba(X)[:, 1]
-                win_probs = (xgb_win_prob + lgb_win_prob) / 2
+
+                if has_catboost and cb_win is not None:
+                    cb_win_prob = cb_win.predict_proba(X)[:, 1]
+                    w = ensemble_weights
+                    win_probs = (xgb_win_prob * w['xgb'] + lgb_win_prob * w['lgb'] + cb_win_prob * w['cb'])
+                else:
+                    w = ensemble_weights
+                    xgb_w = w.get('xgb', 0.5)
+                    lgb_w = w.get('lgb', 0.5)
+                    total = xgb_w + lgb_w
+                    win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
 
                 # 連対確率（モデルがあれば使用、なければ推定）
                 if has_quinella:
                     xgb_quinella_prob = xgb_quinella.predict_proba(X)[:, 1]
                     lgb_quinella_prob = lgb_quinella.predict_proba(X)[:, 1]
-                    quinella_probs = (xgb_quinella_prob + lgb_quinella_prob) / 2
+
+                    if has_catboost and cb_quinella is not None:
+                        cb_quinella_prob = cb_quinella.predict_proba(X)[:, 1]
+                        w = ensemble_weights
+                        quinella_probs = (xgb_quinella_prob * w['xgb'] + lgb_quinella_prob * w['lgb'] + cb_quinella_prob * w['cb'])
+                    else:
+                        w = ensemble_weights
+                        xgb_w = w.get('xgb', 0.5)
+                        lgb_w = w.get('lgb', 0.5)
+                        total = xgb_w + lgb_w
+                        quinella_probs = (xgb_quinella_prob * xgb_w + lgb_quinella_prob * lgb_w) / total
                 else:
                     # 旧モデル互換: 勝率と複勝率から推定
                     quinella_probs = None
@@ -783,7 +830,17 @@ def _compute_ml_predictions(
                 # 複勝確率
                 xgb_place_prob = xgb_place.predict_proba(X)[:, 1]
                 lgb_place_prob = lgb_place.predict_proba(X)[:, 1]
-                place_probs = (xgb_place_prob + lgb_place_prob) / 2
+
+                if has_catboost and cb_place is not None:
+                    cb_place_prob = cb_place.predict_proba(X)[:, 1]
+                    w = ensemble_weights
+                    place_probs = (xgb_place_prob * w['xgb'] + lgb_place_prob * w['lgb'] + cb_place_prob * w['cb'])
+                else:
+                    w = ensemble_weights
+                    xgb_w = w.get('xgb', 0.5)
+                    lgb_w = w.get('lgb', 0.5)
+                    total = xgb_w + lgb_w
+                    place_probs = (xgb_place_prob * xgb_w + lgb_place_prob * lgb_w) / total
 
                 # キャリブレーション適用（モデル内蔵キャリブレーター）
                 if win_calibrator is not None:

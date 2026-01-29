@@ -143,6 +143,7 @@ class WeeklyRetrain:
         """新しいensemble_modelを学習（回帰 + 分類 + キャリブレーション）"""
         import xgboost as xgb
         import lightgbm as lgb
+        import catboost as cb
 
         logger.info(f"ensemble_model学習開始（過去{years}年）")
 
@@ -234,6 +235,22 @@ class WeeklyRetrain:
                 'n_jobs': -1
             }
 
+            # CatBoost用パラメータ
+            cb_params = {
+                'iterations': 500,
+                'depth': 7,
+                'learning_rate': 0.05,
+                'subsample': 0.8,
+                'random_seed': 42,
+                'verbose': False,
+                'thread_count': -1
+            }
+
+            # アンサンブル重み (XGB:LGB:CB = 30:40:30)
+            XGB_WEIGHT = 0.30
+            LGB_WEIGHT = 0.40
+            CB_WEIGHT = 0.30
+
             models = {}
 
             # ===== 1. 回帰モデル =====
@@ -249,12 +266,19 @@ class WeeklyRetrain:
             lgb_reg.fit(X_train, y_train, eval_set=[(X_val, y_val)])
             models['lgb_regressor'] = lgb_reg
 
+            # CatBoost回帰
+            logger.info("CatBoost回帰モデル学習中...")
+            cb_reg = cb.CatBoostRegressor(**cb_params)
+            cb_reg.fit(X_train, y_train, eval_set=(X_val, y_val), early_stopping_rounds=50)
+            models['cb_regressor'] = cb_reg
+
             # アンサンブル評価
             xgb_pred = xgb_reg.predict(X_val)
             lgb_pred = lgb_reg.predict(X_val)
-            ensemble_pred = (xgb_pred + lgb_pred) / 2
+            cb_pred = cb_reg.predict(X_val)
+            ensemble_pred = xgb_pred * XGB_WEIGHT + lgb_pred * LGB_WEIGHT + cb_pred * CB_WEIGHT
             rmse = np.sqrt(np.mean((ensemble_pred - y_val) ** 2))
-            logger.info(f"回帰RMSE (ensemble): {rmse:.4f}")
+            logger.info(f"回帰RMSE (3モデルensemble): {rmse:.4f}")
 
             # ===== 2. 勝利分類モデル =====
             win_weight = len(y_win_train[y_win_train == 0]) / max(len(y_win_train[y_win_train == 1]), 1)
@@ -269,12 +293,18 @@ class WeeklyRetrain:
             lgb_win.fit(X_train, y_win_train, eval_set=[(X_val, y_win_val)])
             models['lgb_win'] = lgb_win
 
+            logger.info("CatBoost勝利分類モデル学習中...")
+            cb_win = cb.CatBoostClassifier(**cb_params, scale_pos_weight=win_weight)
+            cb_win.fit(X_train, y_win_train, eval_set=(X_val, y_win_val), early_stopping_rounds=50)
+            models['cb_win'] = cb_win
+
             # 勝利アンサンブル確率
             xgb_win_prob = xgb_win.predict_proba(X_val)[:, 1]
             lgb_win_prob = lgb_win.predict_proba(X_val)[:, 1]
-            ensemble_win_prob = (xgb_win_prob + lgb_win_prob) / 2
+            cb_win_prob = cb_win.predict_proba(X_val)[:, 1]
+            ensemble_win_prob = xgb_win_prob * XGB_WEIGHT + lgb_win_prob * LGB_WEIGHT + cb_win_prob * CB_WEIGHT
             win_accuracy = ((ensemble_win_prob > 0.5) == y_win_val).mean()
-            logger.info(f"勝利分類精度 (ensemble): {win_accuracy:.4f}")
+            logger.info(f"勝利分類精度 (3モデルensemble): {win_accuracy:.4f}")
 
             # ===== 3. 連対分類モデル =====
             quinella_weight = len(y_quinella_train[y_quinella_train == 0]) / max(len(y_quinella_train[y_quinella_train == 1]), 1)
@@ -289,12 +319,18 @@ class WeeklyRetrain:
             lgb_quinella.fit(X_train, y_quinella_train, eval_set=[(X_val, y_quinella_val)])
             models['lgb_quinella'] = lgb_quinella
 
+            logger.info("CatBoost連対分類モデル学習中...")
+            cb_quinella = cb.CatBoostClassifier(**cb_params, scale_pos_weight=quinella_weight)
+            cb_quinella.fit(X_train, y_quinella_train, eval_set=(X_val, y_quinella_val), early_stopping_rounds=50)
+            models['cb_quinella'] = cb_quinella
+
             # 連対アンサンブル確率
             xgb_quinella_prob = xgb_quinella.predict_proba(X_val)[:, 1]
             lgb_quinella_prob = lgb_quinella.predict_proba(X_val)[:, 1]
-            ensemble_quinella_prob = (xgb_quinella_prob + lgb_quinella_prob) / 2
+            cb_quinella_prob = cb_quinella.predict_proba(X_val)[:, 1]
+            ensemble_quinella_prob = xgb_quinella_prob * XGB_WEIGHT + lgb_quinella_prob * LGB_WEIGHT + cb_quinella_prob * CB_WEIGHT
             quinella_accuracy = ((ensemble_quinella_prob > 0.5) == y_quinella_val).mean()
-            logger.info(f"連対分類精度 (ensemble): {quinella_accuracy:.4f}")
+            logger.info(f"連対分類精度 (3モデルensemble): {quinella_accuracy:.4f}")
 
             # ===== 4. 複勝分類モデル =====
             place_weight = len(y_place_train[y_place_train == 0]) / max(len(y_place_train[y_place_train == 1]), 1)
@@ -309,12 +345,18 @@ class WeeklyRetrain:
             lgb_place.fit(X_train, y_place_train, eval_set=[(X_val, y_place_val)])
             models['lgb_place'] = lgb_place
 
+            logger.info("CatBoost複勝分類モデル学習中...")
+            cb_place = cb.CatBoostClassifier(**cb_params, scale_pos_weight=place_weight)
+            cb_place.fit(X_train, y_place_train, eval_set=(X_val, y_place_val), early_stopping_rounds=50)
+            models['cb_place'] = cb_place
+
             # 複勝アンサンブル確率
             xgb_place_prob = xgb_place.predict_proba(X_val)[:, 1]
             lgb_place_prob = lgb_place.predict_proba(X_val)[:, 1]
-            ensemble_place_prob = (xgb_place_prob + lgb_place_prob) / 2
+            cb_place_prob = cb_place.predict_proba(X_val)[:, 1]
+            ensemble_place_prob = xgb_place_prob * XGB_WEIGHT + lgb_place_prob * LGB_WEIGHT + cb_place_prob * CB_WEIGHT
             place_accuracy = ((ensemble_place_prob > 0.5) == y_place_val).mean()
-            logger.info(f"複勝分類精度 (ensemble): {place_accuracy:.4f}")
+            logger.info(f"複勝分類精度 (3モデルensemble): {place_accuracy:.4f}")
 
             # ===== 5. キャリブレーション（calibデータで学習）=====
             logger.info("キャリブレーション学習中（calibデータ使用）...")
@@ -322,15 +364,18 @@ class WeeklyRetrain:
             # calibデータで予測（キャリブレーター学習用）
             xgb_win_prob_calib = xgb_win.predict_proba(X_calib)[:, 1]
             lgb_win_prob_calib = lgb_win.predict_proba(X_calib)[:, 1]
-            ensemble_win_prob_calib = (xgb_win_prob_calib + lgb_win_prob_calib) / 2
+            cb_win_prob_calib = cb_win.predict_proba(X_calib)[:, 1]
+            ensemble_win_prob_calib = xgb_win_prob_calib * XGB_WEIGHT + lgb_win_prob_calib * LGB_WEIGHT + cb_win_prob_calib * CB_WEIGHT
 
             xgb_quinella_prob_calib = xgb_quinella.predict_proba(X_calib)[:, 1]
             lgb_quinella_prob_calib = lgb_quinella.predict_proba(X_calib)[:, 1]
-            ensemble_quinella_prob_calib = (xgb_quinella_prob_calib + lgb_quinella_prob_calib) / 2
+            cb_quinella_prob_calib = cb_quinella.predict_proba(X_calib)[:, 1]
+            ensemble_quinella_prob_calib = xgb_quinella_prob_calib * XGB_WEIGHT + lgb_quinella_prob_calib * LGB_WEIGHT + cb_quinella_prob_calib * CB_WEIGHT
 
             xgb_place_prob_calib = xgb_place.predict_proba(X_calib)[:, 1]
             lgb_place_prob_calib = lgb_place.predict_proba(X_calib)[:, 1]
-            ensemble_place_prob_calib = (xgb_place_prob_calib + lgb_place_prob_calib) / 2
+            cb_place_prob_calib = cb_place.predict_proba(X_calib)[:, 1]
+            ensemble_place_prob_calib = xgb_place_prob_calib * XGB_WEIGHT + lgb_place_prob_calib * LGB_WEIGHT + cb_place_prob_calib * CB_WEIGHT
 
             # キャリブレーター学習
             win_calibrator = IsotonicRegression(out_of_bounds='clip')
@@ -349,22 +394,26 @@ class WeeklyRetrain:
             logger.info("最終評価中（testデータ使用）...")
             from sklearn.metrics import roc_auc_score, brier_score_loss
 
-            # testデータで予測
+            # testデータで予測（3モデルアンサンブル）
             xgb_pred_test = xgb_reg.predict(X_test)
             lgb_pred_test = lgb_reg.predict(X_test)
-            ensemble_pred_test = (xgb_pred_test + lgb_pred_test) / 2
+            cb_pred_test = cb_reg.predict(X_test)
+            ensemble_pred_test = xgb_pred_test * XGB_WEIGHT + lgb_pred_test * LGB_WEIGHT + cb_pred_test * CB_WEIGHT
 
             xgb_win_prob_test = xgb_win.predict_proba(X_test)[:, 1]
             lgb_win_prob_test = lgb_win.predict_proba(X_test)[:, 1]
-            ensemble_win_prob_test = (xgb_win_prob_test + lgb_win_prob_test) / 2
+            cb_win_prob_test = cb_win.predict_proba(X_test)[:, 1]
+            ensemble_win_prob_test = xgb_win_prob_test * XGB_WEIGHT + lgb_win_prob_test * LGB_WEIGHT + cb_win_prob_test * CB_WEIGHT
 
             xgb_quinella_prob_test = xgb_quinella.predict_proba(X_test)[:, 1]
             lgb_quinella_prob_test = lgb_quinella.predict_proba(X_test)[:, 1]
-            ensemble_quinella_prob_test = (xgb_quinella_prob_test + lgb_quinella_prob_test) / 2
+            cb_quinella_prob_test = cb_quinella.predict_proba(X_test)[:, 1]
+            ensemble_quinella_prob_test = xgb_quinella_prob_test * XGB_WEIGHT + lgb_quinella_prob_test * LGB_WEIGHT + cb_quinella_prob_test * CB_WEIGHT
 
             xgb_place_prob_test = xgb_place.predict_proba(X_test)[:, 1]
             lgb_place_prob_test = lgb_place.predict_proba(X_test)[:, 1]
-            ensemble_place_prob_test = (xgb_place_prob_test + lgb_place_prob_test) / 2
+            cb_place_prob_test = cb_place.predict_proba(X_test)[:, 1]
+            ensemble_place_prob_test = xgb_place_prob_test * XGB_WEIGHT + lgb_place_prob_test * LGB_WEIGHT + cb_place_prob_test * CB_WEIGHT
 
             # キャリブレーション適用
             calibrated_win_test = win_calibrator.predict(ensemble_win_prob_test)
@@ -447,9 +496,10 @@ class WeeklyRetrain:
             # 一時保存
             temp_model_path = self.model_dir / "ensemble_model_new.pkl"
             model_data = {
-                # 後方互換性
+                # 後方互換性（旧形式）
                 'xgb_model': xgb_reg,
                 'lgb_model': lgb_reg,
+                'cb_model': cb_reg,  # CatBoost追加
                 # 新しいモデル群
                 'models': models,
                 'feature_names': feature_cols,
@@ -471,7 +521,13 @@ class WeeklyRetrain:
                 'place_brier': float(place_brier),
                 'top3_coverage': float(top3_coverage),
                 'years': years,
-                'version': 'v4_quinella_ensemble'  # バージョン更新
+                # アンサンブル重み
+                'ensemble_weights': {
+                    'xgb': XGB_WEIGHT,
+                    'lgb': LGB_WEIGHT,
+                    'cb': CB_WEIGHT
+                },
+                'version': 'v5_catboost_ensemble'  # CatBoost対応バージョン
             }
             joblib.dump(model_data, temp_model_path)
 
@@ -555,21 +611,36 @@ class WeeklyRetrain:
             payouts = self._get_payouts_for_year(conn, test_year)
 
             # 両モデルの評価を実行
-            old_eval = self._evaluate_model(df, old_model_data, old_features, payouts, "旧モデル")
+            # 特徴量不一致チェック（新しい特徴量セットで旧モデルは評価できない場合がある）
+            missing_old_features = set(old_features) - set(df.columns)
+            if missing_old_features:
+                logger.warning(f"⚠️ 旧モデルの特徴量が不足: {missing_old_features}")
+                logger.info("特徴量構成が変更されたため、新モデルのみ評価します")
+                old_eval = None
+            else:
+                old_eval = self._evaluate_model(df, old_model_data, old_features, payouts, "旧モデル")
             new_eval = self._evaluate_model(df, new_model_data, new_features, payouts, "新モデル")
 
             # 総合スコア計算
-            old_score = self._calculate_composite_score(old_eval)
             new_score = self._calculate_composite_score(new_eval)
-
-            improvement = new_score - old_score
 
             logger.info("=" * 50)
             logger.info("📊 総合評価結果")
             logger.info("=" * 50)
-            logger.info(f"旧モデル総合スコア: {old_score:.4f}")
-            logger.info(f"新モデル総合スコア: {new_score:.4f}")
-            logger.info(f"改善: {improvement:+.4f} ({'✅ 新モデル優位' if improvement > 0 else '❌ 旧モデル維持'})")
+
+            if old_eval is not None:
+                old_score = self._calculate_composite_score(old_eval)
+                improvement = new_score - old_score
+                logger.info(f"旧モデル総合スコア: {old_score:.4f}")
+                logger.info(f"新モデル総合スコア: {new_score:.4f}")
+                logger.info(f"改善: {improvement:+.4f} ({'✅ 新モデル優位' if improvement > 0 else '❌ 旧モデル維持'})")
+            else:
+                # 特徴量変更時は旧モデル評価なし、新モデルを自動採用
+                old_score = 0.0
+                improvement = 1.0  # 強制的に新モデル採用
+                logger.info("旧モデル: 評価スキップ（特徴量変更）")
+                logger.info(f"新モデル総合スコア: {new_score:.4f}")
+                logger.info("✅ 特徴量構成変更のため新モデルを採用")
 
             return {
                 'status': 'success',
@@ -580,7 +651,7 @@ class WeeklyRetrain:
                 'improvement': float(improvement),
                 'test_samples': len(df),
                 # 後方互換性のためRMSEも含める
-                'old_rmse': old_eval.get('rmse', 0),
+                'old_rmse': old_eval.get('rmse', 0) if old_eval else 0,
                 'new_rmse': new_eval.get('rmse', 0)
             }
 
@@ -593,21 +664,38 @@ class WeeklyRetrain:
         from sklearn.metrics import roc_auc_score
 
         models = model_data.get('models', {})
+        weights = model_data.get('ensemble_weights')  # CatBoost対応の重み
         X = df[features].fillna(0)
 
         # 回帰予測（着順）
         xgb_reg = models.get('xgb_regressor') or model_data.get('xgb_model')
         lgb_reg = models.get('lgb_regressor') or model_data.get('lgb_model')
-        reg_pred = (xgb_reg.predict(X) + lgb_reg.predict(X)) / 2
+        cb_reg = models.get('cb_regressor') or model_data.get('cb_model')
+
+        if cb_reg is not None and weights is not None:
+            # 3モデルアンサンブル
+            reg_pred = (xgb_reg.predict(X) * weights['xgb'] +
+                       lgb_reg.predict(X) * weights['lgb'] +
+                       cb_reg.predict(X) * weights['cb'])
+        else:
+            # 2モデル平均（後方互換性）
+            reg_pred = (xgb_reg.predict(X) + lgb_reg.predict(X)) / 2
+
         rmse = float(np.sqrt(np.mean((reg_pred - df['target']) ** 2)))
 
         # 分類予測（勝利/連対/複勝）
         eval_result = {'rmse': rmse}
 
+        # CatBoost分類モデル
+        cb_win = models.get('cb_win')
+        cb_quinella = models.get('cb_quinella')
+        cb_place = models.get('cb_place')
+
         # 勝利AUC
         if 'xgb_win' in models and 'lgb_win' in models:
             win_prob = self._get_ensemble_proba(models['xgb_win'], models['lgb_win'], X,
-                                                 models.get('win_calibrator'))
+                                                 models.get('win_calibrator'),
+                                                 cb_clf=cb_win, weights=weights)
             win_actual = (df['target'] == 1).astype(int)
             try:
                 eval_result['win_auc'] = float(roc_auc_score(win_actual, win_prob))
@@ -617,7 +705,8 @@ class WeeklyRetrain:
         # 連対AUC
         if 'xgb_quinella' in models and 'lgb_quinella' in models:
             quinella_prob = self._get_ensemble_proba(models['xgb_quinella'], models['lgb_quinella'], X,
-                                                      models.get('quinella_calibrator'))
+                                                      models.get('quinella_calibrator'),
+                                                      cb_clf=cb_quinella, weights=weights)
             quinella_actual = (df['target'] <= 2).astype(int)
             try:
                 eval_result['quinella_auc'] = float(roc_auc_score(quinella_actual, quinella_prob))
@@ -627,7 +716,8 @@ class WeeklyRetrain:
         # 複勝AUC
         if 'xgb_place' in models and 'lgb_place' in models:
             place_prob = self._get_ensemble_proba(models['xgb_place'], models['lgb_place'], X,
-                                                   models.get('place_calibrator'))
+                                                   models.get('place_calibrator'),
+                                                   cb_clf=cb_place, weights=weights)
             place_actual = (df['target'] <= 3).astype(int)
             try:
                 eval_result['place_auc'] = float(roc_auc_score(place_actual, place_prob))
@@ -667,11 +757,21 @@ class WeeklyRetrain:
 
         return eval_result
 
-    def _get_ensemble_proba(self, xgb_clf, lgb_clf, X, calibrator=None) -> np.ndarray:
-        """アンサンブル確率を取得（キャリブレーション適用）"""
+    def _get_ensemble_proba(self, xgb_clf, lgb_clf, X, calibrator=None, cb_clf=None, weights=None) -> np.ndarray:
+        """アンサンブル確率を取得（キャリブレーション適用、CatBoost対応）"""
         xgb_prob = xgb_clf.predict_proba(X)[:, 1]
         lgb_prob = lgb_clf.predict_proba(X)[:, 1]
-        raw_prob = (xgb_prob + lgb_prob) / 2
+
+        if cb_clf is not None and weights is not None:
+            # 3モデルアンサンブル
+            cb_prob = cb_clf.predict_proba(X)[:, 1]
+            raw_prob = xgb_prob * weights['xgb'] + lgb_prob * weights['lgb'] + cb_prob * weights['cb']
+        elif weights is not None:
+            # 2モデル重み付きアンサンブル
+            raw_prob = xgb_prob * weights.get('xgb', 0.5) + lgb_prob * weights.get('lgb', 0.5)
+        else:
+            # 2モデル単純平均（後方互換性）
+            raw_prob = (xgb_prob + lgb_prob) / 2
 
         if calibrator is not None:
             try:

@@ -28,24 +28,30 @@ logger = logging.getLogger(__name__)
 
 
 class RacePredictor:
-    """レース予想クラス（ensemble_model対応 - 分類モデル+キャリブレーション）"""
+    """レース予想クラス（ensemble_model対応 - 分類モデル+キャリブレーション+CatBoost）"""
 
     def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl", use_adjustments: bool = True):
         self.model_path = model_path
         # 回帰モデル
         self.xgb_model = None
         self.lgb_model = None
+        self.cb_model = None  # CatBoost追加
         # 分類モデル（新形式）
         self.xgb_win = None
         self.lgb_win = None
+        self.cb_win = None  # CatBoost追加
         self.xgb_place = None
         self.lgb_place = None
+        self.cb_place = None  # CatBoost追加
         # キャリブレーター（新形式）
         self.win_calibrator = None
         self.place_calibrator = None
         # 特徴量
         self.feature_names = None
         self.has_classifiers = False
+        self.has_catboost = False  # CatBoost有無フラグ
+        # アンサンブル重み
+        self.ensemble_weights = None
         # 特徴量調整係数
         self.feature_adjustments = {}
         self._load_model()
@@ -83,11 +89,23 @@ class RacePredictor:
             self.win_calibrator = models_dict.get('win_calibrator')
             self.place_calibrator = models_dict.get('place_calibrator')
 
+            # CatBoostモデル取得（v5以降）
+            self.cb_model = models_dict.get('cb_regressor')
+            self.cb_win = models_dict.get('cb_win')
+            self.cb_place = models_dict.get('cb_place')
+            self.has_catboost = self.cb_model is not None
+
+            # アンサンブル重み（デフォルト: XGB+LGB均等）
+            self.ensemble_weights = model_data.get('ensemble_weights', {
+                'xgb': 0.5, 'lgb': 0.5, 'cb': 0.0
+            })
+
             self.has_classifiers = self.xgb_win is not None and self.lgb_win is not None
 
             self.feature_names = model_data.get('feature_names', [])
             logger.info(f"ensemble_model読み込み完了: {len(self.feature_names)}特徴量, "
                        f"分類モデル={'あり' if self.has_classifiers else 'なし'}, "
+                       f"CatBoost={'あり' if self.has_catboost else 'なし'}, "
                        f"version={version}")
         except Exception as e:
             logger.error(f"モデル読み込み失敗: {e}")
@@ -303,7 +321,7 @@ class RacePredictor:
             if not features_list:
                 return []
 
-            # 予測（ensemble: XGBoost + LightGBM の平均）
+            # 予測（ensemble: XGBoost + LightGBM + CatBoost の加重平均）
             df = pd.DataFrame(features_list)
             X = df[self.feature_names].fillna(0)
 
@@ -313,19 +331,51 @@ class RacePredictor:
             # 回帰予測（着順スコア）
             xgb_pred = self.xgb_model.predict(X)
             lgb_pred = self.lgb_model.predict(X)
-            rank_scores = (xgb_pred + lgb_pred) / 2
+
+            # CatBoostがある場合は3モデルアンサンブル
+            if self.has_catboost:
+                cb_pred = self.cb_model.predict(X)
+                w = self.ensemble_weights
+                rank_scores = (xgb_pred * w['xgb'] + lgb_pred * w['lgb'] + cb_pred * w['cb'])
+            else:
+                # 後方互換: XGB+LGBのみ
+                w = self.ensemble_weights
+                xgb_w = w.get('xgb', 0.5)
+                lgb_w = w.get('lgb', 0.5)
+                total = xgb_w + lgb_w
+                rank_scores = (xgb_pred * xgb_w + lgb_pred * lgb_w) / total
 
             # 分類モデルによる確率予測
             if self.has_classifiers:
                 # 勝利確率
                 xgb_win_prob = self.xgb_win.predict_proba(X)[:, 1]
                 lgb_win_prob = self.lgb_win.predict_proba(X)[:, 1]
-                win_probs = (xgb_win_prob + lgb_win_prob) / 2
+
+                if self.has_catboost and self.cb_win is not None:
+                    cb_win_prob = self.cb_win.predict_proba(X)[:, 1]
+                    w = self.ensemble_weights
+                    win_probs = (xgb_win_prob * w['xgb'] + lgb_win_prob * w['lgb'] + cb_win_prob * w['cb'])
+                else:
+                    w = self.ensemble_weights
+                    xgb_w = w.get('xgb', 0.5)
+                    lgb_w = w.get('lgb', 0.5)
+                    total = xgb_w + lgb_w
+                    win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
 
                 # 複勝確率
                 xgb_place_prob = self.xgb_place.predict_proba(X)[:, 1]
                 lgb_place_prob = self.lgb_place.predict_proba(X)[:, 1]
-                place_probs = (xgb_place_prob + lgb_place_prob) / 2
+
+                if self.has_catboost and self.cb_place is not None:
+                    cb_place_prob = self.cb_place.predict_proba(X)[:, 1]
+                    w = self.ensemble_weights
+                    place_probs = (xgb_place_prob * w['xgb'] + lgb_place_prob * w['lgb'] + cb_place_prob * w['cb'])
+                else:
+                    w = self.ensemble_weights
+                    xgb_w = w.get('xgb', 0.5)
+                    lgb_w = w.get('lgb', 0.5)
+                    total = xgb_w + lgb_w
+                    place_probs = (xgb_place_prob * xgb_w + lgb_place_prob * lgb_w) / total
 
                 # キャリブレーション適用
                 if self.win_calibrator is not None:
