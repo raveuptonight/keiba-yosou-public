@@ -1,8 +1,8 @@
 """
-FastAPI メインアプリケーション
+FastAPI Main Application
 
-競馬予想システムのREST API
-目標: 回収率200%達成
+REST API for horse racing prediction system.
+Goal: Achieve 200% return rate.
 """
 
 import os
@@ -15,10 +15,10 @@ from dotenv import load_dotenv
 from src.db.async_connection import init_db_pool, close_db_pool, get_connection
 from src.db.code_master import initialize_code_cache
 
-# .envファイルを読み込み
+# Load .env file
 load_dotenv()
 
-# ロギング設定
+# Logging setup
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -28,14 +28,14 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """アプリケーションライフサイクル管理"""
-    # 起動時
+    """Application lifecycle management."""
+    # Startup
     logger.info("Starting FastAPI application...")
     try:
         await init_db_pool()
         logger.info("Database pool initialized")
 
-        # コードマスタキャッシュを初期化
+        # Initialize code master cache
         async with get_connection() as conn:
             await initialize_code_cache(conn)
         logger.info("Code master cache initialized")
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # シャットダウン時
+    # Shutdown
     logger.info("Shutting down FastAPI application...")
     try:
         await close_db_pool()
@@ -55,38 +55,38 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to close database pool: {e}")
 
 
-# FastAPIアプリケーション作成
+# Create FastAPI application
 app = FastAPI(
-    title="競馬予想API",
-    description="回収率200%を目指す競馬予想システムのREST API",
+    title="Horse Racing Prediction API",
+    description="REST API for horse racing prediction system aiming for 200% ROI",
     version="1.0.0",
     lifespan=lifespan
 )
 
-# CORS設定（開発用）
+# CORS settings (for development)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 本番環境では適切に設定
+    allow_origins=["*"],  # Configure appropriately for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-# ルーター登録
+# Register routers
 from src.api.routes import health, races, horses, odds, predictions, jockeys, debug
 
 app.include_router(health.router, tags=["health"])
 app.include_router(debug.router, prefix="/api", tags=["debug"])
 
-# /api/v1 プレフィックス (バージョニング用)
+# /api/v1 prefix (for versioning)
 app.include_router(races.router, prefix="/api/v1", tags=["races-v1"])
 app.include_router(horses.router, prefix="/api/v1", tags=["horses-v1"])
 app.include_router(jockeys.router, prefix="/api/v1", tags=["jockeys-v1"])
 app.include_router(odds.router, prefix="/api/v1", tags=["odds-v1"])
 app.include_router(predictions.router, prefix="/api/v1", tags=["predictions-v1"])
 
-# /api プレフィックス (後方互換性 & Discord Bot用)
+# /api prefix (backward compatibility & Discord Bot)
 app.include_router(races.router, prefix="/api", tags=["races"])
 app.include_router(horses.router, prefix="/api", tags=["horses"])
 app.include_router(jockeys.router, prefix="/api", tags=["jockeys"])
@@ -96,9 +96,9 @@ app.include_router(predictions.router, prefix="/api", tags=["predictions"])
 
 @app.get("/")
 async def root():
-    """ルートエンドポイント"""
+    """Root endpoint."""
     return {
-        "message": "競馬予想API - 回収率200%を目指す",
+        "message": "Horse Racing Prediction API - Aiming for 200% ROI",
         "version": "1.0.0",
         "docs": "/docs",
         "status": "running",
