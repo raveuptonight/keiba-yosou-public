@@ -1,153 +1,153 @@
 """
-カスタム例外クラス
+Custom Exception Classes
 
-システム全体で使用する例外を定義し、エラーハンドリングを統一
+Defines system-wide exceptions for unified error handling.
 """
 
 
 class KeibaYosouError(Exception):
-    """競馬予想システムの基底例外クラス"""
+    """Base exception class for horse racing prediction system."""
     pass
 
 
 # =====================================
-# データベース関連例外
+# Database Exceptions
 # =====================================
 class DatabaseError(KeibaYosouError):
-    """データベース関連のエラー"""
+    """Database related error."""
     pass
 
 
 class DatabaseConnectionError(DatabaseError):
-    """データベース接続エラー"""
+    """Database connection error."""
     pass
 
 
 class DatabaseQueryError(DatabaseError):
-    """データベースクエリ実行エラー"""
+    """Database query execution error."""
     pass
 
 
 class DatabaseMigrationError(DatabaseError):
-    """データベースマイグレーションエラー"""
+    """Database migration error."""
     pass
 
 
 # =====================================
-# 機械学習関連例外
+# Machine Learning Exceptions
 # =====================================
 class MLError(KeibaYosouError):
-    """機械学習関連のエラー"""
+    """Machine learning related error."""
     pass
 
 
 class ModelNotFoundError(MLError):
-    """モデルファイルが見つからない"""
+    """Model file not found."""
     pass
 
 
 class ModelLoadError(MLError):
-    """モデル読み込みエラー"""
+    """Model loading error."""
     pass
 
 
 class ModelTrainError(MLError):
-    """モデル学習エラー"""
+    """Model training error."""
     pass
 
 
 class ModelPredictionError(MLError):
-    """モデル予測エラー"""
+    """Model prediction error."""
     pass
 
 
 class InsufficientDataError(MLError):
-    """学習データ不足エラー"""
+    """Insufficient training data error."""
     pass
 
 
 # =====================================
-# パイプライン関連例外
+# Pipeline Exceptions
 # =====================================
 class PipelineError(KeibaYosouError):
-    """パイプライン実行エラー"""
+    """Pipeline execution error."""
     pass
 
 
 class FeatureExtractionError(PipelineError):
-    """特徴量抽出エラー"""
+    """Feature extraction error."""
     pass
 
 
 class PredictionError(PipelineError):
-    """予想生成エラー"""
+    """Prediction generation error."""
     pass
 
 
 class AnalysisError(PipelineError):
-    """分析エラー"""
+    """Analysis error."""
     pass
 
 
 # =====================================
-# データ関連例外
+# Data Exceptions
 # =====================================
 class DataError(KeibaYosouError):
-    """データ関連のエラー"""
+    """Data related error."""
     pass
 
 
 class DataValidationError(DataError):
-    """データ検証エラー"""
+    """Data validation error."""
     pass
 
 
 class DataParseError(DataError):
-    """データ解析エラー（JSON等）"""
+    """Data parsing error (JSON, etc.)."""
     pass
 
 
 class MissingDataError(DataError):
-    """必要なデータが不足"""
+    """Required data is missing."""
     pass
 
 
 # =====================================
-# API関連例外
+# API Exceptions
 # =====================================
 class APIError(KeibaYosouError):
-    """API関連のエラー"""
+    """API related error."""
     pass
 
 
 class ExternalAPIError(APIError):
-    """外部API呼び出しエラー"""
+    """External API call error."""
     pass
 
 
 # =====================================
-# Discord Bot関連例外
+# Discord Bot Exceptions
 # =====================================
 class BotError(KeibaYosouError):
-    """Discord Bot関連のエラー"""
+    """Discord Bot related error."""
     pass
 
 
 class BotCommandError(BotError):
-    """Botコマンド実行エラー"""
+    """Bot command execution error."""
     pass
 
 
 # =====================================
-# 設定関連例外
+# Configuration Exceptions
 # =====================================
 class ConfigError(KeibaYosouError):
-    """設定関連のエラー"""
+    """Configuration related error."""
     pass
 
 
 class MissingEnvironmentVariableError(ConfigError):
-    """必須環境変数が設定されていない"""
+    """Required environment variable is not set."""
     def __init__(self, var_name: str):
         self.var_name = var_name
-        super().__init__(f"環境変数 '{var_name}' が設定されていません")
+        super().__init__(f"Environment variable '{var_name}' is not set")

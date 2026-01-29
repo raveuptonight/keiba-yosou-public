@@ -1,7 +1,7 @@
 """
-データベース接続モジュール
+Database Connection Module
 
-PostgreSQL（ローカル or Neon or モック）への接続を管理する。
+Manages connections to PostgreSQL (local, Neon, or mock).
 """
 
 import os
@@ -22,16 +22,16 @@ from src.exceptions import (
     MissingEnvironmentVariableError,
 )
 
-# .envファイルを読み込み
+# Load .env file
 load_dotenv()
 
-# ロガー設定
+# Logger setup
 logger = logging.getLogger(__name__)
 
 
 class MockConnection:
     """
-    モック接続クラス（DB未接続時のダミー）
+    Mock connection class (dummy for when DB is not connected).
     """
     def cursor(self):
         return MockCursor()
@@ -48,7 +48,7 @@ class MockConnection:
 
 class MockCursor:
     """
-    モックカーソルクラス
+    Mock cursor class.
     """
     def execute(self, query, params=None):
         logger.debug(f"[MOCK] Execute: {query[:100]}...")
@@ -68,75 +68,75 @@ class MockCursor:
 
 class DatabaseConnection:
     """
-    PostgreSQL接続を管理するクラス
+    Class for managing PostgreSQL connections.
 
-    ローカルPostgreSQL、Neon、またはモックへの接続を管理します。
+    Manages connections to local PostgreSQL, Neon, or mock.
     """
 
     def __init__(self):
         """
-        接続情報を環境変数から取得
+        Get connection info from environment variables.
 
         Raises:
-            ValueError: 不正なDB_MODEが設定されている場合
-            MissingEnvironmentVariableError: 必須の環境変数が設定されていない場合
+            ValueError: If invalid DB_MODE is set
+            MissingEnvironmentVariableError: If required environment variables are not set
         """
         self.db_mode = os.getenv("DB_MODE", "local")
         self._connection_pool: Optional[pool.SimpleConnectionPool] = None
 
-        logger.info(f"DatabaseConnection インスタンス作成: mode={self.db_mode}")
+        logger.info(f"DatabaseConnection instance created: mode={self.db_mode}")
 
         if self.db_mode == "mock":
-            # モックモード（DB未接続時）
-            logger.info("DB接続設定（モック）: 実際のDB接続は行いません")
+            # Mock mode (when DB is not connected)
+            logger.info("DB connection settings (mock): No actual DB connection")
             return
 
         if self.db_mode == "local":
-            # Docker環境用: DB_* を優先、なければ LOCAL_DB_* にフォールバック
+            # For Docker: Prefer DB_*, fallback to LOCAL_DB_*
             self.host = os.getenv("DB_HOST") or os.getenv("LOCAL_DB_HOST", "localhost")
             self.port = os.getenv("DB_PORT") or os.getenv("LOCAL_DB_PORT", "5432")
             self.database = os.getenv("DB_NAME") or os.getenv("LOCAL_DB_NAME", "keiba_db")
             self.user = os.getenv("DB_USER") or os.getenv("LOCAL_DB_USER", "postgres")
             self.password = os.getenv("DB_PASSWORD") or os.getenv("LOCAL_DB_PASSWORD")
 
-            # ローカルモードではパスワードが必須
+            # Password is required for local mode
             if not self.password:
-                logger.error("DB_PASSWORD が設定されていません")
+                logger.error("DB_PASSWORD is not set")
                 raise MissingEnvironmentVariableError("DB_PASSWORD")
 
-            logger.info(f"DB接続設定（ローカル）: host={self.host}, port={self.port}, database={self.database}")
+            logger.info(f"DB connection settings (local): host={self.host}, port={self.port}, database={self.database}")
 
         elif self.db_mode == "neon":
-            # 将来のNeon対応
+            # Future Neon support
             self.connection_url = os.getenv("NEON_DATABASE_URL")
 
             if not self.connection_url:
-                logger.error("NEON_DATABASE_URL が設定されていません")
+                logger.error("NEON_DATABASE_URL is not set")
                 raise MissingEnvironmentVariableError("NEON_DATABASE_URL")
 
-            logger.info("DB接続設定（Neon）: URL設定済み")
+            logger.info("DB connection settings (Neon): URL configured")
 
         else:
-            logger.error(f"不正なDB_MODE: {self.db_mode}")
+            logger.error(f"Invalid DB_MODE: {self.db_mode}")
             raise ValueError(f"Invalid DB_MODE: {self.db_mode}. Use 'local', 'neon', or 'mock'.")
 
     def get_connection(self) -> Psycopg2Connection:
         """
-        データベース接続を取得
+        Get database connection.
 
         Returns:
-            データベース接続オブジェクト（モック時はMockConnection）
+            Database connection object (MockConnection when in mock mode)
 
         Raises:
-            DatabaseConnectionError: データベース接続に失敗した場合
+            DatabaseConnectionError: If database connection fails
         """
         if self.db_mode == "mock":
-            logger.debug("モック接続を返却")
+            logger.debug("Returning mock connection")
             return MockConnection()
 
         try:
             if self.db_mode == "local":
-                logger.debug(f"DB接続開始（ローカル）: {self.host}:{self.port}/{self.database}")
+                logger.debug(f"Starting DB connection (local): {self.host}:{self.port}/{self.database}")
                 conn = psycopg2.connect(
                     host=self.host,
                     port=self.port,
@@ -144,24 +144,24 @@ class DatabaseConnection:
                     user=self.user,
                     password=self.password,
                 )
-                logger.debug("DB接続成功（ローカル）")
+                logger.debug("DB connection successful (local)")
                 return conn
 
             elif self.db_mode == "neon":
-                logger.debug("DB接続開始（Neon）")
+                logger.debug("Starting DB connection (Neon)")
                 conn = psycopg2.connect(self.connection_url)
-                logger.debug("DB接続成功（Neon）")
+                logger.debug("DB connection successful (Neon)")
                 return conn
 
         except psycopg2.OperationalError as e:
-            logger.error(f"DB接続失敗（認証/ネットワークエラー）: {e}")
-            raise DatabaseConnectionError(f"データベース接続失敗: {e}") from e
+            logger.error(f"DB connection failed (auth/network error): {e}")
+            raise DatabaseConnectionError(f"Database connection failed: {e}") from e
         except psycopg2.Error as e:
-            logger.error(f"DB接続失敗（PostgreSQLエラー）: {e}")
-            raise DatabaseConnectionError(f"データベース接続失敗: {e}") from e
+            logger.error(f"DB connection failed (PostgreSQL error): {e}")
+            raise DatabaseConnectionError(f"Database connection failed: {e}") from e
         except Exception as e:
-            logger.error(f"DB接続失敗（予期しないエラー）: {e}")
-            raise DatabaseConnectionError(f"データベース接続失敗: {e}") from e
+            logger.error(f"DB connection failed (unexpected error): {e}")
+            raise DatabaseConnectionError(f"Database connection failed: {e}") from e
 
     def get_connection_pool(
         self,
@@ -169,26 +169,26 @@ class DatabaseConnection:
         maxconn: int = DB_CONNECTION_POOL_MAX
     ) -> pool.SimpleConnectionPool:
         """
-        コネクションプールを取得（複数接続が必要な場合）
+        Get connection pool (for cases requiring multiple connections).
 
         Args:
-            minconn: 最小接続数（デフォルト: 設定値）
-            maxconn: 最大接続数（デフォルト: 設定値）
+            minconn: Minimum connections (default: config value)
+            maxconn: Maximum connections (default: config value)
 
         Returns:
-            コネクションプール
+            Connection pool
 
         Raises:
-            DatabaseConnectionError: コネクションプール作成に失敗した場合
+            DatabaseConnectionError: If connection pool creation fails
         """
         if self.db_mode == "mock":
-            logger.warning("モックモードではコネクションプールは使用できません")
+            logger.warning("Connection pool is not available in mock mode")
             return None
 
         if self._connection_pool is None:
             try:
                 if self.db_mode == "local":
-                    logger.info(f"コネクションプール作成開始（ローカル）: min={minconn}, max={maxconn}")
+                    logger.info(f"Creating connection pool (local): min={minconn}, max={maxconn}")
                     self._connection_pool = pool.SimpleConnectionPool(
                         minconn,
                         maxconn,
@@ -199,82 +199,82 @@ class DatabaseConnection:
                         password=self.password,
                     )
                 elif self.db_mode == "neon":
-                    logger.info(f"コネクションプール作成開始（Neon）: min={minconn}, max={maxconn}")
+                    logger.info(f"Creating connection pool (Neon): min={minconn}, max={maxconn}")
                     self._connection_pool = pool.SimpleConnectionPool(
                         minconn, maxconn, self.connection_url
                     )
 
-                logger.info("コネクションプール作成成功")
+                logger.info("Connection pool created successfully")
 
             except psycopg2.OperationalError as e:
-                logger.error(f"コネクションプール作成失敗（認証/ネットワークエラー）: {e}")
-                raise DatabaseConnectionError(f"コネクションプール作成失敗: {e}") from e
+                logger.error(f"Connection pool creation failed (auth/network error): {e}")
+                raise DatabaseConnectionError(f"Connection pool creation failed: {e}") from e
             except psycopg2.Error as e:
-                logger.error(f"コネクションプール作成失敗（PostgreSQLエラー）: {e}")
-                raise DatabaseConnectionError(f"コネクションプール作成失敗: {e}") from e
+                logger.error(f"Connection pool creation failed (PostgreSQL error): {e}")
+                raise DatabaseConnectionError(f"Connection pool creation failed: {e}") from e
             except Exception as e:
-                logger.error(f"コネクションプール作成失敗（予期しないエラー）: {e}")
-                raise DatabaseConnectionError(f"コネクションプール作成失敗: {e}") from e
+                logger.error(f"Connection pool creation failed (unexpected error): {e}")
+                raise DatabaseConnectionError(f"Connection pool creation failed: {e}") from e
 
         return self._connection_pool
 
     def close_pool(self) -> None:
         """
-        コネクションプールを閉じる
+        Close connection pool.
 
-        すべてのプール内の接続を閉じます。
+        Closes all connections in the pool.
         """
         if self._connection_pool is not None:
             try:
-                logger.info("コネクションプールクローズ開始")
+                logger.info("Starting connection pool close")
                 self._connection_pool.closeall()
                 self._connection_pool = None
-                logger.info("コネクションプールクローズ完了")
+                logger.info("Connection pool closed successfully")
             except Exception as e:
-                logger.error(f"コネクションプールクローズ失敗: {e}")
+                logger.error(f"Connection pool close failed: {e}")
 
 
-# グローバルインスタンス（シングルトン的に使用）
+# Global instance (used like a singleton)
 _db_instance: Optional[DatabaseConnection] = None
 
 
 def get_db() -> DatabaseConnection:
     """
-    DatabaseConnectionのグローバルインスタンスを取得
+    Get global instance of DatabaseConnection.
 
-    シングルトンパターンで接続管理オブジェクトを取得します。
+    Uses singleton pattern to get connection management object.
 
     Returns:
-        データベース接続管理オブジェクト
+        Database connection management object
 
     Raises:
-        ValueError: 不正なDB_MODEが設定されている場合
-        MissingEnvironmentVariableError: 必須の環境変数が設定されていない場合
+        ValueError: If invalid DB_MODE is set
+        MissingEnvironmentVariableError: If required environment variables are not set
     """
     global _db_instance
     if _db_instance is None:
-        logger.info("DatabaseConnection インスタンス作成")
+        logger.info("Creating DatabaseConnection instance")
         _db_instance = DatabaseConnection()
     return _db_instance
 
 
 def test_connection() -> bool:
     """
-    データベース接続をテスト
+    Test database connection.
 
     Returns:
-        接続成功ならTrue、失敗ならFalse
+        True if connection successful, False otherwise
     """
     conn = None
     cursor = None
 
     try:
-        logger.info("DB接続テスト開始")
+        logger.info("Starting DB connection test")
         db = get_db()
 
         if db.db_mode == "mock":
-            logger.info("モックモード: 接続テストをスキップ")
-            print("ℹ️ モックモード: 実際のDB接続は行いません")
+            logger.info("Mock mode: skipping connection test")
+            print("Info: Mock mode - no actual DB connection")
             return True
 
         conn = db.get_connection()
@@ -283,37 +283,37 @@ def test_connection() -> bool:
         version = cursor.fetchone()
 
         if version:
-            logger.info(f"DB接続テスト成功: {version[0]}")
-            print(f"DB接続成功: {version[0]}")
+            logger.info(f"DB connection test successful: {version[0]}")
+            print(f"DB connection successful: {version[0]}")
             return True
         else:
-            logger.error("DB接続テスト失敗: バージョン取得できず")
-            print("接続失敗: バージョン情報を取得できませんでした")
+            logger.error("DB connection test failed: could not get version")
+            print("Connection failed: could not get version info")
             return False
 
     except DatabaseConnectionError as e:
-        logger.error(f"DB接続テスト失敗（接続エラー）: {e}")
-        print(f"接続失敗: {e}")
+        logger.error(f"DB connection test failed (connection error): {e}")
+        print(f"Connection failed: {e}")
         return False
     except MissingEnvironmentVariableError as e:
-        logger.error(f"DB接続テスト失敗（環境変数エラー）: {e}")
-        print(f"接続失敗: {e}")
+        logger.error(f"DB connection test failed (env var error): {e}")
+        print(f"Connection failed: {e}")
         return False
     except Exception as e:
-        logger.error(f"DB接続テスト失敗（予期しないエラー）: {e}")
-        print(f"接続失敗: {e}")
+        logger.error(f"DB connection test failed (unexpected error): {e}")
+        print(f"Connection failed: {e}")
         return False
     finally:
-        # リソースクリーンアップ
+        # Resource cleanup
         if cursor:
             cursor.close()
         if conn:
             conn.close()
-        logger.debug("DB接続テスト終了（リソースクリーンアップ完了）")
+        logger.debug("DB connection test finished (resource cleanup complete)")
 
 
 if __name__ == "__main__":
-    # このファイルを直接実行した場合、接続テストを実行
+    # Run connection test when this file is executed directly
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
