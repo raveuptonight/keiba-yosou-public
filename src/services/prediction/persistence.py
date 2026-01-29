@@ -160,9 +160,7 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
             race_info = await get_race_info(conn, row["race_id"])
 
             if not race_info:
-                logger.warning(
-                    f"Race info not found for prediction: race_id={row['race_id']}"
-                )
+                logger.warning(f"Race info not found for prediction: race_id={row['race_id']}")
                 # Use default values
                 race_name = "Unknown"
                 venue = "Unknown"
@@ -179,8 +177,13 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
                     kyoso_shubetsu = race_info.get("kyoso_shubetsu_code", "")
                     # JRA-VAN master-based mapping
                     joken_map = {
-                        "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
-                        "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
+                        "005": "1勝クラス",
+                        "010": "2勝クラス",
+                        "016": "3勝クラス",
+                        "701": "新馬",
+                        "702": "未出走",
+                        "703": "未勝利",
+                        "999": "OP",
                     }
                     # Maiden/unraced: no "以上", class races: add "以上"
                     if kyoso_joken in ("701", "702", "703"):
@@ -203,7 +206,11 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
                 try:
                     prediction_result_data = json.loads(prediction_result_data)
                 except json.JSONDecodeError:
-                    prediction_result_data = {"ranked_horses": [], "prediction_confidence": 0.5, "model_info": "unknown"}
+                    prediction_result_data = {
+                        "ranked_horses": [],
+                        "prediction_confidence": 0.5,
+                        "model_info": "unknown",
+                    }
 
             # Build ranking entries
             ranked_horses = [
@@ -215,7 +222,10 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
                     horse_age=h.get("horse_age"),
                     jockey_name=h.get("jockey_name"),
                     win_probability=h["win_probability"],
-                    quinella_probability=h.get("quinella_probability", h["win_probability"] + h.get("position_distribution", {}).get("second", 0)),
+                    quinella_probability=h.get(
+                        "quinella_probability",
+                        h["win_probability"] + h.get("position_distribution", {}).get("second", 0),
+                    ),
                     place_probability=h["place_probability"],
                     position_distribution=PositionDistribution(**h["position_distribution"]),
                     rank_score=h["rank_score"],
@@ -234,7 +244,7 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
 
             # Convert race_date to string
             race_date_raw = row["race_date"]
-            if hasattr(race_date_raw, 'isoformat'):
+            if hasattr(race_date_raw, "isoformat"):
                 race_date_str = race_date_raw.isoformat()
             else:
                 race_date_str = str(race_date_raw)
@@ -264,8 +274,7 @@ async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
 
 
 async def get_predictions_by_race(
-    race_id: str,
-    is_final: bool | None = None
+    race_id: str, is_final: bool | None = None
 ) -> list[PredictionHistoryItem]:
     """
     Get prediction history for a race.
@@ -335,9 +344,7 @@ async def get_predictions_by_race(
                     )
                 )
 
-            logger.info(
-                f"Predictions fetched: race_id={race_id}, count={len(predictions)}"
-            )
+            logger.info(f"Predictions fetched: race_id={race_id}, count={len(predictions)}")
             return predictions
 
     except asyncpg.PostgresError as e:

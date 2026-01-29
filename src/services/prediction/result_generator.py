@@ -91,8 +91,7 @@ def generate_mock_prediction(race_id: str, is_final: bool) -> PredictionResponse
 
 
 def generate_ml_only_prediction(
-    race_data: dict[str, Any],
-    ml_scores: dict[str, Any]
+    race_data: dict[str, Any], ml_scores: dict[str, Any]
 ) -> dict[str, Any]:
     """
     Generate probability-based ranking prediction from ML scores.
@@ -135,28 +134,30 @@ def generate_ml_only_prediction(
         if horse_num < 1:
             continue
 
-        scored_horses.append({
-            "horse_number": horse_num,
-            "horse_name": horse.get("bamei", "Unknown"),
-            "horse_sex": horse_sex,
-            "horse_age": horse_age,
-            "jockey_name": horse.get("kishumei", ""),
-            "rank_score": score_data.get("rank_score", 999),
-            "win_probability": score_data.get("win_probability", 0.0),
-            "quinella_probability": score_data.get("quinella_probability"),  # Quinella prob from model (if any)
-            "place_probability": score_data.get("place_probability"),  # Place prob from model (if any)
-        })
+        scored_horses.append(
+            {
+                "horse_number": horse_num,
+                "horse_name": horse.get("bamei", "Unknown"),
+                "horse_sex": horse_sex,
+                "horse_age": horse_age,
+                "jockey_name": horse.get("kishumei", ""),
+                "rank_score": score_data.get("rank_score", 999),
+                "win_probability": score_data.get("win_probability", 0.0),
+                "quinella_probability": score_data.get(
+                    "quinella_probability"
+                ),  # Quinella prob from model (if any)
+                "place_probability": score_data.get(
+                    "place_probability"
+                ),  # Place prob from model (if any)
+            }
+        )
 
     # Sort by win probability (higher = better)
     # Note: Use win_probability instead of rank_score so displayed probability matches ranking
     scored_horses.sort(key=lambda x: x["win_probability"], reverse=True)
 
     def calc_position_distribution(
-        win_prob: float,
-        quinella_prob: float | None,
-        place_prob: float | None,
-        rank: int,
-        n: int
+        win_prob: float, quinella_prob: float | None, place_prob: float | None, rank: int, n: int
     ) -> dict[str, float]:
         """
         Estimate position distribution from win/quinella/place probabilities.
@@ -211,7 +212,9 @@ def generate_ml_only_prediction(
         model_place_prob = h.get("place_probability")  # Place prob from model
 
         # Calculate position distribution (for display) - using quinella model
-        pos_dist = calc_position_distribution(win_prob, model_quinella_prob, model_place_prob, rank, n_horses)
+        pos_dist = calc_position_distribution(
+            win_prob, model_quinella_prob, model_place_prob, rank, n_horses
+        )
 
         # Quinella: prefer model value, otherwise calculate from distribution
         if model_quinella_prob is not None:
@@ -234,20 +237,22 @@ def generate_ml_only_prediction(
         else:
             confidence = 0.5
 
-        ranked_horses.append({
-            "rank": rank,
-            "horse_number": h["horse_number"],
-            "horse_name": h["horse_name"],
-            "horse_sex": h.get("horse_sex", ""),
-            "horse_age": h.get("horse_age"),
-            "jockey_name": h.get("jockey_name", ""),
-            "win_probability": round(win_prob, 4),
-            "quinella_probability": round(quinella_prob, 4),
-            "place_probability": round(place_prob, 4),
-            "position_distribution": pos_dist,
-            "rank_score": round(h["rank_score"], 4),
-            "confidence": round(confidence, 4),
-        })
+        ranked_horses.append(
+            {
+                "rank": rank,
+                "horse_number": h["horse_number"],
+                "horse_name": h["horse_name"],
+                "horse_sex": h.get("horse_sex", ""),
+                "horse_age": h.get("horse_age"),
+                "jockey_name": h.get("jockey_name", ""),
+                "win_probability": round(win_prob, 4),
+                "quinella_probability": round(quinella_prob, 4),
+                "place_probability": round(place_prob, 4),
+                "position_distribution": pos_dist,
+                "rank_score": round(h["rank_score"], 4),
+                "confidence": round(confidence, 4),
+            }
+        )
 
     # Overall prediction confidence (based on top horse probability and gap to 2nd)
     if len(scored_horses) >= 2:
@@ -262,30 +267,43 @@ def generate_ml_only_prediction(
     # Quinella ranking (for exacta/quinella bets)
     quinella_ranking = sorted(
         [(h["horse_number"], h["quinella_probability"]) for h in ranked_horses],
-        key=lambda x: x[1], reverse=True
-    )[:5]  # Top 5
+        key=lambda x: x[1],
+        reverse=True,
+    )[
+        :5
+    ]  # Top 5
 
     # Place ranking (for place bets)
     place_ranking = sorted(
         [(h["horse_number"], h["place_probability"]) for h in ranked_horses],
-        key=lambda x: x[1], reverse=True
-    )[:5]  # Top 5
+        key=lambda x: x[1],
+        reverse=True,
+    )[
+        :5
+    ]  # Top 5
 
     # Dark horse candidates (high place prob but low win prob = can't win but makes top 3)
     # Place prob >= 20% and win prob < 10%
     dark_horses = [
-        {"horse_number": h["horse_number"], "win_prob": h["win_probability"],
-         "place_prob": h["place_probability"]}
+        {
+            "horse_number": h["horse_number"],
+            "win_prob": h["win_probability"],
+            "place_prob": h["place_probability"],
+        }
         for h in ranked_horses
         if h["place_probability"] >= 0.20 and h["win_probability"] < 0.10
     ][:3]
 
     return {
         "ranked_horses": ranked_horses,  # Win probability order (for win bets)
-        "quinella_ranking": [{"rank": i+1, "horse_number": num, "quinella_prob": round(prob, 4)}
-                            for i, (num, prob) in enumerate(quinella_ranking)],
-        "place_ranking": [{"rank": i+1, "horse_number": num, "place_prob": round(prob, 4)}
-                          for i, (num, prob) in enumerate(place_ranking)],
+        "quinella_ranking": [
+            {"rank": i + 1, "horse_number": num, "quinella_prob": round(prob, 4)}
+            for i, (num, prob) in enumerate(quinella_ranking)
+        ],
+        "place_ranking": [
+            {"rank": i + 1, "horse_number": num, "place_prob": round(prob, 4)}
+            for i, (num, prob) in enumerate(place_ranking)
+        ],
         "dark_horses": dark_horses,  # Dark horse candidates
         "prediction_confidence": round(prediction_confidence, 4),
         "model_info": "ensemble_model",
@@ -293,9 +311,7 @@ def generate_ml_only_prediction(
 
 
 def convert_to_prediction_response(
-    race_data: dict[str, Any],
-    ml_result: dict[str, Any],
-    is_final: bool
+    race_data: dict[str, Any], ml_result: dict[str, Any], is_final: bool
 ) -> PredictionResponse:
     """
     Convert ML result to probability-based ranking PredictionResponse.
@@ -324,8 +340,13 @@ def convert_to_prediction_response(
 
         # JRA-VAN master-based mapping
         joken_map = {
-            "005": "1勝クラス", "010": "2勝クラス", "016": "3勝クラス",
-            "701": "新馬", "702": "未出走", "703": "未勝利", "999": "OP"
+            "005": "1勝クラス",
+            "010": "2勝クラス",
+            "016": "3勝クラス",
+            "701": "新馬",
+            "702": "未出走",
+            "703": "未勝利",
+            "999": "OP",
         }
 
         # Maiden/unraced: no "以上", class races: add "以上"

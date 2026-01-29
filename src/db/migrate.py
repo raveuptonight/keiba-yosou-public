@@ -17,8 +17,7 @@ load_dotenv()
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -46,13 +45,7 @@ def get_db_connection():
 
     logger.info(f"Connecting to database: {host}:{port}/{database}")
 
-    return psycopg2.connect(
-        host=host,
-        port=port,
-        database=database,
-        user=user,
-        password=password
-    )
+    return psycopg2.connect(host=host, port=port, database=database, user=user, password=password)
 
 
 def get_migration_files():
@@ -69,7 +62,7 @@ def run_migration(conn, migration_file: Path):
     """Execute a single migration file."""
     logger.info(f"Running migration: {migration_file.name}")
 
-    with open(migration_file, encoding='utf-8') as f:
+    with open(migration_file, encoding="utf-8") as f:
         sql = f.read()
 
     cursor = conn.cursor()
@@ -131,22 +124,24 @@ def check_tables():
         return
 
     required_tables = [
-        'predictions',
-        'analysis_results',
-        'accuracy_tracking',
-        'daily_bias',
-        'model_calibration',
-        'shap_analysis',
+        "predictions",
+        "analysis_results",
+        "accuracy_tracking",
+        "daily_bias",
+        "model_calibration",
+        "shap_analysis",
     ]
 
     cursor = conn.cursor()
     try:
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
             ORDER BY table_name;
-        """)
+        """
+        )
         existing_tables = [row[0] for row in cursor.fetchall()]
 
         logger.info("Existing tables:")
@@ -176,11 +171,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Database migration tool")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="Check if required tables exist"
-    )
+    parser.add_argument("--check", action="store_true", help="Check if required tables exist")
     args = parser.parse_args()
 
     if args.check:

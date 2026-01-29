@@ -29,16 +29,16 @@ from .utils import (
 )
 
 __all__ = [
-    'FastFeatureExtractor',
-    'safe_int',
-    'safe_float',
-    'encode_sex',
-    'calc_speed_index',
-    'determine_style',
-    'determine_class',
-    'get_distance_category',
-    'get_interval_category',
-    'calc_days_since_last',
-    'calc_style_pace_compatibility',
-    'stable_hash'
+    "FastFeatureExtractor",
+    "safe_int",
+    "safe_float",
+    "encode_sex",
+    "calc_speed_index",
+    "determine_style",
+    "determine_class",
+    "get_distance_category",
+    "get_interval_category",
+    "calc_days_since_last",
+    "calc_style_pace_compatibility",
+    "stable_hash",
 ]

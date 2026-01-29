@@ -41,6 +41,7 @@ for official, aliases in VENUE_ALIASES.items():
 
 class MultipleRacesFoundException(Exception):
     """複数のレースが見つかった場合の例外"""
+
     def __init__(self, message: str, races: list[dict[str, Any]]):
         super().__init__(message)
         self.races = races
@@ -94,11 +95,7 @@ class RaceResolver:
         logger.debug(f"パース成功: venue={venue}, race_number={race_number}")
         return venue, race_number
 
-    def resolve_to_race_id(
-        self,
-        race_spec: str,
-        target_date: date | None = None
-    ) -> str | None:
+    def resolve_to_race_id(self, race_spec: str, target_date: date | None = None) -> str | None:
         """
         レース指定文字列をレースIDに解決
 
@@ -122,23 +119,24 @@ class RaceResolver:
         if target_date is None:
             target_date = date.today()
 
-        logger.info(f"レース解決開始: venue={venue}, race_number={race_number}, 対象日={target_date}")
+        logger.info(
+            f"レース解決開始: venue={venue}, race_number={race_number}, 対象日={target_date}"
+        )
 
         # 指定日のレースのみを検索
         race_id = self._find_race_from_api(venue, race_number, target_date)
         if race_id:
-            logger.info(f"レース解決成功: race_spec={race_spec} -> race_id={race_id} (日付: {target_date})")
+            logger.info(
+                f"レース解決成功: race_spec={race_spec} -> race_id={race_id} (日付: {target_date})"
+            )
             return race_id
 
-        logger.warning(f"レース解決失敗: race_spec={race_spec} ({target_date}に該当レースが見つかりませんでした)")
+        logger.warning(
+            f"レース解決失敗: race_spec={race_spec} ({target_date}に該当レースが見つかりませんでした)"
+        )
         return None
 
-    def _find_race_from_api(
-        self,
-        venue: str,
-        race_number: int,
-        target_date: date
-    ) -> str | None:
+    def _find_race_from_api(self, venue: str, race_number: int, target_date: date) -> str | None:
         """
         APIからレース一覧を取得して該当レースを検索
 
@@ -153,8 +151,7 @@ class RaceResolver:
         try:
             # APIエンドポイント: /api/races/date/{target_date}
             response = requests.get(
-                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}",
-                timeout=10
+                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}", timeout=10
             )
 
             if response.status_code != 200:
@@ -172,7 +169,7 @@ class RaceResolver:
 
                 # race_numberは "11R" 形式なので数字部分を抽出
                 try:
-                    race_num = int(re.sub(r'[^0-9]', '', race_num_str))
+                    race_num = int(re.sub(r"[^0-9]", "", race_num_str))
                 except (ValueError, TypeError):
                     continue
 
@@ -211,7 +208,7 @@ def parse_date_input(date_input: str) -> date | None:
     today = date.today()
 
     # YYYY-MM-DD or YYYY/MM/DD
-    match = re.match(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$', date_input)
+    match = re.match(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$", date_input)
     if match:
         try:
             return date(int(match.group(1)), int(match.group(2)), int(match.group(3)))
@@ -219,7 +216,7 @@ def parse_date_input(date_input: str) -> date | None:
             return None
 
     # MM/DD
-    match = re.match(r'^(\d{1,2})/(\d{1,2})$', date_input)
+    match = re.match(r"^(\d{1,2})/(\d{1,2})$", date_input)
     if match:
         try:
             month, day = int(match.group(1)), int(match.group(2))
@@ -233,7 +230,7 @@ def parse_date_input(date_input: str) -> date | None:
             return None
 
     # MMDD
-    match = re.match(r'^(\d{2})(\d{2})$', date_input)
+    match = re.match(r"^(\d{2})(\d{2})$", date_input)
     if match:
         try:
             month, day = int(match.group(1)), int(match.group(2))
@@ -267,7 +264,7 @@ def extract_year_from_input(race_input: str) -> tuple[int | None, str]:
     race_input = race_input.strip()
 
     # "YYYY レース名" or "YYYYレース名" のパターン
-    match = re.match(r'^(\d{4})\s*(.+)$', race_input)
+    match = re.match(r"^(\d{4})\s*(.+)$", race_input)
     if match:
         year_str = match.group(1)
         race_name = match.group(2).strip()
@@ -283,9 +280,7 @@ def extract_year_from_input(race_input: str) -> tuple[int | None, str]:
 
 
 def search_races_by_name(
-    race_name: str,
-    api_base_url: str = API_BASE_URL_DEFAULT,
-    specific_year: int | None = None
+    race_name: str, api_base_url: str = API_BASE_URL_DEFAULT, specific_year: int | None = None
 ) -> list[dict[str, Any]]:
     """
     レース名で検索（データベースから直接・高速）
@@ -316,9 +311,9 @@ def search_races_by_name(
                 "query": race_name,
                 "days_before": max(0, days_before),
                 "days_after": max(0, days_after),
-                "limit": 50
+                "limit": 50,
             },
-            timeout=10
+            timeout=10,
         )
 
         if response.status_code == 200:
@@ -359,8 +354,7 @@ def _get_races_from_api(api_base_url: str, target_date: date) -> list[dict[str, 
     """
     try:
         response = requests.get(
-            f"{api_base_url}/api/races/date/{target_date.isoformat()}",
-            timeout=10
+            f"{api_base_url}/api/races/date/{target_date.isoformat()}", timeout=10
         )
 
         if response.status_code == 200:
@@ -372,10 +366,7 @@ def _get_races_from_api(api_base_url: str, target_date: date) -> list[dict[str, 
         return []
 
 
-def resolve_race_input(
-    race_input: str,
-    api_base_url: str = API_BASE_URL_DEFAULT
-) -> str:
+def resolve_race_input(race_input: str, api_base_url: str = API_BASE_URL_DEFAULT) -> str:
     """
     レース指定文字列をレースIDに解決（ユーティリティ関数）
 
@@ -415,8 +406,7 @@ def resolve_race_input(
         # 複数レースがある場合は選択させる
         if len(races) > 1:
             raise MultipleRacesFoundException(
-                f"{target_date}に{len(races)}件のレースがあります。選択してください。",
-                races
+                f"{target_date}に{len(races)}件のレースがあります。選択してください。", races
             )
 
         # 1件だけならそれを返す
@@ -438,7 +428,9 @@ def resolve_race_input(
 
     # 4. レース名検索（年度指定対応）
     specific_year, race_name = extract_year_from_input(race_input)
-    logger.info(f"レース名検索: {race_name}" + (f" (年度: {specific_year})" if specific_year else ""))
+    logger.info(
+        f"レース名検索: {race_name}" + (f" (年度: {specific_year})" if specific_year else "")
+    )
     races = search_races_by_name(race_name, api_base_url, specific_year)
 
     if not races:
@@ -453,7 +445,9 @@ def resolve_race_input(
         # race_dateでソート（降順）して最新のレースを取得
         sorted_races = sorted(races, key=lambda r: r.get("race_date", ""), reverse=True)
         latest_race = sorted_races[0]
-        logger.info(f"複数レース検出（{len(races)}件）、最新のレースを選択: {latest_race.get('race_date')}")
+        logger.info(
+            f"複数レース検出（{len(races)}件）、最新のレースを選択: {latest_race.get('race_date')}"
+        )
         return latest_race["race_id"]
 
     # 1件だけならそれを返す

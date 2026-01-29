@@ -22,10 +22,7 @@ from src.db.connection import get_db
 from src.models.feature_extractor import FastFeatureExtractor
 from src.models.trainer import save_model, train_model
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -88,7 +85,7 @@ def main():
         print(f"Model path: {model_path}")
 
         print("\nFeature Importance TOP15:")
-        for i, (name, imp) in enumerate(list(results['importance'].items())[:15], 1):
+        for i, (name, imp) in enumerate(list(results["importance"].items())[:15], 1):
             print(f"  {i:2d}. {name}: {imp:.4f}")
 
     finally:

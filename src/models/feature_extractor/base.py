@@ -42,12 +42,19 @@ class FastFeatureExtractor:
 
     # Venue code -> name mapping
     VENUE_CODES = {
-        '01': 'sapporo', '02': 'hakodate', '03': 'fukushima', '04': 'niigata',
-        '05': 'tokyo', '06': 'nakayama', '07': 'chukyo', '08': 'kyoto',
-        '09': 'hanshin', '10': 'kokura'
+        "01": "sapporo",
+        "02": "hakodate",
+        "03": "fukushima",
+        "04": "niigata",
+        "05": "tokyo",
+        "06": "nakayama",
+        "07": "chukyo",
+        "08": "kyoto",
+        "09": "hanshin",
+        "10": "kokura",
     }
     # Small track venues (tighter turns)
-    SMALL_TRACK_VENUES = {'01', '02', '03', '06', '10'}
+    SMALL_TRACK_VENUES = {"01", "02", "03", "06", "10"}
 
     def __init__(self, conn):
         """Initialize extractor with database connection.
@@ -86,24 +93,29 @@ class FastFeatureExtractor:
         if not races:
             return pd.DataFrame()
 
-        race_codes = [r['race_code'] for r in races]
+        race_codes = [r["race_code"] for r in races]
 
         # 2. Batch fetch all horse entries
         entries = db_queries.get_all_entries(self.conn, race_codes)
         logger.info(f"  Entries: {len(entries)}")
 
         # 3. Batch fetch past performance (last 10 races) - exclude current race to prevent data leak
-        kettonums = list({e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')})
+        kettonums = list({e["ketto_toroku_bango"] for e in entries if e.get("ketto_toroku_bango")})
         past_stats = db_queries.get_past_stats_batch(self.conn, kettonums, entries=entries)
         logger.info(f"  Past stats: {len(past_stats)} horses")
 
         # 4. Cache jockey/trainer stats
-        self._jockey_cache, self._trainer_cache = db_queries.cache_jockey_trainer_stats(self.conn, year)
+        self._jockey_cache, self._trainer_cache = db_queries.cache_jockey_trainer_stats(
+            self.conn, year
+        )
 
         # 5. Batch fetch additional data
         # Jockey-horse combinations
-        jh_pairs = [(e.get('kishu_code', ''), e.get('ketto_toroku_bango', ''))
-                    for e in entries if e.get('kishu_code') and e.get('ketto_toroku_bango')]
+        jh_pairs = [
+            (e.get("kishu_code", ""), e.get("ketto_toroku_bango", ""))
+            for e in entries
+            if e.get("kishu_code") and e.get("ketto_toroku_bango")
+        ]
         jockey_horse_stats = db_queries.get_jockey_horse_combo_batch(self.conn, jh_pairs)
         logger.info(f"  Jockey-horse combos: {len(jockey_horse_stats)}")
 
@@ -116,10 +128,10 @@ class FastFeatureExtractor:
         # Merge turn stats into past_stats
         for kettonum, stats in turn_stats.items():
             if kettonum in past_stats:
-                past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
-                past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
-                past_stats[kettonum]['right_turn_runs'] = stats.get('right_turn_runs', 0)
-                past_stats[kettonum]['left_turn_runs'] = stats.get('left_turn_runs', 0)
+                past_stats[kettonum]["right_turn_rate"] = stats["right_turn_rate"]
+                past_stats[kettonum]["left_turn_rate"] = stats["left_turn_rate"]
+                past_stats[kettonum]["right_turn_runs"] = stats.get("right_turn_runs", 0)
+                past_stats[kettonum]["left_turn_runs"] = stats.get("left_turn_runs", 0)
 
         # Training data
         training_stats = db_queries.get_training_stats_batch(self.conn, kettonums)
@@ -147,12 +159,12 @@ class FastFeatureExtractor:
         logger.info(f"  Zenso details: {len(zenso_info)}")
 
         # Jockey recent performance
-        jockey_codes = list({e.get('kishu_code', '') for e in entries if e.get('kishu_code')})
+        jockey_codes = list({e.get("kishu_code", "") for e in entries if e.get("kishu_code")})
         jockey_recent = venue.get_jockey_recent_batch(self.conn, jockey_codes, year)
         logger.info(f"  Jockey recent: {len(jockey_recent)}")
 
         # Sire stats (turf/dirt)
-        sire_ids = [p.get('sire_id', '') for p in pedigree_info.values() if p.get('sire_id')]
+        sire_ids = [p.get("sire_id", "") for p in pedigree_info.values() if p.get("sire_id")]
         sire_stats_turf = pedigree.get_sire_stats_batch(self.conn, sire_ids, year, is_turf=True)
         sire_stats_dirt = pedigree.get_sire_stats_batch(self.conn, sire_ids, year, is_turf=False)
         logger.info(f"  Sire stats (turf): {len(sire_stats_turf)}, (dirt): {len(sire_stats_dirt)}")
@@ -168,7 +180,7 @@ class FastFeatureExtractor:
         # 6. Group entries by race and calculate pace predictions
         entries_by_race = {}
         for entry in entries:
-            rc = entry['race_code']
+            rc = entry["race_code"]
             if rc not in entries_by_race:
                 entries_by_race[rc] = []
             entries_by_race[rc].append(entry)
@@ -181,7 +193,9 @@ class FastFeatureExtractor:
         features_list = []
         for entry in entries:
             features = self._build_features(
-                entry, races, past_stats,
+                entry,
+                races,
+                past_stats,
                 jockey_horse_stats=jockey_horse_stats,
                 distance_stats=surface_stats,
                 baba_stats=baba_stats,
@@ -198,7 +212,7 @@ class FastFeatureExtractor:
                 sire_stats_dirt=sire_stats_dirt,
                 sire_maiden_stats=sire_maiden_stats,
                 jockey_maiden_stats=jockey_maiden_stats,
-                year=year
+                year=year,
             )
             if features:
                 features_list.append(features)
@@ -210,8 +224,12 @@ class FastFeatureExtractor:
 
     def _cache_jockey_trainer_stats(self, year: int):
         """Cache jockey and trainer statistics (wrapper for backward compatibility)."""
-        self._jockey_cache, self._trainer_cache = db_queries.cache_jockey_trainer_stats(self.conn, year)
-        logger.info(f"  Jockey cache: {len(self._jockey_cache)}, Trainer cache: {len(self._trainer_cache)}")
+        self._jockey_cache, self._trainer_cache = db_queries.cache_jockey_trainer_stats(
+            self.conn, year
+        )
+        logger.info(
+            f"  Jockey cache: {len(self._jockey_cache)}, Trainer cache: {len(self._trainer_cache)}"
+        )
 
     # ===== Wrapper methods for backward compatibility =====
     # These delegate to the modular query functions
@@ -224,7 +242,9 @@ class FastFeatureExtractor:
         """Batch fetch horse entry data."""
         return db_queries.get_all_entries(self.conn, race_codes)
 
-    def _get_past_stats_batch(self, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_past_stats_batch(
+        self, kettonums: list[str], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch past performance stats."""
         return db_queries.get_past_stats_batch(self.conn, kettonums, entries)
 
@@ -236,7 +256,9 @@ class FastFeatureExtractor:
         """Batch fetch training data."""
         return db_queries.get_training_stats_batch(self.conn, kettonums)
 
-    def _get_surface_stats_batch(self, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_surface_stats_batch(
+        self, kettonums: list[str], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch turf/dirt stats."""
         return performance.get_surface_stats_batch(self.conn, kettonums, entries)
 
@@ -244,11 +266,15 @@ class FastFeatureExtractor:
         """Batch fetch turn direction stats."""
         return performance.get_turn_rates_batch(self.conn, kettonums)
 
-    def _get_baba_stats_batch(self, kettonums: list[str], races: list[dict], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_baba_stats_batch(
+        self, kettonums: list[str], races: list[dict], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch track condition stats."""
         return performance.get_baba_stats_batch(self.conn, kettonums, races, entries)
 
-    def _get_interval_stats_batch(self, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_interval_stats_batch(
+        self, kettonums: list[str], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch interval stats."""
         return performance.get_interval_stats_batch(self.conn, kettonums, entries)
 
@@ -256,7 +282,9 @@ class FastFeatureExtractor:
         """Batch fetch pedigree info."""
         return pedigree.get_pedigree_batch(self.conn, kettonums)
 
-    def _get_sire_stats_batch(self, sire_ids: list[str], year: int, is_turf: bool = True) -> dict[str, dict]:
+    def _get_sire_stats_batch(
+        self, sire_ids: list[str], year: int, is_turf: bool = True
+    ) -> dict[str, dict]:
         """Batch fetch sire stats."""
         return pedigree.get_sire_stats_batch(self.conn, sire_ids, year, is_turf)
 
@@ -264,11 +292,15 @@ class FastFeatureExtractor:
         """Batch fetch sire maiden stats."""
         return pedigree.get_sire_maiden_stats_batch(self.conn, sire_ids, year)
 
-    def _get_venue_stats_batch(self, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_venue_stats_batch(
+        self, kettonums: list[str], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch venue stats."""
         return venue.get_venue_stats_batch(self.conn, kettonums, entries)
 
-    def _get_zenso_batch(self, kettonums: list[str], race_codes: list[str], entries: list[dict] = None) -> dict[str, dict]:
+    def _get_zenso_batch(
+        self, kettonums: list[str], race_codes: list[str], entries: list[dict] = None
+    ) -> dict[str, dict]:
         """Batch fetch zenso info."""
         return venue.get_zenso_batch(self.conn, kettonums, race_codes, entries)
 
@@ -314,7 +346,9 @@ class FastFeatureExtractor:
         """Get interval category."""
         return get_interval_category(days)
 
-    def _calc_days_since_last(self, last_race_date: str, current_year: str, current_gappi: str) -> int:
+    def _calc_days_since_last(
+        self, last_race_date: str, current_year: str, current_gappi: str
+    ) -> int:
         """Calculate days since last race."""
         return calc_days_since_last(last_race_date, current_year, current_gappi)
 
@@ -330,7 +364,9 @@ class FastFeatureExtractor:
         """Generate stable hash."""
         return stable_hash(s, mod)
 
-    def _calc_pace_prediction(self, entries: list[dict], past_stats: dict[str, dict]) -> dict[str, Any]:
+    def _calc_pace_prediction(
+        self, entries: list[dict], past_stats: dict[str, dict]
+    ) -> dict[str, Any]:
         """Calculate pace prediction for a race.
 
         Estimates the race pace based on running styles of participating horses.
@@ -351,9 +387,9 @@ class FastFeatureExtractor:
         sashi_count = 0
 
         for entry in entries:
-            kettonum = entry.get('ketto_toroku_bango', '')
+            kettonum = entry.get("ketto_toroku_bango", "")
             past = past_stats.get(kettonum, {})
-            style = determine_style(past.get('avg_corner3', 8))
+            style = determine_style(past.get("avg_corner3", 8))
             if style == 1:  # Nige
                 pace_makers += 1
             elif style == 2:  # Senkou
@@ -370,10 +406,10 @@ class FastFeatureExtractor:
             pace_type = 2  # Middle pace
 
         return {
-            'pace_maker_count': pace_makers,
-            'senkou_count': senkou_count,
-            'sashi_count': sashi_count,
-            'pace_type': pace_type
+            "pace_maker_count": pace_makers,
+            "senkou_count": senkou_count,
+            "sashi_count": sashi_count,
+            "pace_type": pace_type,
         }
 
     def _build_features(
@@ -397,7 +433,7 @@ class FastFeatureExtractor:
         sire_stats_dirt: dict[str, dict] = None,
         sire_maiden_stats: dict[str, dict] = None,
         jockey_maiden_stats: dict[str, dict] = None,
-        year: int = None
+        year: int = None,
     ) -> dict | None:
         """Build feature vector for a single entry.
 
@@ -453,5 +489,5 @@ class FastFeatureExtractor:
             sire_maiden_stats=sire_maiden_stats,
             jockey_maiden_stats=jockey_maiden_stats,
             year=year,
-            small_track_venues=self.SMALL_TRACK_VENUES
+            small_track_venues=self.SMALL_TRACK_VENUES,
         )

@@ -4,7 +4,6 @@
 JRA-VANデータから各馬の特徴量を抽出
 """
 
-
 import numpy as np
 import pandas as pd
 
@@ -36,151 +35,197 @@ class FeatureExtractor:
         # 現在はモックデータを返す
 
         # ===== 基本情報 =====
-        features['age'] = self._get_horse_age(horse_number)
-        features['sex'] = self._encode_sex(horse_number)
-        features['kinryo'] = self._get_weight(horse_number)  # 斤量
+        features["age"] = self._get_horse_age(horse_number)
+        features["sex"] = self._encode_sex(horse_number)
+        features["kinryo"] = self._get_weight(horse_number)  # 斤量
 
         # ===== 枠順・馬番 =====
-        features['wakuban'] = self._get_wakuban(horse_number)  # 枠番（1-8）
-        features['umaban'] = horse_number  # 馬番
+        features["wakuban"] = self._get_wakuban(horse_number)  # 枠番（1-8）
+        features["umaban"] = horse_number  # 馬番
 
         # ===== 馬体重 =====
-        features['horse_weight'] = self._get_horse_weight(horse_number)  # 馬体重
-        features['weight_diff'] = self._get_weight_diff(horse_number)  # 前走比増減
+        features["horse_weight"] = self._get_horse_weight(horse_number)  # 馬体重
+        features["weight_diff"] = self._get_weight_diff(horse_number)  # 前走比増減
 
         # ===== 馬具（ブリンカー等） =====
-        features['blinker'] = self._get_blinker(horse_number)  # ブリンカー装着（0/1）
-        features['blinker_first'] = self._get_blinker_first(horse_number)  # 初ブリンカー（0/1）
-        features['horse_gear_changed'] = self._get_gear_changed(horse_number)  # 馬具変更あり（0/1）
+        features["blinker"] = self._get_blinker(horse_number)  # ブリンカー装着（0/1）
+        features["blinker_first"] = self._get_blinker_first(horse_number)  # 初ブリンカー（0/1）
+        features["horse_gear_changed"] = self._get_gear_changed(horse_number)  # 馬具変更あり（0/1）
 
         # ===== 脚質 =====
-        features['running_style'] = self._get_running_style(horse_number)  # 脚質（1:逃げ,2:先行,3:差し,4:追込）
-        features['position_avg_3f'] = self._get_position_avg_3f(horse_number)  # 3角平均位置
-        features['position_avg_4f'] = self._get_position_avg_4f(horse_number)  # 4角平均位置
+        features["running_style"] = self._get_running_style(
+            horse_number
+        )  # 脚質（1:逃げ,2:先行,3:差し,4:追込）
+        features["position_avg_3f"] = self._get_position_avg_3f(horse_number)  # 3角平均位置
+        features["position_avg_4f"] = self._get_position_avg_4f(horse_number)  # 4角平均位置
 
         # ===== スピード指数（過去5走） =====
-        features['speed_index_avg'] = self._calculate_speed_index(horse_number, n=5)
-        features['speed_index_max'] = self._calculate_speed_index_max(horse_number, n=5)
-        features['speed_index_recent'] = self._calculate_speed_index(horse_number, n=1)
+        features["speed_index_avg"] = self._calculate_speed_index(horse_number, n=5)
+        features["speed_index_max"] = self._calculate_speed_index_max(horse_number, n=5)
+        features["speed_index_recent"] = self._calculate_speed_index(horse_number, n=1)
 
         # ===== 上がり3F（過去5走） =====
-        features['last3f_rank_avg'] = self._get_last3f_rank(horse_number, n=5)
-        features['last3f_rank_best'] = self._get_last3f_rank_best(horse_number, n=5)
-        features['last3f_time_avg'] = self._get_last3f_time_avg(horse_number)  # 上がり3Fタイム平均
+        features["last3f_rank_avg"] = self._get_last3f_rank(horse_number, n=5)
+        features["last3f_rank_best"] = self._get_last3f_rank_best(horse_number, n=5)
+        features["last3f_time_avg"] = self._get_last3f_time_avg(horse_number)  # 上がり3Fタイム平均
 
         # ===== 調教（直近） =====
-        features['training_score'] = self._get_training_score(horse_number)  # 調教評価スコア
-        features['training_time'] = self._get_training_time(horse_number)  # 調教タイム
-        features['training_rank'] = self._get_training_rank(horse_number)  # 調教ランク（A/B/C→数値）
+        features["training_score"] = self._get_training_score(horse_number)  # 調教評価スコア
+        features["training_time"] = self._get_training_time(horse_number)  # 調教タイム
+        features["training_rank"] = self._get_training_rank(
+            horse_number
+        )  # 調教ランク（A/B/C→数値）
 
         # ===== 血統 =====
-        features['sire_win_rate'] = self._get_sire_win_rate(horse_number)  # 父系勝率
-        features['sire_distance_apt'] = self._get_sire_distance_apt(horse_number)  # 父系距離適性
-        features['sire_track_apt'] = self._get_sire_track_apt(horse_number)  # 父系芝/ダート適性
-        features['broodmare_sire_win_rate'] = self._get_bms_win_rate(horse_number)  # 母父勝率
+        features["sire_win_rate"] = self._get_sire_win_rate(horse_number)  # 父系勝率
+        features["sire_distance_apt"] = self._get_sire_distance_apt(horse_number)  # 父系距離適性
+        features["sire_track_apt"] = self._get_sire_track_apt(horse_number)  # 父系芝/ダート適性
+        features["broodmare_sire_win_rate"] = self._get_bms_win_rate(horse_number)  # 母父勝率
 
         # ===== 騎手成績 =====
-        features['jockey_win_rate'] = self._get_jockey_win_rate(horse_number)
-        features['jockey_place_rate'] = self._get_jockey_place_rate(horse_number)
-        features['jockey_course_win_rate'] = self._get_jockey_course_win_rate(horse_number)  # コース別勝率
+        features["jockey_win_rate"] = self._get_jockey_win_rate(horse_number)
+        features["jockey_place_rate"] = self._get_jockey_place_rate(horse_number)
+        features["jockey_course_win_rate"] = self._get_jockey_course_win_rate(
+            horse_number
+        )  # コース別勝率
 
         # ===== 調教師成績 =====
-        features['trainer_win_rate'] = self._get_trainer_win_rate(horse_number)
-        features['trainer_place_rate'] = self._get_trainer_place_rate(horse_number)
+        features["trainer_win_rate"] = self._get_trainer_win_rate(horse_number)
+        features["trainer_place_rate"] = self._get_trainer_place_rate(horse_number)
 
         # ===== 適性 =====
-        features['course_fit_score'] = self._get_course_fit(horse_number)
-        features['distance_fit_score'] = self._get_distance_fit(horse_number)
-        features['track_condition_score'] = self._get_track_condition_fit(horse_number)
+        features["course_fit_score"] = self._get_course_fit(horse_number)
+        features["distance_fit_score"] = self._get_distance_fit(horse_number)
+        features["track_condition_score"] = self._get_track_condition_fit(horse_number)
 
         # ===== その他 =====
-        features['days_since_last_race'] = self._get_days_since_last_race(horse_number)
-        features['class_rank'] = self._get_class_rank(horse_number)
-        features['win_count'] = self._get_win_count(horse_number)  # 通算勝利数
-        features['place_count'] = self._get_place_count(horse_number)  # 通算複勝数
+        features["days_since_last_race"] = self._get_days_since_last_race(horse_number)
+        features["class_rank"] = self._get_class_rank(horse_number)
+        features["win_count"] = self._get_win_count(horse_number)  # 通算勝利数
+        features["place_count"] = self._get_place_count(horse_number)  # 通算複勝数
 
         # ===== オッズ系（市場の評価） =====
-        features['odds_win'] = self._get_odds_win(horse_number)  # 単勝オッズ
-        features['odds_place'] = self._get_odds_place(horse_number)  # 複勝オッズ
-        features['odds_change'] = self._get_odds_change(horse_number)  # 前日比オッズ変動率
-        features['odds_win_place_ratio'] = self._get_odds_win_place_ratio(horse_number)  # 単複オッズ比
-        features['popularity'] = self._get_popularity(horse_number)  # 人気順位
-        features['odds_anomaly'] = self._get_odds_anomaly(horse_number)  # オッズ異常スコア
+        features["odds_win"] = self._get_odds_win(horse_number)  # 単勝オッズ
+        features["odds_place"] = self._get_odds_place(horse_number)  # 複勝オッズ
+        features["odds_change"] = self._get_odds_change(horse_number)  # 前日比オッズ変動率
+        features["odds_win_place_ratio"] = self._get_odds_win_place_ratio(
+            horse_number
+        )  # 単複オッズ比
+        features["popularity"] = self._get_popularity(horse_number)  # 人気順位
+        features["odds_anomaly"] = self._get_odds_anomaly(horse_number)  # オッズ異常スコア
 
         # ===== ペース・ラップ系 =====
-        features['first_3f_avg'] = self._get_first_3f_avg(horse_number)  # 前半3F平均タイム
-        features['last_3f_diff'] = self._get_last_3f_diff(horse_number)  # 後半3Fタイム差
-        features['corner_1_avg'] = self._get_corner_position(horse_number, 1)  # 1角平均位置
-        features['corner_2_avg'] = self._get_corner_position(horse_number, 2)  # 2角平均位置
-        features['corner_3_avg'] = self._get_corner_position(horse_number, 3)  # 3角平均位置
-        features['corner_4_avg'] = self._get_corner_position(horse_number, 4)  # 4角平均位置
-        features['position_up_3to4'] = self._get_position_up(horse_number)  # 3→4角位置上げ
-        features['pace_type'] = self._get_pace_type(horse_number)  # ペースタイプ適性
+        features["first_3f_avg"] = self._get_first_3f_avg(horse_number)  # 前半3F平均タイム
+        features["last_3f_diff"] = self._get_last_3f_diff(horse_number)  # 後半3Fタイム差
+        features["corner_1_avg"] = self._get_corner_position(horse_number, 1)  # 1角平均位置
+        features["corner_2_avg"] = self._get_corner_position(horse_number, 2)  # 2角平均位置
+        features["corner_3_avg"] = self._get_corner_position(horse_number, 3)  # 3角平均位置
+        features["corner_4_avg"] = self._get_corner_position(horse_number, 4)  # 4角平均位置
+        features["position_up_3to4"] = self._get_position_up(horse_number)  # 3→4角位置上げ
+        features["pace_type"] = self._get_pace_type(horse_number)  # ペースタイプ適性
 
         # ===== 馬場・天候系 =====
-        features['baba_code'] = self._get_baba_code(horse_number)  # 馬場状態（1:良,2:稍,3:重,4:不）
-        features['baba_diff'] = self._get_baba_diff(horse_number)  # 馬場差（基準タイムとの差）
-        features['weather'] = self._get_weather(horse_number)  # 天候（1:晴,2:曇,3:雨,4:雪）
-        features['good_baba_rate'] = self._get_good_baba_rate(horse_number)  # 良馬場時の勝率
-        features['heavy_baba_rate'] = self._get_heavy_baba_rate(horse_number)  # 重馬場時の勝率
+        features["baba_code"] = self._get_baba_code(horse_number)  # 馬場状態（1:良,2:稍,3:重,4:不）
+        features["baba_diff"] = self._get_baba_diff(horse_number)  # 馬場差（基準タイムとの差）
+        features["weather"] = self._get_weather(horse_number)  # 天候（1:晴,2:曇,3:雨,4:雪）
+        features["good_baba_rate"] = self._get_good_baba_rate(horse_number)  # 良馬場時の勝率
+        features["heavy_baba_rate"] = self._get_heavy_baba_rate(horse_number)  # 重馬場時の勝率
 
         # ===== 騎手乗り替わり =====
-        features['jockey_change'] = self._get_jockey_change(horse_number)  # 乗り替わり(0:継続,1:変更)
-        features['jockey_combo_wins'] = self._get_jockey_combo_wins(horse_number)  # 同コンビ勝利数
-        features['jockey_combo_rate'] = self._get_jockey_combo_rate(horse_number)  # 同コンビ勝率
-        features['jockey_rank'] = self._get_jockey_rank(horse_number)  # 騎手リーディング順位
-        features['jockey_change_to_top'] = self._get_jockey_change_to_top(horse_number)  # トップ騎手への乗替
+        features["jockey_change"] = self._get_jockey_change(
+            horse_number
+        )  # 乗り替わり(0:継続,1:変更)
+        features["jockey_combo_wins"] = self._get_jockey_combo_wins(horse_number)  # 同コンビ勝利数
+        features["jockey_combo_rate"] = self._get_jockey_combo_rate(horse_number)  # 同コンビ勝率
+        features["jockey_rank"] = self._get_jockey_rank(horse_number)  # 騎手リーディング順位
+        features["jockey_change_to_top"] = self._get_jockey_change_to_top(
+            horse_number
+        )  # トップ騎手への乗替
 
         # ===== 負担重量変更 =====
-        features['kinryo_diff'] = self._get_kinryo_diff(horse_number)  # 前走からの斤量変化
-        features['kinryo_vs_avg'] = self._get_kinryo_vs_avg(horse_number)  # 出走馬平均斤量との差
-        features['kinryo_handicap'] = self._get_kinryo_handicap(horse_number)  # ハンデ戦斤量差
+        features["kinryo_diff"] = self._get_kinryo_diff(horse_number)  # 前走からの斤量変化
+        features["kinryo_vs_avg"] = self._get_kinryo_vs_avg(horse_number)  # 出走馬平均斤量との差
+        features["kinryo_handicap"] = self._get_kinryo_handicap(horse_number)  # ハンデ戦斤量差
 
         # ===== 出走間隔・ローテーション =====
-        features['interval_category'] = self._get_interval_category(horse_number)  # 間隔区分(1:連闘,2:中1週...)
-        features['is_fresh'] = self._get_is_fresh(horse_number)  # 放牧明け(0/1)
-        features['distance_diff'] = self._get_distance_diff(horse_number)  # 前走からの距離変化(m)
-        features['distance_category_change'] = self._get_distance_category_change(horse_number)  # 距離カテゴリ変更
-        features['same_course_runs'] = self._get_same_course_runs(horse_number)  # 同コース出走回数
+        features["interval_category"] = self._get_interval_category(
+            horse_number
+        )  # 間隔区分(1:連闘,2:中1週...)
+        features["is_fresh"] = self._get_is_fresh(horse_number)  # 放牧明け(0/1)
+        features["distance_diff"] = self._get_distance_diff(horse_number)  # 前走からの距離変化(m)
+        features["distance_category_change"] = self._get_distance_category_change(
+            horse_number
+        )  # 距離カテゴリ変更
+        features["same_course_runs"] = self._get_same_course_runs(horse_number)  # 同コース出走回数
 
         # ===== 血統の深堀り =====
-        features['family_graded_wins'] = self._get_family_graded_wins(horse_number)  # 牝系重賞勝ち数
-        features['sibling_win_rate'] = self._get_sibling_win_rate(horse_number)  # 兄弟勝率
-        features['inbreed_coefficient'] = self._get_inbreed_coefficient(horse_number)  # インブリード係数
-        features['sire_2nd_gen_score'] = self._get_sire_2nd_gen_score(horse_number)  # 父父の影響度
-        features['dam_sire_distance_apt'] = self._get_dam_sire_distance_apt(horse_number)  # 母父距離適性
-        features['pedigree_class_score'] = self._get_pedigree_class_score(horse_number)  # 血統クラススコア
+        features["family_graded_wins"] = self._get_family_graded_wins(
+            horse_number
+        )  # 牝系重賞勝ち数
+        features["sibling_win_rate"] = self._get_sibling_win_rate(horse_number)  # 兄弟勝率
+        features["inbreed_coefficient"] = self._get_inbreed_coefficient(
+            horse_number
+        )  # インブリード係数
+        features["sire_2nd_gen_score"] = self._get_sire_2nd_gen_score(horse_number)  # 父父の影響度
+        features["dam_sire_distance_apt"] = self._get_dam_sire_distance_apt(
+            horse_number
+        )  # 母父距離適性
+        features["pedigree_class_score"] = self._get_pedigree_class_score(
+            horse_number
+        )  # 血統クラススコア
 
         # ===== 競馬場・コース特性 =====
-        features['course_direction'] = self._get_course_direction(horse_number)  # 回り(1:右,2:左,3:直線)
-        features['course_slope'] = self._get_course_slope(horse_number)  # 坂(0:平坦,1:急坂)
-        features['waku_bias'] = self._get_waku_bias(horse_number)  # 枠順バイアス値
-        features['time_vs_record'] = self._get_time_vs_record(horse_number)  # レコードとのタイム差
-        features['course_win_rate'] = self._get_course_win_rate(horse_number)  # 該当コース勝率
-        features['venue_win_rate'] = self._get_venue_win_rate(horse_number)  # 該当競馬場勝率
+        features["course_direction"] = self._get_course_direction(
+            horse_number
+        )  # 回り(1:右,2:左,3:直線)
+        features["course_slope"] = self._get_course_slope(horse_number)  # 坂(0:平坦,1:急坂)
+        features["waku_bias"] = self._get_waku_bias(horse_number)  # 枠順バイアス値
+        features["time_vs_record"] = self._get_time_vs_record(horse_number)  # レコードとのタイム差
+        features["course_win_rate"] = self._get_course_win_rate(horse_number)  # 該当コース勝率
+        features["venue_win_rate"] = self._get_venue_win_rate(horse_number)  # 該当競馬場勝率
 
         # ===== 出走別着度数（適性） =====
-        features['turf_win_rate'] = self._get_surface_win_rate(horse_number, 'turf')  # 芝勝率
-        features['dirt_win_rate'] = self._get_surface_win_rate(horse_number, 'dirt')  # ダート勝率
-        features['sprint_win_rate'] = self._get_distance_range_win_rate(horse_number, 'sprint')  # 短距離勝率
-        features['mile_win_rate'] = self._get_distance_range_win_rate(horse_number, 'mile')  # マイル勝率
-        features['middle_win_rate'] = self._get_distance_range_win_rate(horse_number, 'middle')  # 中距離勝率
-        features['long_win_rate'] = self._get_distance_range_win_rate(horse_number, 'long')  # 長距離勝率
-        features['venue_specific_rate'] = self._get_venue_specific_rate(horse_number)  # 競馬場別複勝率
+        features["turf_win_rate"] = self._get_surface_win_rate(horse_number, "turf")  # 芝勝率
+        features["dirt_win_rate"] = self._get_surface_win_rate(horse_number, "dirt")  # ダート勝率
+        features["sprint_win_rate"] = self._get_distance_range_win_rate(
+            horse_number, "sprint"
+        )  # 短距離勝率
+        features["mile_win_rate"] = self._get_distance_range_win_rate(
+            horse_number, "mile"
+        )  # マイル勝率
+        features["middle_win_rate"] = self._get_distance_range_win_rate(
+            horse_number, "middle"
+        )  # 中距離勝率
+        features["long_win_rate"] = self._get_distance_range_win_rate(
+            horse_number, "long"
+        )  # 長距離勝率
+        features["venue_specific_rate"] = self._get_venue_specific_rate(
+            horse_number
+        )  # 競馬場別複勝率
 
         # ===== 調教データ詳細 =====
-        features['training_partner_result'] = self._get_training_partner_result(horse_number)  # 併せ馬結果
-        features['training_intensity'] = self._get_training_intensity(horse_number)  # 追い切り強度
-        features['training_course_type'] = self._get_training_course_type(horse_number)  # 調教コース(1:坂路,2:ウッド,3:ポリ)
-        features['training_1week_time'] = self._get_training_1week_time(horse_number)  # 1週前追い切りタイム
-        features['training_final_time'] = self._get_training_final_time(horse_number)  # 最終追い切りタイム
-        features['training_count'] = self._get_training_count(horse_number)  # 調教本数
-        features['training_improvement'] = self._get_training_improvement(horse_number)  # 調教タイム向上率
+        features["training_partner_result"] = self._get_training_partner_result(
+            horse_number
+        )  # 併せ馬結果
+        features["training_intensity"] = self._get_training_intensity(horse_number)  # 追い切り強度
+        features["training_course_type"] = self._get_training_course_type(
+            horse_number
+        )  # 調教コース(1:坂路,2:ウッド,3:ポリ)
+        features["training_1week_time"] = self._get_training_1week_time(
+            horse_number
+        )  # 1週前追い切りタイム
+        features["training_final_time"] = self._get_training_final_time(
+            horse_number
+        )  # 最終追い切りタイム
+        features["training_count"] = self._get_training_count(horse_number)  # 調教本数
+        features["training_improvement"] = self._get_training_improvement(
+            horse_number
+        )  # 調教タイム向上率
 
         # ===== レース当日の変化 =====
-        features['late_scratch_rate'] = self._get_late_scratch_rate(horse_number)  # 取消馬の影響
-        features['field_size'] = self._get_field_size(horse_number)  # 出走頭数
-        features['favorite_count'] = self._get_favorite_count(horse_number)  # 上位人気馬数
+        features["late_scratch_rate"] = self._get_late_scratch_rate(horse_number)  # 取消馬の影響
+        features["field_size"] = self._get_field_size(horse_number)  # 出走頭数
+        features["favorite_count"] = self._get_favorite_count(horse_number)  # 上位人気馬数
 
         return features
 
@@ -199,7 +244,7 @@ class FeatureExtractor:
 
         for horse_number in range(1, num_horses + 1):
             features = self.extract_features(race_id, horse_number)
-            features['horse_number'] = horse_number
+            features["horse_number"] = horse_number
             all_features.append(features)
 
         return pd.DataFrame(all_features)
@@ -621,13 +666,13 @@ class FeatureExtractor:
 
     def _get_surface_win_rate(self, horse_number: int, surface: str) -> float:
         """芝/ダート別勝率"""
-        seed_offset = 1800 if surface == 'turf' else 1810
+        seed_offset = 1800 if surface == "turf" else 1810
         np.random.seed(horse_number + seed_offset)
         return round(0.03 + np.random.random() * 0.15, 3)
 
     def _get_distance_range_win_rate(self, horse_number: int, distance_type: str) -> float:
         """距離別勝率"""
-        offsets = {'sprint': 1820, 'mile': 1830, 'middle': 1840, 'long': 1850}
+        offsets = {"sprint": 1820, "mile": 1830, "middle": 1840, "long": 1850}
         np.random.seed(horse_number + offsets.get(distance_type, 1820))
         return round(0.03 + np.random.random() * 0.15, 3)
 

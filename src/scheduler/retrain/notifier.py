@@ -17,20 +17,20 @@ def send_retrain_notification(result: dict) -> None:
     Args:
         result: Retrain result dictionary
     """
-    webhook_url = os.getenv('DISCORD_WEBHOOK_URL')
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         return
 
     try:
         import requests
 
-        training = result.get('training', {})
+        training = result.get("training", {})
 
         # Get evaluation metrics
-        win_auc = training.get('win_auc', 0)
-        place_auc = training.get('place_auc', 0)
-        win_brier = training.get('win_brier', 0)
-        top3_coverage = training.get('top3_coverage', 0)
+        win_auc = training.get("win_auc", 0)
+        place_auc = training.get("place_auc", 0)
+        win_brier = training.get("win_brier", 0)
+        top3_coverage = training.get("top3_coverage", 0)
 
         # Evaluation icon helper
         def get_icon(value, good, excellent, lower_is_better=False):
@@ -49,7 +49,7 @@ def send_retrain_notification(result: dict) -> None:
                 else:
                     return "⚠️"
 
-        if result.get('deployed'):
+        if result.get("deployed"):
             lines = [
                 "🔄 **週次モデル再学習完了**",
                 "",
@@ -63,7 +63,7 @@ def send_retrain_notification(result: dict) -> None:
                 f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
                 "```",
                 "",
-                "✅ 新モデルをデプロイしました"
+                "✅ 新モデルをデプロイしました",
             ]
         else:
             lines = [
@@ -79,7 +79,7 @@ def send_retrain_notification(result: dict) -> None:
                 f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
                 "```",
                 "",
-                "⚠️ 改善なし、現行モデルを維持"
+                "⚠️ 改善なし、現行モデルを維持",
             ]
 
         payload = {"content": "\n".join(lines)}

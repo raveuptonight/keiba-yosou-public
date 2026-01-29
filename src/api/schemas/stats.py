@@ -31,9 +31,7 @@ class VenueStats(BaseModel):
 class DistanceStats(BaseModel):
     """距離別統計"""
 
-    range: str = Field(
-        ..., description="距離範囲（例: '1200-1600'）"
-    )
+    range: str = Field(..., description="距離範囲（例: '1200-1600'）")
     races: int = Field(..., ge=0, description="出走数")
     wins: int = Field(..., ge=0, description="勝利数")
     win_rate: float = Field(..., ge=0.0, le=1.0, description="勝率")
@@ -46,12 +44,8 @@ class JockeyStatsResponse(BaseModel):
     jockey_name: str = Field(..., description="騎手名")
     year: int = Field(..., description="集計年")
     stats: StatsBase = Field(..., description="統計情報")
-    by_venue: list[VenueStats] = Field(
-        ..., description="競馬場別統計"
-    )
-    by_distance: list[DistanceStats] = Field(
-        ..., description="距離別統計"
-    )
+    by_venue: list[VenueStats] = Field(..., description="競馬場別統計")
+    by_distance: list[DistanceStats] = Field(..., description="距離別統計")
 
 
 class TrainerStatsResponse(BaseModel):
@@ -61,12 +55,8 @@ class TrainerStatsResponse(BaseModel):
     trainer_name: str = Field(..., description="調教師名")
     year: int = Field(..., description="集計年")
     stats: StatsBase = Field(..., description="統計情報")
-    by_venue: list[VenueStats] = Field(
-        ..., description="競馬場別統計"
-    )
-    by_distance: list[DistanceStats] = Field(
-        ..., description="距離別統計"
-    )
+    by_venue: list[VenueStats] = Field(..., description="競馬場別統計")
+    by_distance: list[DistanceStats] = Field(..., description="距離別統計")
 
 
 class ROIHistory(BaseModel):

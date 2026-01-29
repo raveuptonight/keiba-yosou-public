@@ -15,10 +15,12 @@ from .utils import grade_to_rank, safe_int
 logger = logging.getLogger(__name__)
 
 # Small track venues (tighter turns)
-SMALL_TRACK_VENUES = {'01', '02', '03', '06', '10'}
+SMALL_TRACK_VENUES = {"01", "02", "03", "06", "10"}
 
 
-def get_venue_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+def get_venue_stats_batch(
+    conn, kettonums: list[str], entries: list[dict] = None
+) -> dict[str, dict]:
     """Batch fetch venue-specific performance stats (data leak prevention version).
 
     Args:
@@ -36,19 +38,19 @@ def get_venue_stats_batch(conn, kettonums: list[str], entries: list[dict] = None
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     # Add condition to exclude current race
     if horse_race_map:
         values_parts = []
         params = []  # Start with empty list
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')
+            rc = horse_race_map.get(k, "9999999999999999")
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
@@ -105,11 +107,7 @@ def get_venue_stats_batch(conn, kettonums: list[str], entries: list[dict] = None
             places = int(row[5] or 0)
             if runs > 0:
                 key = f"{kettonum}_{venue_code}_{surface}"
-                result[key] = {
-                    'win_rate': wins / runs,
-                    'place_rate': places / runs,
-                    'runs': runs
-                }
+                result[key] = {"win_rate": wins / runs, "place_rate": places / runs, "runs": runs}
         cur.close()
     except Exception as e:
         logger.warning(f"Venue stats batch failed: {e}")
@@ -118,7 +116,9 @@ def get_venue_stats_batch(conn, kettonums: list[str], entries: list[dict] = None
     return result
 
 
-def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: list[dict] = None) -> dict[str, dict]:
+def get_zenso_batch(
+    conn, kettonums: list[str], race_codes: list[str], entries: list[dict] = None
+) -> dict[str, dict]:
     """Batch fetch previous race (zenso) information (data leak prevention version).
 
     Retrieves detailed information about the last 5 races for each horse.
@@ -139,19 +139,19 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     if horse_race_map:
         # Build VALUES clause for per-horse filtering
         values_parts = []
         params = list(kettonums)
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')
+            rc = horse_race_map.get(k, "9999999999999999")
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
@@ -248,20 +248,22 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
             kettonum = row[0]
             if kettonum not in horse_races:
                 horse_races[kettonum] = []
-            horse_races[kettonum].append({
-                'race_code': row[1],
-                'chakujun': safe_int(row[2], 10),
-                'ninki': safe_int(row[3], 10),
-                'kohan_3f': safe_int(row[4], 350) / 10.0,
-                'corner1': safe_int(row[5], 8),
-                'corner2': safe_int(row[6], 8),
-                'corner3': safe_int(row[7], 8),
-                'corner4': safe_int(row[8], 8),
-                'kyori': safe_int(row[9], 1600),
-                'grade_code': row[10] or '',
-                'keibajo_code': row[11] or '',
-                'agari_rank': safe_int(row[12], 9)
-            })
+            horse_races[kettonum].append(
+                {
+                    "race_code": row[1],
+                    "chakujun": safe_int(row[2], 10),
+                    "ninki": safe_int(row[3], 10),
+                    "kohan_3f": safe_int(row[4], 350) / 10.0,
+                    "corner1": safe_int(row[5], 8),
+                    "corner2": safe_int(row[6], 8),
+                    "corner3": safe_int(row[7], 8),
+                    "corner4": safe_int(row[8], 8),
+                    "kyori": safe_int(row[9], 1600),
+                    "grade_code": row[10] or "",
+                    "keibajo_code": row[11] or "",
+                    "agari_rank": safe_int(row[12], 9),
+                }
+            )
 
         # Calculate features for each horse
         for kettonum, races in horse_races.items():
@@ -272,8 +274,8 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
 
             # Finishing position trend
             if len(races) >= 3:
-                c1 = z1.get('chakujun', 10)
-                c3 = z3.get('chakujun', 10)
+                c1 = z1.get("chakujun", 10)
+                c3 = z3.get("chakujun", 10)
                 if c1 < c3 - 2:
                     trend = 1  # Improving
                 elif c1 > c3 + 2:
@@ -284,7 +286,7 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
                 trend = 0
 
             # Final 3F time trend
-            agaris = [r.get('kohan_3f', 35.0) for r in races[:3] if r.get('kohan_3f', 0) > 0]
+            agaris = [r.get("kohan_3f", 35.0) for r in races[:3] if r.get("kohan_3f", 0) > 0]
             if len(agaris) >= 3:
                 if agaris[0] < agaris[2] - 0.3:
                     agari_trend = 1  # Faster
@@ -301,8 +303,8 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
             large_places = 0
             large_runs = 0
             for r in races:
-                venue = r.get('keibajo_code', '')
-                chaku = r.get('chakujun', 99)
+                venue = r.get("keibajo_code", "")
+                chaku = r.get("chakujun", 99)
                 if venue in SMALL_TRACK_VENUES:
                     small_runs += 1
                     if chaku <= 3:
@@ -313,24 +315,24 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
                         large_places += 1
 
             # Final 3F ranking
-            zenso1_agari_rank = z1.get('agari_rank', 9)
-            zenso2_agari_rank = z2.get('agari_rank', 9)
-            z3.get('agari_rank', 9) if len(races) > 2 else 9
-            agari_ranks = [r.get('agari_rank', 9) for r in races[:3] if r.get('agari_rank', 0) > 0]
+            zenso1_agari_rank = z1.get("agari_rank", 9)
+            zenso2_agari_rank = z2.get("agari_rank", 9)
+            z3.get("agari_rank", 9) if len(races) > 2 else 9
+            agari_ranks = [r.get("agari_rank", 9) for r in races[:3] if r.get("agari_rank", 0) > 0]
             avg_agari_rank_3 = sum(agari_ranks) / len(agari_ranks) if agari_ranks else 9.0
 
             # Corner position progression
             def calc_position_changes(race_data):
-                c1 = race_data.get('corner1', 8)
-                c2 = race_data.get('corner2', 8)
-                c3 = race_data.get('corner3', 8)
-                c4 = race_data.get('corner4', 8)
+                c1 = race_data.get("corner1", 8)
+                c2 = race_data.get("corner2", 8)
+                c3 = race_data.get("corner3", 8)
+                c4 = race_data.get("corner4", 8)
                 return {
-                    'up_1to2': c1 - c2,  # Positive = moved forward
-                    'up_2to3': c2 - c3,
-                    'up_3to4': c3 - c4,
-                    'early_avg': (c1 + c2) / 2.0,
-                    'late_avg': (c3 + c4) / 2.0
+                    "up_1to2": c1 - c2,  # Positive = moved forward
+                    "up_2to3": c2 - c3,
+                    "up_3to4": c3 - c4,
+                    "early_avg": (c1 + c2) / 2.0,
+                    "late_avg": (c3 + c4) / 2.0,
                 }
 
             z1_pos = calc_position_changes(z1) if z1 else {}
@@ -339,34 +341,34 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
             # Late closing tendency (moved up 3+ positions from corner 3 to 4)
             late_push_count = 0
             for r in races[:5]:
-                if r.get('corner3', 8) - r.get('corner4', 8) >= 3:
+                if r.get("corner3", 8) - r.get("corner4", 8) >= 3:
                     late_push_count += 1
             late_push_tendency = late_push_count / len(races) if races else 0.0
 
             result[kettonum] = {
-                'zenso1_chakujun': z1.get('chakujun', 10),
-                'zenso1_ninki': z1.get('ninki', 10),
-                'zenso1_agari': z1.get('kohan_3f', 35.0),
-                'zenso1_corner_avg': (z1.get('corner3', 8) + z1.get('corner4', 8)) / 2.0,
-                'zenso1_distance': z1.get('kyori', 1600),
-                'zenso1_grade': grade_to_rank(z1.get('grade_code', '')),
-                'zenso2_chakujun': z2.get('chakujun', 10),
-                'zenso3_chakujun': z3.get('chakujun', 10),
-                'zenso_chakujun_trend': trend,
-                'zenso_agari_trend': agari_trend,
-                'small_track_rate': small_places / small_runs if small_runs > 0 else 0.25,
-                'large_track_rate': large_places / large_runs if large_runs > 0 else 0.25,
+                "zenso1_chakujun": z1.get("chakujun", 10),
+                "zenso1_ninki": z1.get("ninki", 10),
+                "zenso1_agari": z1.get("kohan_3f", 35.0),
+                "zenso1_corner_avg": (z1.get("corner3", 8) + z1.get("corner4", 8)) / 2.0,
+                "zenso1_distance": z1.get("kyori", 1600),
+                "zenso1_grade": grade_to_rank(z1.get("grade_code", "")),
+                "zenso2_chakujun": z2.get("chakujun", 10),
+                "zenso3_chakujun": z3.get("chakujun", 10),
+                "zenso_chakujun_trend": trend,
+                "zenso_agari_trend": agari_trend,
+                "small_track_rate": small_places / small_runs if small_runs > 0 else 0.25,
+                "large_track_rate": large_places / large_runs if large_runs > 0 else 0.25,
                 # Final 3F ranking
-                'zenso1_agari_rank': zenso1_agari_rank,
-                'zenso2_agari_rank': zenso2_agari_rank,
-                'avg_agari_rank_3': avg_agari_rank_3,
+                "zenso1_agari_rank": zenso1_agari_rank,
+                "zenso2_agari_rank": zenso2_agari_rank,
+                "avg_agari_rank_3": avg_agari_rank_3,
                 # Corner position progression
-                'zenso1_position_up_1to2': z1_pos.get('up_1to2', 0),
-                'zenso1_position_up_2to3': z1_pos.get('up_2to3', 0),
-                'zenso1_position_up_3to4': z1_pos.get('up_3to4', 0),
-                'zenso1_early_position_avg': z1_pos.get('early_avg', 8.0),
-                'zenso1_late_position_avg': z1_pos.get('late_avg', 8.0),
-                'late_push_tendency': late_push_tendency
+                "zenso1_position_up_1to2": z1_pos.get("up_1to2", 0),
+                "zenso1_position_up_2to3": z1_pos.get("up_2to3", 0),
+                "zenso1_position_up_3to4": z1_pos.get("up_3to4", 0),
+                "zenso1_early_position_avg": z1_pos.get("early_avg", 8.0),
+                "zenso1_late_position_avg": z1_pos.get("late_avg", 8.0),
+                "late_push_tendency": late_push_tendency,
             }
 
         return result
@@ -394,7 +396,7 @@ def get_jockey_recent_batch(conn, jockey_codes: list[str], year: int) -> dict[st
     if not unique_codes:
         return {}
 
-    placeholders = ','.join(['%s'] * len(unique_codes))
+    placeholders = ",".join(["%s"] * len(unique_codes))
     # Current year stats
     sql = f"""
         SELECT
@@ -417,9 +419,9 @@ def get_jockey_recent_batch(conn, jockey_codes: list[str], year: int) -> dict[st
             code, runs, wins, places = row
             runs = int(runs or 0)
             result[code] = {
-                'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
-                'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
-                'runs': runs
+                "win_rate": int(wins or 0) / runs if runs > 0 else 0.08,
+                "place_rate": int(places or 0) / runs if runs > 0 else 0.25,
+                "runs": runs,
             }
         cur.close()
         return result
@@ -449,7 +451,7 @@ def get_jockey_maiden_stats_batch(conn, jockey_codes: list[str], year: int) -> d
     if not unique_codes:
         return {}
 
-    placeholders = ','.join(['%s'] * len(unique_codes))
+    placeholders = ",".join(["%s"] * len(unique_codes))
     year_from = str(year - 3)  # 3 years of data
 
     sql = f"""
@@ -477,9 +479,9 @@ def get_jockey_maiden_stats_batch(conn, jockey_codes: list[str], year: int) -> d
             runs = int(runs or 0)
             if runs >= 10:  # Minimum 10 rides
                 result[code] = {
-                    'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
-                    'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
-                    'runs': runs
+                    "win_rate": int(wins or 0) / runs if runs > 0 else 0.08,
+                    "place_rate": int(places or 0) / runs if runs > 0 else 0.25,
+                    "runs": runs,
                 }
         cur.close()
         return result

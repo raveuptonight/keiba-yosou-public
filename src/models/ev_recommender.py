@@ -19,7 +19,7 @@ JST = timezone(timedelta(hours=9))
 logger = logging.getLogger(__name__)
 
 # Default thresholds (backtest result: 417% return rate with EV>=1.5)
-DEFAULT_WIN_EV_THRESHOLD = 1.5   # Win bet EV threshold
+DEFAULT_WIN_EV_THRESHOLD = 1.5  # Win bet EV threshold
 DEFAULT_PLACE_EV_THRESHOLD = 1.5  # Place bet EV threshold
 # Loose thresholds (for candidates)
 LOOSE_WIN_EV_THRESHOLD = 1.2
@@ -93,12 +93,12 @@ class EVRecommender:
                 }
 
             # Calculate EV and generate recommendations
-            win_recommendations = []      # EV >= 1.5 (strong recommendation)
-            place_recommendations = []    # EV >= 1.5 (strong recommendation)
-            win_candidates = []           # EV >= 1.2 (candidate)
-            place_candidates = []         # EV >= 1.2 (candidate)
-            top1_win_rec = None           # Rank 1 + EV condition
-            top1_place_rec = None         # Rank 1 + EV condition
+            win_recommendations = []  # EV >= 1.5 (strong recommendation)
+            place_recommendations = []  # EV >= 1.5 (strong recommendation)
+            win_candidates = []  # EV >= 1.2 (candidate)
+            place_candidates = []  # EV >= 1.2 (candidate)
+            top1_win_rec = None  # Rank 1 + EV condition
+            top1_place_rec = None  # Rank 1 + EV condition
 
             for horse in ranked_horses:
                 umaban = str(int(horse.get("horse_number", 0)))
@@ -160,12 +160,12 @@ class EVRecommender:
             )
 
             return {
-                "win_recommendations": win_recommendations,      # EV >= 1.5
+                "win_recommendations": win_recommendations,  # EV >= 1.5
                 "place_recommendations": place_recommendations,  # EV >= 1.5
-                "win_candidates": win_candidates,                # 1.2 <= EV < 1.5
-                "place_candidates": place_candidates,            # 1.2 <= EV < 1.5
-                "top1_win": top1_win_rec,                        # Rank 1 + EV >= 1.0
-                "top1_place": top1_place_rec,                    # Rank 1 + EV >= 1.0
+                "win_candidates": win_candidates,  # 1.2 <= EV < 1.5
+                "place_candidates": place_candidates,  # 1.2 <= EV < 1.5
+                "top1_win": top1_win_rec,  # Rank 1 + EV >= 1.0
+                "top1_place": top1_place_rec,  # Rank 1 + EV >= 1.0
                 "odds_source": odds_source,
                 "odds_time": odds_time,
             }
@@ -188,30 +188,36 @@ class EVRecommender:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
             # Get latest announcement time
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT MAX(happyo_tsukihi_jifun) as latest_time
                 FROM odds1_tansho_jikeiretsu
                 WHERE race_code = %s
-            ''', (race_code,))
+            """,
+                (race_code,),
+            )
             row = cur.fetchone()
-            latest_time = row['latest_time'] if row else None
+            latest_time = row["latest_time"] if row else None
 
             if not latest_time:
                 cur.close()
                 return {}, None
 
             # Get odds at that time
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT umaban, odds
                 FROM odds1_tansho_jikeiretsu
                 WHERE race_code = %s AND happyo_tsukihi_jifun = %s
-            ''', (race_code, latest_time))
+            """,
+                (race_code, latest_time),
+            )
 
             odds_dict = {}
             for row in cur.fetchall():
-                umaban = str(row['umaban']).strip()
+                umaban = str(row["umaban"]).strip()
                 try:
-                    odds = float(row['odds']) / 10  # Stored as 10x value
+                    odds = float(row["odds"]) / 10  # Stored as 10x value
                 except (ValueError, TypeError):
                     odds = 0
                 if odds > 0:
@@ -237,7 +243,9 @@ class EVRecommender:
                 except Exception:
                     pass
 
-            logger.debug(f"Time-series win odds retrieved: race_code={race_code}, count={len(odds_dict)}, time={latest_time}")
+            logger.debug(
+                f"Time-series win odds retrieved: race_code={race_code}, count={len(odds_dict)}, time={latest_time}"
+            )
             return odds_dict, odds_time_str
 
         except Exception as e:
@@ -252,48 +260,62 @@ class EVRecommender:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
             # Check if place time-series table exists
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT table_name FROM information_schema.tables
                 WHERE table_name = 'odds1_fukusho_jikeiretsu'
-            ''')
+            """
+            )
             has_jikeiretsu = cur.fetchone() is not None
 
             if has_jikeiretsu:
                 # Get from time-series table
-                cur.execute('''
+                cur.execute(
+                    """
                     SELECT MAX(happyo_tsukihi_jifun) as latest_time
                     FROM odds1_fukusho_jikeiretsu
                     WHERE race_code = %s
-                ''', (race_code,))
+                """,
+                    (race_code,),
+                )
                 row = cur.fetchone()
-                latest_time = row['latest_time'] if row else None
+                latest_time = row["latest_time"] if row else None
 
                 if latest_time:
-                    cur.execute('''
+                    cur.execute(
+                        """
                         SELECT umaban, odds_saitei
                         FROM odds1_fukusho_jikeiretsu
                         WHERE race_code = %s AND happyo_tsukihi_jifun = %s
-                    ''', (race_code, latest_time))
+                    """,
+                        (race_code, latest_time),
+                    )
                 else:
                     # Fall back to final odds if no time-series
-                    cur.execute('''
+                    cur.execute(
+                        """
                         SELECT umaban, odds_saitei
                         FROM odds1_fukusho
                         WHERE race_code = %s
-                    ''', (race_code,))
+                    """,
+                        (race_code,),
+                    )
             else:
                 # Get from final odds
-                cur.execute('''
+                cur.execute(
+                    """
                     SELECT umaban, odds_saitei
                     FROM odds1_fukusho
                     WHERE race_code = %s
-                ''', (race_code,))
+                """,
+                    (race_code,),
+                )
 
             odds_dict = {}
             for row in cur.fetchall():
-                umaban = str(row['umaban']).strip()
+                umaban = str(row["umaban"]).strip()
                 try:
-                    odds = float(row['odds_saitei']) / 10
+                    odds = float(row["odds_saitei"]) / 10
                 except (ValueError, TypeError):
                     odds = 0
                 if odds > 0:
@@ -301,7 +323,9 @@ class EVRecommender:
 
             cur.close()
 
-            logger.debug(f"Time-series place odds retrieved: race_code={race_code}, count={len(odds_dict)}")
+            logger.debug(
+                f"Time-series place odds retrieved: race_code={race_code}, count={len(odds_dict)}"
+            )
             return odds_dict, None
 
         except Exception as e:
@@ -312,17 +336,20 @@ class EVRecommender:
         """Get final win odds."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT umaban, odds
                 FROM odds1_tansho
                 WHERE race_code = %s
-            ''', (race_code,))
+            """,
+                (race_code,),
+            )
 
             odds_dict = {}
             for row in cur.fetchall():
-                umaban = str(row['umaban']).strip()
+                umaban = str(row["umaban"]).strip()
                 try:
-                    odds = float(row['odds']) / 10
+                    odds = float(row["odds"]) / 10
                 except (ValueError, TypeError):
                     odds = 0
                 if odds > 0:
@@ -340,24 +367,29 @@ class EVRecommender:
         """Get final place odds (using minimum odds)."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT umaban, odds_saitei
                 FROM odds1_fukusho
                 WHERE race_code = %s
-            ''', (race_code,))
+            """,
+                (race_code,),
+            )
 
             odds_dict = {}
             for row in cur.fetchall():
-                umaban = str(row['umaban']).strip()
+                umaban = str(row["umaban"]).strip()
                 try:
-                    odds = float(row['odds_saitei']) / 10
+                    odds = float(row["odds_saitei"]) / 10
                 except (ValueError, TypeError):
                     odds = 0
                 if odds > 0:
                     odds_dict[umaban] = odds
 
             cur.close()
-            logger.debug(f"Final place odds retrieved: race_code={race_code}, count={len(odds_dict)}")
+            logger.debug(
+                f"Final place odds retrieved: race_code={race_code}, count={len(odds_dict)}"
+            )
             return odds_dict
 
         except Exception as e:

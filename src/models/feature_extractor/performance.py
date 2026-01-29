@@ -13,7 +13,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def get_surface_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+def get_surface_stats_batch(
+    conn, kettonums: list[str], entries: list[dict] = None
+) -> dict[str, dict]:
     """Batch fetch turf/dirt performance stats (data leak prevention version).
 
     Args:
@@ -31,19 +33,19 @@ def get_surface_stats_batch(conn, kettonums: list[str], entries: list[dict] = No
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     if horse_race_map:
         # Build VALUES clause for per-horse filtering
         values_parts = []
         params = list(kettonums)
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')
+            rc = horse_race_map.get(k, "9999999999999999")
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
@@ -133,9 +135,9 @@ def get_surface_stats_batch(conn, kettonums: list[str], entries: list[dict] = No
             places = int(row[3] or 0)
             key = f"{kettonum}_turf"
             result[key] = {
-                'runs': runs,
-                'win_rate': wins / runs if runs > 0 else 0.0,
-                'place_rate': places / runs if runs > 0 else 0.0
+                "runs": runs,
+                "win_rate": wins / runs if runs > 0 else 0.0,
+                "place_rate": places / runs if runs > 0 else 0.0,
             }
 
         # Dirt
@@ -147,9 +149,9 @@ def get_surface_stats_batch(conn, kettonums: list[str], entries: list[dict] = No
             places = int(row[3] or 0)
             key = f"{kettonum}_dirt"
             result[key] = {
-                'runs': runs,
-                'win_rate': wins / runs if runs > 0 else 0.0,
-                'place_rate': places / runs if runs > 0 else 0.0
+                "runs": runs,
+                "win_rate": wins / runs if runs > 0 else 0.0,
+                "place_rate": places / runs if runs > 0 else 0.0,
             }
 
         cur.close()
@@ -177,7 +179,7 @@ def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     if not kettonums:
         return {}
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     sql = f"""
         SELECT
@@ -198,8 +200,8 @@ def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
         rows = cur.fetchall()
         cur.close()
 
-        right_courses = {'01', '02', '03', '06', '08', '09', '10'}
-        left_courses = {'04', '05', '07'}
+        right_courses = {"01", "02", "03", "06", "08", "09", "10"}
+        left_courses = {"04", "05", "07"}
 
         # Aggregate by horse
         horse_stats = {}
@@ -207,25 +209,27 @@ def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
             kettonum, keibajo, runs, places = row
             if kettonum not in horse_stats:
                 horse_stats[kettonum] = {
-                    'right_runs': 0, 'right_places': 0,
-                    'left_runs': 0, 'left_places': 0
+                    "right_runs": 0,
+                    "right_places": 0,
+                    "left_runs": 0,
+                    "left_places": 0,
                 }
             if keibajo in right_courses:
-                horse_stats[kettonum]['right_runs'] += int(runs or 0)
-                horse_stats[kettonum]['right_places'] += int(places or 0)
+                horse_stats[kettonum]["right_runs"] += int(runs or 0)
+                horse_stats[kettonum]["right_places"] += int(places or 0)
             elif keibajo in left_courses:
-                horse_stats[kettonum]['left_runs'] += int(runs or 0)
-                horse_stats[kettonum]['left_places'] += int(places or 0)
+                horse_stats[kettonum]["left_runs"] += int(runs or 0)
+                horse_stats[kettonum]["left_places"] += int(places or 0)
 
         result = {}
         for kettonum, stats in horse_stats.items():
-            r_runs = stats['right_runs']
-            l_runs = stats['left_runs']
+            r_runs = stats["right_runs"]
+            l_runs = stats["left_runs"]
             result[kettonum] = {
-                'right_turn_rate': stats['right_places'] / r_runs if r_runs > 0 else 0.25,
-                'left_turn_rate': stats['left_places'] / l_runs if l_runs > 0 else 0.25,
-                'right_turn_runs': r_runs,
-                'left_turn_runs': l_runs
+                "right_turn_rate": stats["right_places"] / r_runs if r_runs > 0 else 0.25,
+                "left_turn_rate": stats["left_places"] / l_runs if l_runs > 0 else 0.25,
+                "right_turn_runs": r_runs,
+                "left_turn_runs": l_runs,
             }
         return result
     except Exception as e:
@@ -234,7 +238,9 @@ def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
         return {}
 
 
-def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries: list[dict] = None) -> dict[str, dict]:
+def get_baba_stats_batch(
+    conn, kettonums: list[str], races: list[dict], entries: list[dict] = None
+) -> dict[str, dict]:
     """Batch fetch track condition (baba) performance stats (data leak prevention version).
 
     Track conditions:
@@ -259,12 +265,12 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
     result = {}
 
     if horse_race_map:
@@ -272,12 +278,17 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
         values_parts = []
         params = list(kettonums)
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')
+            rc = horse_race_map.get(k, "9999999999999999")
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
-        for track, baba_name in [('1', 'turf'), ('2', 'dirt')]:
-            for baba_code, baba_suffix in [('1', 'ryo'), ('2', 'yayaomo'), ('3', 'omo'), ('4', 'furyo')]:
+        for track, baba_name in [("1", "turf"), ("2", "dirt")]:
+            for baba_code, baba_suffix in [
+                ("1", "ryo"),
+                ("2", "yayaomo"),
+                ("3", "omo"),
+                ("4", "furyo"),
+            ]:
                 sql = f"""
                     WITH horse_filter AS (
                         SELECT * FROM (VALUES {','.join(values_parts)}) AS t(kettonum, current_race_code)
@@ -308,9 +319,9 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
                         places = int(row[3] or 0)
                         key = f"{kettonum}_{baba_name}_{baba_suffix}"
                         result[key] = {
-                            'runs': runs,
-                            'win_rate': wins / runs if runs > 0 else 0.0,
-                            'place_rate': places / runs if runs > 0 else 0.0
+                            "runs": runs,
+                            "win_rate": wins / runs if runs > 0 else 0.0,
+                            "place_rate": places / runs if runs > 0 else 0.0,
                         }
                     cur.close()
                 except Exception as e:
@@ -318,8 +329,13 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
                     conn.rollback()
     else:
         # Fallback for prediction mode
-        for track, baba_name in [('1', 'turf'), ('2', 'dirt')]:
-            for baba_code, baba_suffix in [('1', 'ryo'), ('2', 'yayaomo'), ('3', 'omo'), ('4', 'furyo')]:
+        for track, baba_name in [("1", "turf"), ("2", "dirt")]:
+            for baba_code, baba_suffix in [
+                ("1", "ryo"),
+                ("2", "yayaomo"),
+                ("3", "omo"),
+                ("4", "furyo"),
+            ]:
                 sql = f"""
                     SELECT
                         u.ketto_toroku_bango,
@@ -345,9 +361,9 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
                         places = int(row[3] or 0)
                         key = f"{kettonum}_{baba_name}_{baba_suffix}"
                         result[key] = {
-                            'runs': runs,
-                            'win_rate': wins / runs if runs > 0 else 0.0,
-                            'place_rate': places / runs if runs > 0 else 0.0
+                            "runs": runs,
+                            "win_rate": wins / runs if runs > 0 else 0.0,
+                            "place_rate": places / runs if runs > 0 else 0.0,
                         }
                     cur.close()
                 except Exception as e:
@@ -357,7 +373,9 @@ def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries:
     return result
 
 
-def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+def get_interval_stats_batch(
+    conn, kettonums: list[str], entries: list[dict] = None
+) -> dict[str, dict]:
     """Batch fetch rest interval performance stats (data leak prevention version).
 
     Interval categories:
@@ -382,12 +400,12 @@ def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = N
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
     result = {}
 
     if horse_race_map:
@@ -395,16 +413,16 @@ def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = N
         values_parts = []
         params = list(kettonums)
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')
+            rc = horse_race_map.get(k, "9999999999999999")
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
         for interval_name, min_days, max_days in [
-            ('rentou', 1, 7),
-            ('week1', 8, 14),
-            ('week2', 15, 21),
-            ('week3', 22, 28),
-            ('week4plus', 29, 365)
+            ("rentou", 1, 7),
+            ("week1", 8, 14),
+            ("week2", 15, 21),
+            ("week3", 22, 28),
+            ("week4plus", 29, 365),
         ]:
             sql = f"""
                 WITH horse_filter AS (
@@ -444,9 +462,9 @@ def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = N
                     places = int(row[3] or 0)
                     key = f"{kettonum}_{interval_name}"
                     result[key] = {
-                        'runs': runs,
-                        'win_rate': wins / runs if runs > 0 else 0.0,
-                        'place_rate': places / runs if runs > 0 else 0.0
+                        "runs": runs,
+                        "win_rate": wins / runs if runs > 0 else 0.0,
+                        "place_rate": places / runs if runs > 0 else 0.0,
                     }
                 cur.close()
             except Exception as e:
@@ -454,11 +472,11 @@ def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = N
                 conn.rollback()
     else:
         for interval_name, min_days, max_days in [
-            ('rentou', 1, 7),
-            ('week1', 8, 14),
-            ('week2', 15, 21),
-            ('week3', 22, 28),
-            ('week4plus', 29, 365)
+            ("rentou", 1, 7),
+            ("week1", 8, 14),
+            ("week2", 15, 21),
+            ("week3", 22, 28),
+            ("week4plus", 29, 365),
         ]:
             sql = f"""
                 WITH race_intervals AS (
@@ -492,9 +510,9 @@ def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = N
                     places = int(row[3] or 0)
                     key = f"{kettonum}_{interval_name}"
                     result[key] = {
-                        'runs': runs,
-                        'win_rate': wins / runs if runs > 0 else 0.0,
-                        'place_rate': places / runs if runs > 0 else 0.0
+                        "runs": runs,
+                        "win_rate": wins / runs if runs > 0 else 0.0,
+                        "place_rate": places / runs if runs > 0 else 0.0,
                     }
                 cur.close()
             except Exception as e:

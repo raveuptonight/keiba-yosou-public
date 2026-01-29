@@ -51,7 +51,7 @@ class PredictionScheduler(commands.Cog):
         )
 
         # Executed race IDs (to prevent duplicate predictions)
-        self.predicted_race_ids_final: set = set()    # Post-weight predictions completed
+        self.predicted_race_ids_final: set = set()  # Post-weight predictions completed
 
         logger.info(f"PredictionScheduler initialized: channel_id={self.notification_channel_id}")
 
@@ -76,11 +76,13 @@ class PredictionScheduler(commands.Cog):
             collector = ResultCollector()
             analysis = collector.collect_and_analyze(target_date)
 
-            if analysis['status'] != 'success':
-                await interaction.followup.send(f"❌ {selected_date}のデータが見つかりません", ephemeral=True)
+            if analysis["status"] != "success":
+                await interaction.followup.send(
+                    f"❌ {selected_date}のデータが見つかりません", ephemeral=True
+                )
                 return
 
-            acc = analysis['accuracy']
+            acc = analysis["accuracy"]
 
             # Create detail message
             lines = [
@@ -92,48 +94,58 @@ class PredictionScheduler(commands.Cog):
 
             # By ranking
             for rank in [1, 2, 3]:
-                if rank in acc.get('ranking_stats', {}):
-                    r = acc['ranking_stats'][rank]
+                if rank in acc.get("ranking_stats", {}):
+                    r = acc["ranking_stats"][rank]
                     lines.append(
                         f"  {rank}位予想: 1着:{r['1着']}回 2着:{r['2着']}回 3着:{r['3着']}回 "
                         f"(複勝率:{r['複勝率']:.1f}%)"
                     )
 
             # By popularity
-            if acc.get('popularity_stats'):
+            if acc.get("popularity_stats"):
                 lines.append("")
                 lines.append("**【人気別成績】** (1位予想馬)")
-                for pop_cat in ['1-3番人気', '4-6番人気', '7-9番人気', '10番人気以下']:
-                    if pop_cat in acc['popularity_stats']:
-                        p = acc['popularity_stats'][pop_cat]
-                        lines.append(f"  {pop_cat}: {p['対象']}R → 複勝圏:{p['複勝圏']}回 ({p['複勝率']:.0f}%)")
+                for pop_cat in ["1-3番人気", "4-6番人気", "7-9番人気", "10番人気以下"]:
+                    if pop_cat in acc["popularity_stats"]:
+                        p = acc["popularity_stats"][pop_cat]
+                        lines.append(
+                            f"  {pop_cat}: {p['対象']}R → 複勝圏:{p['複勝圏']}回 ({p['複勝率']:.0f}%)"
+                        )
 
             # By confidence
-            if acc.get('confidence_stats'):
+            if acc.get("confidence_stats"):
                 lines.append("")
                 lines.append("**【信頼度別成績】**")
-                for conf_cat in ['高(80%以上)', '中(60-80%)', '低(60%未満)']:
-                    if conf_cat in acc['confidence_stats']:
-                        c = acc['confidence_stats'][conf_cat]
-                        lines.append(f"  {conf_cat}: {c['対象']}R → 複勝圏:{c['複勝圏']}回 ({c['複勝率']:.0f}%)")
+                for conf_cat in ["高(80%以上)", "中(60-80%)", "低(60%未満)"]:
+                    if conf_cat in acc["confidence_stats"]:
+                        c = acc["confidence_stats"][conf_cat]
+                        lines.append(
+                            f"  {conf_cat}: {c['対象']}R → 複勝圏:{c['複勝圏']}回 ({c['複勝率']:.0f}%)"
+                        )
 
             # By track type
-            if acc.get('by_track'):
+            if acc.get("by_track"):
                 lines.append("")
                 lines.append("**【コース別成績】**")
-                for track in ['芝', 'ダ']:
-                    if track in acc['by_track']:
-                        t = acc['by_track'][track]
-                        track_name = '芝' if track == '芝' else 'ダート'
-                        lines.append(f"  {track_name}: {t['races']}R → 複勝率:{t['top3_rate']:.0f}%")
+                for track in ["芝", "ダ"]:
+                    if track in acc["by_track"]:
+                        t = acc["by_track"][track]
+                        track_name = "芝" if track == "芝" else "ダート"
+                        lines.append(
+                            f"  {track_name}: {t['races']}R → 複勝率:{t['top3_rate']:.0f}%"
+                        )
 
             # Return rates
-            rr = acc.get('return_rates', {})
-            if rr.get('tansho_investment', 0) > 0:
+            rr = acc.get("return_rates", {})
+            if rr.get("tansho_investment", 0) > 0:
                 lines.append("")
                 lines.append("**【回収率】** (1位予想馬に各100円)")
-                lines.append(f"  単勝: {rr['tansho_return']:,}円 / {rr['tansho_investment']:,}円 = {rr['tansho_roi']:.1f}%")
-                lines.append(f"  複勝: {rr['fukusho_return']:,}円 / {rr['fukusho_investment']:,}円 = {rr['fukusho_roi']:.1f}%")
+                lines.append(
+                    f"  単勝: {rr['tansho_return']:,}円 / {rr['tansho_investment']:,}円 = {rr['tansho_roi']:.1f}%"
+                )
+                lines.append(
+                    f"  複勝: {rr['fukusho_return']:,}円 / {rr['fukusho_investment']:,}円 = {rr['fukusho_roi']:.1f}%"
+                )
 
             message = "\n".join(lines)
             await interaction.followup.send(message, ephemeral=True)
@@ -221,7 +233,9 @@ class PredictionScheduler(commands.Cog):
                         race_minute = int(race_time_str[2:])
                     else:
                         raise ValueError(f"Unknown time format: {race_time_str}")
-                    race_datetime = datetime.combine(today, time(hour=race_hour, minute=race_minute), tzinfo=JST)
+                    race_datetime = datetime.combine(
+                        today, time(hour=race_hour, minute=race_minute), tzinfo=JST
+                    )
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Race time parse failed: {race_time_str} ({e})")
                     continue
@@ -237,7 +251,9 @@ class PredictionScheduler(commands.Cog):
                 if time_diff <= tolerance_seconds and race_id not in self.predicted_race_ids_final:
                     venue = race.get("venue", "?")
                     race_num = race.get("race_number", "?")
-                    logger.info(f"Executing post-weight prediction: race_id={race_id}, venue={venue}, race_num={race_num}")
+                    logger.info(
+                        f"Executing post-weight prediction: race_id={race_id}, venue={venue}, race_num={race_num}"
+                    )
 
                     # Execute prediction (notification handled in _execute_prediction)
                     success = await self._execute_prediction(race_id, is_final=True)
@@ -263,8 +279,7 @@ class PredictionScheduler(commands.Cog):
         """
         try:
             response = requests.get(
-                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}",
-                timeout=10
+                f"{self.api_base_url}/api/races/date/{target_date.isoformat()}", timeout=10
             )
 
             if response.status_code == 200:
@@ -302,7 +317,9 @@ class PredictionScheduler(commands.Cog):
             logger.error(f"Race list fetch error: {e}")
             return []
 
-    async def _execute_prediction(self, race_id: str, is_final: bool = False, send_notification: bool = True) -> dict | None:
+    async def _execute_prediction(
+        self, race_id: str, is_final: bool = False, send_notification: bool = True
+    ) -> dict | None:
         """
         Execute prediction.
 
@@ -321,16 +338,13 @@ class PredictionScheduler(commands.Cog):
             # Execute prediction via FastAPI
             response = requests.post(
                 f"{self.api_base_url}/api/v1/predictions/generate",
-                json={
-                    "race_id": race_id,
-                    "is_final": is_final  # Final prediction flag
-                },
+                json={"race_id": race_id, "is_final": is_final},  # Final prediction flag
                 timeout=DISCORD_REQUEST_TIMEOUT,
             )
 
             if response.status_code == 200:
                 prediction = response.json()
-                pred_id = prediction.get('prediction_id')
+                pred_id = prediction.get("prediction_id")
                 logger.info(f"Prediction successful: prediction_id={pred_id}")
 
                 # Return prediction result if notification disabled
@@ -356,7 +370,11 @@ class PredictionScheduler(commands.Cog):
                                 race_num_int = int(race_number.replace("R", ""))
                                 race_num_formatted = f"{race_num_int}R"
                             except (ValueError, TypeError):
-                                race_num_formatted = f"{race_number}R" if not str(race_number).endswith("R") else race_number
+                                race_num_formatted = (
+                                    f"{race_number}R"
+                                    if not str(race_number).endswith("R")
+                                    else race_number
+                                )
 
                             # Format time
                             if race_time and len(race_time) >= 4 and ":" not in race_time:
@@ -413,12 +431,18 @@ class PredictionScheduler(commands.Cog):
                             rec_list = sorted(
                                 recommended.values(),
                                 key=lambda x: max(x.get("win_ev") or 0, x.get("place_ev") or 0),
-                                reverse=True
-                            )[:3]  # Max 3 horses
+                                reverse=True,
+                            )[
+                                :3
+                            ]  # Max 3 horses
 
                             # === Axis horse recommendation (for wide/exacta bets) ===
                             # Axis horse = horse with highest place probability (most likely to finish top 3)
-                            axis_horse = max(ranked, key=lambda h: h.get("place_probability", 0)) if ranked else None
+                            axis_horse = (
+                                max(ranked, key=lambda h: h.get("place_probability", 0))
+                                if ranked
+                                else None
+                            )
 
                             # Build simple message
                             lines = [
@@ -454,7 +478,9 @@ class PredictionScheduler(commands.Cog):
 
                             message = "\n".join(lines)
                             await channel.send(message)
-                            logger.info(f"Final prediction sent: race_id={race_id}, recommended={len(rec_list)} horses")
+                            logger.info(
+                                f"Final prediction sent: race_id={race_id}, recommended={len(rec_list)} horses"
+                            )
                         else:
                             # Empty prediction result
                             logger.warning(f"Final prediction result empty: race_id={race_id}")
@@ -467,7 +493,9 @@ class PredictionScheduler(commands.Cog):
 
                 return True
             else:
-                logger.error(f"Prediction API failed: status={response.status_code}, race_id={race_id}")
+                logger.error(
+                    f"Prediction API failed: status={response.status_code}, race_id={race_id}"
+                )
                 return False
 
         except requests.exceptions.Timeout:

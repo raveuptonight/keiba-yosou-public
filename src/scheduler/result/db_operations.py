@@ -15,8 +15,16 @@ logger = logging.getLogger(__name__)
 
 # Venue code mapping
 KEIBAJO_NAMES = {
-    '01': '札幌', '02': '函館', '03': '福島', '04': '新潟', '05': '東京',
-    '06': '中山', '07': '中京', '08': '京都', '09': '阪神', '10': '小倉'
+    "01": "札幌",
+    "02": "函館",
+    "03": "福島",
+    "04": "新潟",
+    "05": "東京",
+    "06": "中山",
+    "07": "中京",
+    "08": "京都",
+    "09": "阪神",
+    "10": "小倉",
 }
 
 
@@ -40,7 +48,8 @@ def get_race_results(target_date: date) -> list[dict]:
 
         # Get races with confirmed or provisional results
         # data_kubun: 6=provisional (all horses+passing order), 7=confirmed results
-        cur.execute('''
+        cur.execute(
+            """
             SELECT DISTINCT r.race_code, r.keibajo_code, r.race_bango,
                    r.kyori, r.track_code
             FROM race_shosai r
@@ -48,20 +57,25 @@ def get_race_results(target_date: date) -> list[dict]:
               AND r.kaisai_gappi = %s
               AND r.data_kubun IN ('6', '7')
             ORDER BY r.race_code
-        ''', (kaisai_nen, kaisai_gappi))
+        """,
+            (kaisai_nen, kaisai_gappi),
+        )
 
         races = []
         for row in cur.fetchall():
             race_code = row[0]
 
             # Get finishing position and popularity for each race
-            cur.execute('''
+            cur.execute(
+                """
                 SELECT umaban, kakutei_chakujun, bamei, tansho_ninkijun
                 FROM umagoto_race_joho
                 WHERE race_code = %s
                   AND data_kubun IN ('6', '7')
                 ORDER BY kakutei_chakujun::int
-            ''', (race_code,))
+            """,
+                (race_code,),
+            )
 
             results = []
             for r in cur.fetchall():
@@ -71,21 +85,25 @@ def get_race_results(target_date: date) -> list[dict]:
                         ninki = int(r[3])
                     except Exception:
                         pass
-                results.append({
-                    'umaban': r[0],
-                    'chakujun': int(r[1]) if r[1] else 99,
-                    'bamei': r[2],
-                    'ninki': ninki,  # Win popularity rank
-                })
+                results.append(
+                    {
+                        "umaban": r[0],
+                        "chakujun": int(r[1]) if r[1] else 99,
+                        "bamei": r[2],
+                        "ninki": ninki,  # Win popularity rank
+                    }
+                )
 
-            races.append({
-                'race_code': race_code,
-                'keibajo': KEIBAJO_NAMES.get(row[1], row[1]),
-                'race_number': row[2],
-                'kyori': row[3],
-                'track': '芝' if row[4] and row[4].startswith('1') else 'ダ',
-                'results': results
-            })
+            races.append(
+                {
+                    "race_code": race_code,
+                    "keibajo": KEIBAJO_NAMES.get(row[1], row[1]),
+                    "race_number": row[2],
+                    "kyori": row[3],
+                    "track": "芝" if row[4] and row[4].startswith("1") else "ダ",
+                    "results": results,
+                }
+            )
 
         cur.close()
         return races
@@ -114,7 +132,8 @@ def get_payouts(target_date: date) -> dict[str, dict]:
 
         # Get payouts (win and place only)
         # data_kubun: '1'=registration/provisional, '2'=provisional, '7'=confirmed (prefer confirmed)
-        cur.execute('''
+        cur.execute(
+            """
             SELECT DISTINCT ON (race_code) race_code,
                    tansho1_umaban, tansho1_haraimodoshikin,
                    fukusho1_umaban, fukusho1_haraimodoshikin,
@@ -125,7 +144,9 @@ def get_payouts(target_date: date) -> dict[str, dict]:
               AND kaisai_gappi = %s
               AND data_kubun IN ('1', '2', '7')
             ORDER BY race_code, data_kubun DESC
-        ''', (kaisai_nen, kaisai_gappi))
+        """,
+            (kaisai_nen, kaisai_gappi),
+        )
 
         payouts = {}
         for row in cur.fetchall():
@@ -141,15 +162,17 @@ def get_payouts(target_date: date) -> dict[str, dict]:
                 umaban = row[3 + i * 2]
                 payout = row[4 + i * 2]
                 if umaban and umaban.strip():
-                    fukusho.append({
-                        'umaban': umaban.strip(),
-                        'payout': int(payout) if payout and payout.strip() else 0
-                    })
+                    fukusho.append(
+                        {
+                            "umaban": umaban.strip(),
+                            "payout": int(payout) if payout and payout.strip() else 0,
+                        }
+                    )
 
             payouts[race_code] = {
-                'tansho_umaban': tansho_umaban,
-                'tansho_payout': tansho_payout,
-                'fukusho': fukusho,
+                "tansho_umaban": tansho_umaban,
+                "tansho_payout": tansho_payout,
+                "fukusho": fukusho,
             }
 
         cur.close()
@@ -180,7 +203,8 @@ def load_predictions_from_db(target_date: date) -> dict | None:
         cur = conn.cursor()
 
         # Get predictions for the specified date (prefer latest)
-        cur.execute('''
+        cur.execute(
+            """
             SELECT DISTINCT ON (race_id)
                 prediction_id,
                 race_id,
@@ -191,7 +215,9 @@ def load_predictions_from_db(target_date: date) -> dict | None:
             FROM predictions
             WHERE race_date = %s
             ORDER BY race_id, predicted_at DESC
-        ''', (target_date,))
+        """,
+            (target_date,),
+        )
 
         rows = cur.fetchall()
         cur.close()
@@ -200,10 +226,7 @@ def load_predictions_from_db(target_date: date) -> dict | None:
             logger.warning(f"No prediction data found: {target_date}")
             return None
 
-        predictions = {
-            'date': str(target_date),
-            'races': []
-        }
+        predictions = {"date": str(target_date), "races": []}
 
         for row in rows:
             prediction_id = row[0]
@@ -219,23 +242,27 @@ def load_predictions_from_db(target_date: date) -> dict | None:
                     prediction_result = {}
 
             # Extract TOP3 from ranked_horses
-            ranked_horses = prediction_result.get('ranked_horses', [])
+            ranked_horses = prediction_result.get("ranked_horses", [])
             top3 = []
             for h in ranked_horses[:3]:
-                top3.append({
-                    'rank': h.get('rank', 0),
-                    'umaban': str(h.get('horse_number', '')).zfill(2),
-                    'bamei': h.get('horse_name', ''),
-                    'win_prob': h.get('win_probability', 0),
-                })
+                top3.append(
+                    {
+                        "rank": h.get("rank", 0),
+                        "umaban": str(h.get("horse_number", "")).zfill(2),
+                        "bamei": h.get("horse_name", ""),
+                        "win_prob": h.get("win_probability", 0),
+                    }
+                )
 
-            predictions['races'].append({
-                'prediction_id': prediction_id,
-                'race_code': race_id,
-                'is_final': is_final,
-                'top3': top3,
-                'all_horses': ranked_horses,
-            })
+            predictions["races"].append(
+                {
+                    "prediction_id": prediction_id,
+                    "race_code": race_id,
+                    "is_final": is_final,
+                    "top3": top3,
+                    "all_horses": ranked_horses,
+                }
+            )
 
         logger.info(f"Loaded predictions from DB: {len(predictions['races'])} races")
         return predictions
@@ -257,11 +284,11 @@ def save_analysis_to_db(analysis: dict) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    if analysis.get('status') != 'success':
+    if analysis.get("status") != "success":
         return False
 
-    acc = analysis.get('accuracy', {})
-    if 'error' in acc:
+    acc = analysis.get("accuracy", {})
+    if "error" in acc:
         return False
 
     db = get_db()
@@ -272,12 +299,13 @@ def save_analysis_to_db(analysis: dict) -> bool:
 
     try:
         cur = conn.cursor()
-        analysis_date = acc.get('date')
-        raw_stats = acc.get('raw_stats', {})
-        accuracy = acc.get('accuracy', {})
+        analysis_date = acc.get("date")
+        raw_stats = acc.get("raw_stats", {})
+        accuracy = acc.get("accuracy", {})
 
         # UPSERT (ON CONFLICT UPDATE)
-        cur.execute('''
+        cur.execute(
+            """
             INSERT INTO analysis_results (
                 analysis_date, total_races, analyzed_races,
                 tansho_hit, fukusho_hit, umaren_hit, sanrenpuku_hit, top3_cover,
@@ -300,29 +328,34 @@ def save_analysis_to_db(analysis: dict) -> bool:
                 mrr = EXCLUDED.mrr,
                 detail_data = EXCLUDED.detail_data,
                 analyzed_at = CURRENT_TIMESTAMP
-        ''', (
-            analysis_date,
-            acc.get('total_races', 0),
-            acc.get('analyzed_races', 0),
-            raw_stats.get('tansho_hit', 0),
-            raw_stats.get('fukusho_hit', 0),
-            raw_stats.get('umaren_hit', 0),
-            raw_stats.get('sanrenpuku_hit', 0),
-            raw_stats.get('top3_cover', 0),
-            accuracy.get('tansho_hit_rate'),
-            accuracy.get('fukusho_hit_rate'),
-            accuracy.get('umaren_hit_rate'),
-            accuracy.get('sanrenpuku_hit_rate'),
-            accuracy.get('top3_cover_rate'),
-            accuracy.get('mrr'),
-            json.dumps({
-                'by_venue': acc.get('by_venue', {}),
-                'by_distance': acc.get('by_distance', {}),
-                'by_track': acc.get('by_track', {}),
-                'calibration': acc.get('calibration', {}),
-                'misses': acc.get('misses', [])
-            }, ensure_ascii=False)
-        ))
+        """,
+            (
+                analysis_date,
+                acc.get("total_races", 0),
+                acc.get("analyzed_races", 0),
+                raw_stats.get("tansho_hit", 0),
+                raw_stats.get("fukusho_hit", 0),
+                raw_stats.get("umaren_hit", 0),
+                raw_stats.get("sanrenpuku_hit", 0),
+                raw_stats.get("top3_cover", 0),
+                accuracy.get("tansho_hit_rate"),
+                accuracy.get("fukusho_hit_rate"),
+                accuracy.get("umaren_hit_rate"),
+                accuracy.get("sanrenpuku_hit_rate"),
+                accuracy.get("top3_cover_rate"),
+                accuracy.get("mrr"),
+                json.dumps(
+                    {
+                        "by_venue": acc.get("by_venue", {}),
+                        "by_distance": acc.get("by_distance", {}),
+                        "by_track": acc.get("by_track", {}),
+                        "calibration": acc.get("calibration", {}),
+                        "misses": acc.get("misses", []),
+                    },
+                    ensure_ascii=False,
+                ),
+            ),
+        )
 
         conn.commit()
         logger.info(f"Analysis saved to DB: {analysis_date}")
@@ -358,18 +391,19 @@ def update_accuracy_tracking(stats: dict) -> bool:
         cur = conn.cursor()
 
         # Get current cumulative values
-        cur.execute('SELECT * FROM accuracy_tracking LIMIT 1')
+        cur.execute("SELECT * FROM accuracy_tracking LIMIT 1")
         row = cur.fetchone()
 
         if row:
             # Update
-            new_total = row[1] + stats.get('analyzed_races', 0)
-            new_tansho = row[2] + stats.get('tansho_hit', 0)
-            new_fukusho = row[3] + stats.get('fukusho_hit', 0)
-            new_umaren = row[4] + stats.get('umaren_hit', 0)
-            new_sanrenpuku = row[5] + stats.get('sanrenpuku_hit', 0)
+            new_total = row[1] + stats.get("analyzed_races", 0)
+            new_tansho = row[2] + stats.get("tansho_hit", 0)
+            new_fukusho = row[3] + stats.get("fukusho_hit", 0)
+            new_umaren = row[4] + stats.get("umaren_hit", 0)
+            new_sanrenpuku = row[5] + stats.get("sanrenpuku_hit", 0)
 
-            cur.execute('''
+            cur.execute(
+                """
                 UPDATE accuracy_tracking SET
                     total_races = %s,
                     total_tansho_hit = %s,
@@ -382,29 +416,46 @@ def update_accuracy_tracking(stats: dict) -> bool:
                     cumulative_sanrenpuku_rate = CASE WHEN %s > 0 THEN %s::float / %s * 100 ELSE 0 END,
                     last_updated = CURRENT_TIMESTAMP
                 WHERE id = %s
-            ''', (
-                new_total, new_tansho, new_fukusho, new_umaren, new_sanrenpuku,
-                new_total, new_tansho, new_total,
-                new_total, new_fukusho, new_total,
-                new_total, new_umaren, new_total,
-                new_total, new_sanrenpuku, new_total,
-                row[0]
-            ))
+            """,
+                (
+                    new_total,
+                    new_tansho,
+                    new_fukusho,
+                    new_umaren,
+                    new_sanrenpuku,
+                    new_total,
+                    new_tansho,
+                    new_total,
+                    new_total,
+                    new_fukusho,
+                    new_total,
+                    new_total,
+                    new_umaren,
+                    new_total,
+                    new_total,
+                    new_sanrenpuku,
+                    new_total,
+                    row[0],
+                ),
+            )
         else:
             # Initial insert
-            n = stats.get('analyzed_races', 0)
-            cur.execute('''
+            n = stats.get("analyzed_races", 0)
+            cur.execute(
+                """
                 INSERT INTO accuracy_tracking (
                     total_races, total_tansho_hit, total_fukusho_hit,
                     total_umaren_hit, total_sanrenpuku_hit
                 ) VALUES (%s, %s, %s, %s, %s)
-            ''', (
-                n,
-                stats.get('tansho_hit', 0),
-                stats.get('fukusho_hit', 0),
-                stats.get('umaren_hit', 0),
-                stats.get('sanrenpuku_hit', 0)
-            ))
+            """,
+                (
+                    n,
+                    stats.get("tansho_hit", 0),
+                    stats.get("fukusho_hit", 0),
+                    stats.get("umaren_hit", 0),
+                    stats.get("sanrenpuku_hit", 0),
+                ),
+            )
 
         conn.commit()
         logger.info("Cumulative tracking updated")
@@ -434,21 +485,21 @@ def get_cumulative_stats() -> dict | None:
 
     try:
         cur = conn.cursor()
-        cur.execute('SELECT * FROM accuracy_tracking LIMIT 1')
+        cur.execute("SELECT * FROM accuracy_tracking LIMIT 1")
         row = cur.fetchone()
 
         if row:
             return {
-                'total_races': row[1],
-                'tansho_hit': row[2],
-                'fukusho_hit': row[3],
-                'umaren_hit': row[4],
-                'sanrenpuku_hit': row[5],
-                'tansho_rate': row[6],
-                'fukusho_rate': row[7],
-                'umaren_rate': row[8],
-                'sanrenpuku_rate': row[9],
-                'last_updated': row[10]
+                "total_races": row[1],
+                "tansho_hit": row[2],
+                "fukusho_hit": row[3],
+                "umaren_hit": row[4],
+                "sanrenpuku_hit": row[5],
+                "tansho_rate": row[6],
+                "fukusho_rate": row[7],
+                "umaren_rate": row[8],
+                "sanrenpuku_rate": row[9],
+                "last_updated": row[10],
             }
         return None
 
@@ -475,12 +526,15 @@ def get_recent_race_dates(days_back: int = 7) -> list:
 
     try:
         cur = conn.cursor()
-        cur.execute('''
+        cur.execute(
+            """
             SELECT DISTINCT race_date
             FROM predictions
             WHERE race_date >= %s AND race_date < %s
             ORDER BY race_date
-        ''', (date.today() - timedelta(days=days_back), date.today()))
+        """,
+            (date.today() - timedelta(days=days_back), date.today()),
+        )
 
         dates = [row[0] for row in cur.fetchall()]
         cur.close()

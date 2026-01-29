@@ -65,9 +65,7 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter if HAS_JSON_LOGGER else objec
             super().add_fields(log_record, record, message_dict)
 
         # Add timestamp in JST
-        log_record["timestamp"] = datetime.fromtimestamp(
-            record.created, tz=JST
-        ).isoformat()
+        log_record["timestamp"] = datetime.fromtimestamp(record.created, tz=JST).isoformat()
 
         # Add standard fields
         log_record["level"] = record.levelname
@@ -103,9 +101,7 @@ def get_json_formatter() -> logging.Formatter:
         )
         return get_text_formatter()
 
-    return CustomJsonFormatter(
-        fmt="%(timestamp)s %(level)s %(logger)s %(message)s"
-    )
+    return CustomJsonFormatter(fmt="%(timestamp)s %(level)s %(logger)s %(message)s")
 
 
 def setup_logging(

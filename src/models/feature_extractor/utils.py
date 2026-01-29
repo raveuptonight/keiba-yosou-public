@@ -19,7 +19,7 @@ def safe_int(val, default: int = 0) -> int:
         Converted integer or default value
     """
     try:
-        if val is None or val == '':
+        if val is None or val == "":
             return default
         return int(val)
     except (ValueError, TypeError):
@@ -37,7 +37,7 @@ def safe_float(val, default: float = 0.0) -> float:
         Converted float or default value
     """
     try:
-        if val is None or val == '':
+        if val is None or val == "":
             return default
         return float(val)
     except (ValueError, TypeError):
@@ -53,7 +53,7 @@ def encode_sex(sex_code: str) -> int:
     Returns:
         Numeric encoding (0, 1, or 2)
     """
-    mapping = {'1': 0, '2': 1, '3': 2}
+    mapping = {"1": 0, "2": 1, "3": 2}
     return mapping.get(sex_code, 0)
 
 
@@ -108,7 +108,7 @@ def determine_class(grade_code: str) -> int:
     Returns:
         Numeric rank (8=highest/G1, 1=lowest)
     """
-    mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
+    mapping = {"A": 8, "B": 7, "C": 6, "D": 5, "E": 4, "F": 3, "G": 2, "H": 1}
     return mapping.get(grade_code, 3)
 
 
@@ -121,7 +121,7 @@ def grade_to_rank(grade_code: str) -> int:
     Returns:
         Numeric rank (8=highest, 1=lowest)
     """
-    mapping = {'A': 8, 'B': 7, 'C': 6, 'D': 5, 'E': 4, 'F': 3, 'G': 2, 'H': 1}
+    mapping = {"A": 8, "B": 7, "C": 6, "D": 5, "E": 4, "F": 3, "G": 2, "H": 1}
     return mapping.get(grade_code, 3)
 
 
@@ -135,15 +135,15 @@ def get_distance_category(distance: int) -> str:
         Distance category string
     """
     if distance <= 1200:
-        return 'sprint'
+        return "sprint"
     elif distance <= 1600:
-        return 'mile'
+        return "mile"
     elif distance <= 2000:
-        return 'middle'
+        return "middle"
     elif distance <= 2400:
-        return 'classic'
+        return "classic"
     else:
-        return 'long'
+        return "long"
 
 
 def get_interval_category(days: int) -> str:
@@ -161,15 +161,15 @@ def get_interval_category(days: int) -> str:
         - 'week4plus': 4+ weeks rest (29+ days)
     """
     if days <= 7:
-        return 'rentou'
+        return "rentou"
     elif days <= 14:
-        return 'week1'
+        return "week1"
     elif days <= 21:
-        return 'week2'
+        return "week2"
     elif days <= 28:
-        return 'week3'
+        return "week3"
     else:
-        return 'week4plus'
+        return "week4plus"
 
 
 def calc_days_since_last(last_race_date: str, current_year: str, current_gappi: str) -> int:
@@ -215,18 +215,18 @@ def calc_style_pace_compatibility(running_style: int, pace_type: int) -> float:
     """
     compatibility_matrix = {
         # (running_style, pace_type): compatibility_score
-        (1, 1): 0.8,   # Nige x Slow = advantageous
-        (1, 2): 0.5,   # Nige x Middle = neutral
-        (1, 3): 0.2,   # Nige x High = disadvantageous
-        (2, 1): 0.7,   # Senkou x Slow = slightly advantageous
-        (2, 2): 0.5,   # Senkou x Middle = neutral
-        (2, 3): 0.4,   # Senkou x High = slightly disadvantageous
-        (3, 1): 0.3,   # Sashi x Slow = slightly disadvantageous
-        (3, 2): 0.5,   # Sashi x Middle = neutral
-        (3, 3): 0.7,   # Sashi x High = slightly advantageous
-        (4, 1): 0.2,   # Oikomi x Slow = disadvantageous
-        (4, 2): 0.5,   # Oikomi x Middle = neutral
-        (4, 3): 0.8,   # Oikomi x High = advantageous
+        (1, 1): 0.8,  # Nige x Slow = advantageous
+        (1, 2): 0.5,  # Nige x Middle = neutral
+        (1, 3): 0.2,  # Nige x High = disadvantageous
+        (2, 1): 0.7,  # Senkou x Slow = slightly advantageous
+        (2, 2): 0.5,  # Senkou x Middle = neutral
+        (2, 3): 0.4,  # Senkou x High = slightly disadvantageous
+        (3, 1): 0.3,  # Sashi x Slow = slightly disadvantageous
+        (3, 2): 0.5,  # Sashi x Middle = neutral
+        (3, 3): 0.7,  # Sashi x High = slightly advantageous
+        (4, 1): 0.2,  # Oikomi x Slow = disadvantageous
+        (4, 2): 0.5,  # Oikomi x Middle = neutral
+        (4, 3): 0.8,  # Oikomi x High = advantageous
     }
     return compatibility_matrix.get((running_style, pace_type), 0.5)
 

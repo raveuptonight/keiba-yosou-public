@@ -55,6 +55,7 @@ from src.db.table_names import (
 
 logger = logging.getLogger(__name__)
 
+
 # 年齢別競走条件コードから統合した値を取得するSQL式
 def get_kyoso_joken_code_expr() -> str:
     """
@@ -189,7 +190,7 @@ async def get_races_by_date(
     conn: Connection,
     target_date: date,
     venue_code: str | None = None,
-    grade_filter: str | None = None
+    grade_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     指定日のレース一覧を取得
@@ -265,9 +266,7 @@ async def get_races_by_date(
 
 
 async def get_races_today(
-    conn: Connection,
-    venue_code: str | None = None,
-    grade_filter: str | None = None
+    conn: Connection, venue_code: str | None = None, grade_filter: str | None = None
 ) -> list[dict[str, Any]]:
     """
     今日のレース一覧を取得
@@ -305,16 +304,14 @@ async def get_race_entry_count(conn: Connection, race_id: str) -> int:
 
     try:
         row = await conn.fetchrow(sql, race_id)
-        return row['entry_count'] if row else 0
+        return row["entry_count"] if row else 0
     except Exception as e:
         logger.error(f"Failed to get race entry count: race_id={race_id}, error={e}")
         raise
 
 
 async def get_upcoming_races(
-    conn: Connection,
-    days_ahead: int = 7,
-    grade_filter: str | None = None
+    conn: Connection, days_ahead: int = 7, grade_filter: str | None = None
 ) -> list[dict[str, Any]]:
     """
     今後N日間のレース一覧を取得
@@ -333,6 +330,7 @@ async def get_upcoming_races(
 
     # 終了日を計算
     from datetime import timedelta
+
     end_date = today + timedelta(days=days_ahead)
     end_monthday = end_date.strftime("%m%d")
 
@@ -394,11 +392,7 @@ async def get_race_detail(conn: Connection, race_id: str) -> dict[str, Any] | No
     # 出走馬一覧
     entries = await get_race_entries(conn, race_id)
 
-    return {
-        "race": race_info,
-        "entries": entries,
-        "entry_count": len(entries)
-    }
+    return {"race": race_info, "entries": entries, "entry_count": len(entries)}
 
 
 async def check_race_exists(conn: Connection, race_id: str) -> bool:
@@ -424,16 +418,14 @@ async def check_race_exists(conn: Connection, race_id: str) -> bool:
 
     try:
         row = await conn.fetchrow(sql, race_id)
-        return row['exists'] if row else False
+        return row["exists"] if row else False
     except Exception as e:
         logger.error(f"Failed to check race exists: race_id={race_id}, error={e}")
         raise
 
 
 async def get_horse_head_to_head(
-    conn: Connection,
-    kettonums: list[str],
-    limit: int = 20
+    conn: Connection, kettonums: list[str], limit: int = 20
 ) -> list[dict[str, Any]]:
     """
     複数の馬の過去の対戦成績を取得
@@ -504,15 +496,17 @@ async def get_horse_head_to_head(
                     "race_date": f"{row[COL_KAISAI_YEAR]}-{row[COL_KAISAI_MONTHDAY][:2]}-{row[COL_KAISAI_MONTHDAY][2:]}",
                     "venue_code": row[COL_JYOCD],
                     "distance": row[COL_KYORI],
-                    "horses": []
+                    "horses": [],
                 }
 
-            races_dict[race_id]["horses"].append({
-                "kettonum": row[COL_KETTONUM],
-                "name": row[COL_BAMEI],
-                "horse_number": row[COL_UMABAN],
-                "finish_position": row["kakutei_chakujun"]
-            })
+            races_dict[race_id]["horses"].append(
+                {
+                    "kettonum": row[COL_KETTONUM],
+                    "name": row[COL_BAMEI],
+                    "horse_number": row[COL_UMABAN],
+                    "finish_position": row["kakutei_chakujun"],
+                }
+            )
 
         # リストに変換してソート（レース日付の新しい順）
         result = list(races_dict.values())
@@ -531,7 +525,7 @@ async def search_races_by_name_db(
     race_name_query: str,
     days_before: int = 30,
     days_after: int = 30,
-    limit: int = 20
+    limit: int = 20,
 ) -> list[dict[str, Any]]:
     """
     レース名で検索（データベースから直接、エイリアス対応）
@@ -549,13 +543,13 @@ async def search_races_by_name_db(
     from src.services.race_name_aliases import expand_race_name_query
 
     today = date.today()
-    start_date = today - __import__('datetime').timedelta(days=days_before)
-    end_date = today + __import__('datetime').timedelta(days=days_after)
+    start_date = today - __import__("datetime").timedelta(days=days_before)
+    end_date = today + __import__("datetime").timedelta(days=days_after)
 
     start_year = str(start_date.year)
-    start_monthday = start_date.strftime('%m%d')
+    start_monthday = start_date.strftime("%m%d")
     end_year = str(end_date.year)
-    end_monthday = end_date.strftime('%m%d')
+    end_monthday = end_date.strftime("%m%d")
 
     sql = f"""
         SELECT
@@ -603,7 +597,7 @@ async def search_races_by_name_db(
                 end_year,
                 end_monthday,
                 DATA_KUBUN_KAKUTEI,
-                limit
+                limit,
             )
 
             for row in rows:
@@ -625,18 +619,20 @@ async def search_races_by_name_db(
             monthday = row[COL_KAISAI_MONTHDAY]
             race_date = f"{year}-{monthday[:2]}-{monthday[2:]}"
 
-            results.append({
-                "race_id": row[COL_RACE_ID],
-                "race_name": row[COL_RACE_NAME],
-                "race_date": race_date,
-                "venue_code": row[COL_JYOCD],
-                "race_number": row[COL_RACE_NUM],
-                "grade_code": row[COL_GRADE_CD],
-                "distance": row[COL_KYORI],
-                "track_code": row[COL_TRACK_CD],
-                "kyoso_joken_code": row.get("kyoso_joken_code"),
-                "kyoso_shubetsu_code": row.get(COL_KYOSO_SHUBETSU_CD)
-            })
+            results.append(
+                {
+                    "race_id": row[COL_RACE_ID],
+                    "race_name": row[COL_RACE_NAME],
+                    "race_date": race_date,
+                    "venue_code": row[COL_JYOCD],
+                    "race_number": row[COL_RACE_NUM],
+                    "grade_code": row[COL_GRADE_CD],
+                    "distance": row[COL_KYORI],
+                    "track_code": row[COL_TRACK_CD],
+                    "kyoso_joken_code": row.get("kyoso_joken_code"),
+                    "kyoso_shubetsu_code": row.get(COL_KYOSO_SHUBETSU_CD),
+                }
+            )
 
         logger.info(f"Found {len(results)} races matching '{race_name_query}'")
         return results

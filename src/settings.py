@@ -57,12 +57,8 @@ class Settings(BaseSettings):
     # Discord Bot Settings
     # =========================================================================
     discord_bot_token: str = Field(default="", description="Discord bot token")
-    discord_notification_channel_id: int = Field(
-        default=0, description="Notification channel ID"
-    )
-    discord_command_channel_id: int | None = Field(
-        default=None, description="Command channel ID"
-    )
+    discord_notification_channel_id: int = Field(default=0, description="Notification channel ID")
+    discord_command_channel_id: int | None = Field(default=None, description="Command channel ID")
     discord_guild_id: int | None = Field(
         default=None, description="Guild ID for faster slash command sync"
     )
@@ -72,9 +68,7 @@ class Settings(BaseSettings):
     # =========================================================================
     api_host: str = Field(default="0.0.0.0", description="API host")
     api_port: int = Field(default=8000, ge=1, le=65535, description="API port")
-    api_base_url: str = Field(
-        default="http://localhost:8000", description="API base URL"
-    )
+    api_base_url: str = Field(default="http://localhost:8000", description="API base URL")
 
     # =========================================================================
     # LLM Settings (Gemini)
@@ -87,9 +81,7 @@ class Settings(BaseSettings):
     # Sentry (Error Monitoring)
     # =========================================================================
     sentry_dsn: str = Field(default="", description="Sentry DSN for error tracking")
-    sentry_environment: str = Field(
-        default="development", description="Sentry environment"
-    )
+    sentry_environment: str = Field(default="development", description="Sentry environment")
     sentry_traces_sample_rate: float = Field(
         default=0.1, ge=0.0, le=1.0, description="Sentry traces sample rate"
     )
@@ -97,18 +89,14 @@ class Settings(BaseSettings):
     # =========================================================================
     # Redis (Cache)
     # =========================================================================
-    redis_url: str = Field(
-        default="redis://localhost:6379", description="Redis connection URL"
-    )
+    redis_url: str = Field(default="redis://localhost:6379", description="Redis connection URL")
     redis_enabled: bool = Field(default=False, description="Enable Redis caching")
 
     # =========================================================================
     # Logging
     # =========================================================================
     log_level: str = Field(default="INFO", description="Logging level")
-    log_format: str = Field(
-        default="json", description="Log format: 'json' or 'text'"
-    )
+    log_format: str = Field(default="json", description="Log format: 'json' or 'text'")
 
     @field_validator("log_level")
     @classmethod

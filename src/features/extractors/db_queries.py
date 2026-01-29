@@ -109,11 +109,7 @@ def get_race_info(conn, race_code: str, data_kubun: str) -> dict:
 
 
 def get_past_races(
-    conn,
-    kettonum: str,
-    current_race_code: str,
-    cache: dict,
-    limit: int = 10
+    conn, kettonum: str, current_race_code: str, cache: dict, limit: int = 10
 ) -> list[dict]:
     """
     Get past race results for a horse.
@@ -188,7 +184,7 @@ def get_jockey_stats(conn, jockey_code: str, cache: dict) -> dict:
         Dictionary with win_rate and place_rate
     """
     if not jockey_code:
-        return {'win_rate': 0.08, 'place_rate': 0.25}
+        return {"win_rate": 0.08, "place_rate": 0.25}
 
     cache_key = f"jockey_{jockey_code}"
     if cache_key in cache:
@@ -216,18 +212,18 @@ def get_jockey_stats(conn, jockey_code: str, cache: dict) -> dict:
         if row and row[0] > 0:
             total, wins, places = row
             result = {
-                'win_rate': wins / total if total > 0 else 0.08,
-                'place_rate': places / total if total > 0 else 0.25
+                "win_rate": wins / total if total > 0 else 0.08,
+                "place_rate": places / total if total > 0 else 0.25,
             }
         else:
-            result = {'win_rate': 0.08, 'place_rate': 0.25}
+            result = {"win_rate": 0.08, "place_rate": 0.25}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.error(f"Failed to get jockey stats: {e}")
         conn.rollback()
-        return {'win_rate': 0.08, 'place_rate': 0.25}
+        return {"win_rate": 0.08, "place_rate": 0.25}
 
 
 def get_trainer_stats(conn, trainer_code: str, cache: dict) -> dict:
@@ -243,7 +239,7 @@ def get_trainer_stats(conn, trainer_code: str, cache: dict) -> dict:
         Dictionary with win_rate and place_rate
     """
     if not trainer_code:
-        return {'win_rate': 0.08, 'place_rate': 0.25}
+        return {"win_rate": 0.08, "place_rate": 0.25}
 
     cache_key = f"trainer_{trainer_code}"
     if cache_key in cache:
@@ -270,18 +266,18 @@ def get_trainer_stats(conn, trainer_code: str, cache: dict) -> dict:
         if row and row[0] > 0:
             total, wins, places = row
             result = {
-                'win_rate': wins / total if total > 0 else 0.08,
-                'place_rate': places / total if total > 0 else 0.25
+                "win_rate": wins / total if total > 0 else 0.08,
+                "place_rate": places / total if total > 0 else 0.25,
             }
         else:
-            result = {'win_rate': 0.08, 'place_rate': 0.25}
+            result = {"win_rate": 0.08, "place_rate": 0.25}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.error(f"Failed to get trainer stats: {e}")
         conn.rollback()
-        return {'win_rate': 0.08, 'place_rate': 0.25}
+        return {"win_rate": 0.08, "place_rate": 0.25}
 
 
 def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: dict) -> dict:
@@ -298,7 +294,7 @@ def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: dict) -
         Dictionary with runs and wins
     """
     if not jockey_code or not kettonum:
-        return {'runs': 0, 'wins': 0}
+        return {"runs": 0, "wins": 0}
 
     cache_key = f"combo_{jockey_code}_{kettonum}"
     if cache_key in cache:
@@ -320,13 +316,13 @@ def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: dict) -
         row = cur.fetchone()
         cur.close()
 
-        result = {'runs': row[0] or 0, 'wins': row[1] or 0} if row else {'runs': 0, 'wins': 0}
+        result = {"runs": row[0] or 0, "wins": row[1] or 0} if row else {"runs": 0, "wins": 0}
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.error(f"Failed to get jockey-horse combo: {e}")
         conn.rollback()
-        return {'runs': 0, 'wins': 0}
+        return {"runs": 0, "wins": 0}
 
 
 def get_training_data(conn, kettonum: str, race_code: str, cache: dict) -> dict:
@@ -343,7 +339,7 @@ def get_training_data(conn, kettonum: str, race_code: str, cache: dict) -> dict:
         Dictionary with score, time_4f, and count
     """
     if not kettonum:
-        return {'score': 50.0, 'time_4f': 52.0, 'count': 0}
+        return {"score": 50.0, "time_4f": 52.0, "count": 0}
 
     cache_key = f"training_{kettonum}_{race_code[:8]}"
     if cache_key in cache:
@@ -366,28 +362,23 @@ def get_training_data(conn, kettonum: str, race_code: str, cache: dict) -> dict:
 
         if row and row[0] > 0:
             result = {
-                'score': float(row[1]) if row[1] else 50.0,
-                'time_4f': 52.0,  # TODO: Get actual time
-                'count': row[0]
+                "score": float(row[1]) if row[1] else 50.0,
+                "time_4f": 52.0,  # TODO: Get actual time
+                "count": row[0],
             }
         else:
-            result = {'score': 50.0, 'time_4f': 52.0, 'count': 0}
+            result = {"score": 50.0, "time_4f": 52.0, "count": 0}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.debug(f"Training data not available: {e}")
         conn.rollback()
-        return {'score': 50.0, 'time_4f': 52.0, 'count': 0}
+        return {"score": 50.0, "time_4f": 52.0, "count": 0}
 
 
 def get_distance_stats(
-    conn,
-    kettonum: str,
-    race_code: str,
-    distance: int,
-    track_code: str,
-    cache: dict
+    conn, kettonum: str, race_code: str, distance: int, track_code: str, cache: dict
 ) -> dict:
     """
     Get distance-specific statistics (from shussobetsu_kyori table).
@@ -404,34 +395,34 @@ def get_distance_stats(
         Dictionary with win_rate, place_rate, and runs
     """
     if not kettonum:
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
     cache_key = f"dist_stats_{kettonum}_{distance}"
     if cache_key in cache:
         return cache[cache_key]
 
     # Determine distance category
-    is_turf = track_code.startswith('1') if track_code else True
-    prefix = 'shiba' if is_turf else 'dirt'
+    is_turf = track_code.startswith("1") if track_code else True
+    prefix = "shiba" if is_turf else "dirt"
 
     if distance <= 1200:
-        cat = '1200_ika'
+        cat = "1200_ika"
     elif distance <= 1400:
-        cat = '1201_1400'
+        cat = "1201_1400"
     elif distance <= 1600:
-        cat = '1401_1600'
+        cat = "1401_1600"
     elif distance <= 1800:
-        cat = '1601_1800'
+        cat = "1601_1800"
     elif distance <= 2000:
-        cat = '1801_2000'
+        cat = "1801_2000"
     elif distance <= 2200:
-        cat = '2001_2200'
+        cat = "2001_2200"
     elif distance <= 2400:
-        cat = '2201_2400'
+        cat = "2201_2400"
     elif distance <= 2800:
-        cat = '2401_2800'
+        cat = "2401_2800"
     else:
-        cat = '2801_ijo'
+        cat = "2801_ijo"
 
     col_prefix = f"{prefix}_{cat}"
 
@@ -459,28 +450,23 @@ def get_distance_stats(
             places = row[0] + row[1] + row[2]
             total = sum(row)
             result = {
-                'win_rate': wins / total if total > 0 else 0.0,
-                'place_rate': places / total if total > 0 else 0.0,
-                'runs': total
+                "win_rate": wins / total if total > 0 else 0.0,
+                "place_rate": places / total if total > 0 else 0.0,
+                "runs": total,
             }
         else:
-            result = {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+            result = {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.debug(f"Distance stats not available: {e}")
         conn.rollback()
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
 
 def get_baba_stats(
-    conn,
-    kettonum: str,
-    race_code: str,
-    track_code: str,
-    baba_code: str,
-    cache: dict
+    conn, kettonum: str, race_code: str, track_code: str, baba_code: str, cache: dict
 ) -> dict:
     """
     Get track condition statistics (from shussobetsu_baba table).
@@ -497,19 +483,19 @@ def get_baba_stats(
         Dictionary with win_rate, place_rate, and runs
     """
     if not kettonum:
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
     cache_key = f"baba_stats_{kettonum}_{baba_code}"
     if cache_key in cache:
         return cache[cache_key]
 
     # Determine track condition
-    is_turf = track_code.startswith('1') if track_code else True
-    prefix = 'shiba' if is_turf else 'dirt'
+    is_turf = track_code.startswith("1") if track_code else True
+    prefix = "shiba" if is_turf else "dirt"
 
     # Baba code: 1=good, 2=slightly heavy, 3=heavy, 4=bad
-    baba_map = {'1': 'ryo', '2': 'yayaomo', '3': 'omo', '4': 'furyo'}
-    baba_suffix = baba_map.get(str(baba_code), 'ryo')
+    baba_map = {"1": "ryo", "2": "yayaomo", "3": "omo", "4": "furyo"}
+    baba_suffix = baba_map.get(str(baba_code), "ryo")
     col_prefix = f"{prefix}_{baba_suffix}"
 
     sql = f"""
@@ -536,19 +522,19 @@ def get_baba_stats(
             places = row[0] + row[1] + row[2]
             total = sum(row)
             result = {
-                'win_rate': wins / total if total > 0 else 0.0,
-                'place_rate': places / total if total > 0 else 0.0,
-                'runs': total
+                "win_rate": wins / total if total > 0 else 0.0,
+                "place_rate": places / total if total > 0 else 0.0,
+                "runs": total,
             }
         else:
-            result = {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+            result = {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.debug(f"Baba stats not available: {e}")
         conn.rollback()
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
 
 def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> dict:
@@ -565,14 +551,14 @@ def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> d
         Dictionary with time_3f, lap_1f, and days_before
     """
     if not kettonum:
-        return {'time_3f': 38.0, 'lap_1f': 12.5, 'days_before': 7}
+        return {"time_3f": 38.0, "lap_1f": 12.5, "days_before": 7}
 
     cache_key = f"detailed_training_{kettonum}_{race_code[:8]}"
     if cache_key in cache:
         return cache[cache_key]
 
     # Get race date and search for training before that
-    race_code[4:12] if len(race_code) >= 12 else ''
+    race_code[4:12] if len(race_code) >= 12 else ""
 
     sql = """
         SELECT
@@ -596,20 +582,16 @@ def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> d
             lap_1f = rows[0][2] / 10.0 if rows[0][2] else 12.5
             # Simplified days calculation
             days_before = 3 if rows else 7
-            result = {
-                'time_3f': time_3f,
-                'lap_1f': lap_1f,
-                'days_before': days_before
-            }
+            result = {"time_3f": time_3f, "lap_1f": lap_1f, "days_before": days_before}
         else:
-            result = {'time_3f': 38.0, 'lap_1f': 12.5, 'days_before': 7}
+            result = {"time_3f": 38.0, "lap_1f": 12.5, "days_before": 7}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.debug(f"Detailed training not available: {e}")
         conn.rollback()
-        return {'time_3f': 38.0, 'lap_1f': 12.5, 'days_before': 7}
+        return {"time_3f": 38.0, "lap_1f": 12.5, "days_before": 7}
 
 
 def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> dict:
@@ -626,7 +608,7 @@ def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> d
         Dictionary with win_rate, place_rate, and runs
     """
     if not kettonum:
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
     cache_key = f"interval_{kettonum}_{interval_cat}"
     if cache_key in cache:
@@ -634,11 +616,11 @@ def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> d
 
     # Interval category day ranges
     interval_ranges = {
-        'rentou': (1, 7),
-        'week1': (8, 14),
-        'week2': (15, 21),
-        'week3': (22, 28),
-        'week4plus': (29, 365)
+        "rentou": (1, 7),
+        "week1": (8, 14),
+        "week2": (15, 21),
+        "week3": (22, 28),
+        "week4plus": (29, 365),
     }
     min_days, max_days = interval_ranges.get(interval_cat, (29, 365))
 
@@ -673,16 +655,16 @@ def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> d
             wins = int(row[1] or 0)
             places = int(row[2] or 0)
             result = {
-                'runs': runs,
-                'win_rate': wins / runs if runs > 0 else 0.0,
-                'place_rate': places / runs if runs > 0 else 0.0
+                "runs": runs,
+                "win_rate": wins / runs if runs > 0 else 0.0,
+                "place_rate": places / runs if runs > 0 else 0.0,
             }
         else:
-            result = {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+            result = {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
         cache[cache_key] = result
         return result
     except Exception as e:
         logger.debug(f"Interval stats not available: {e}")
         conn.rollback()
-        return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
+        return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}

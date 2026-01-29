@@ -18,21 +18,14 @@ from src.scheduler.retrain.manager import deploy_new_model
 from src.scheduler.retrain.notifier import send_retrain_notification
 from src.scheduler.retrain.trainer import train_new_model
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 class WeeklyRetrain:
     """Weekly retraining class for ensemble model."""
 
-    def __init__(
-        self,
-        model_dir: str = None,
-        backup_dir: str = None
-    ):
+    def __init__(self, model_dir: str = None, backup_dir: str = None):
         """
         Initialize retrainer.
 
@@ -53,10 +46,7 @@ class WeeklyRetrain:
         self.current_model_path = self.model_dir / "ensemble_model_latest.pkl"
 
     def run_weekly_job(
-        self,
-        force_deploy: bool = False,
-        notify: bool = True,
-        years: int = 3
+        self, force_deploy: bool = False, notify: bool = True, years: int = 3
     ) -> dict:
         """
         Run weekly retraining job.
@@ -73,33 +63,28 @@ class WeeklyRetrain:
         logger.info(f"Weekly model retrain started: {datetime.now()}")
         logger.info("=" * 50)
 
-        result = {
-            'date': date.today().isoformat(),
-            'deployed': False
-        }
+        result = {"date": date.today().isoformat(), "deployed": False}
 
         # 1. Train new model
         training_result = train_new_model(self.model_dir, years=years)
-        result['training'] = training_result
+        result["training"] = training_result
 
-        if training_result['status'] != 'success':
+        if training_result["status"] != "success":
             logger.error(f"Training failed: {training_result}")
             return result
 
-        new_model_path = training_result['model_path']
+        new_model_path = training_result["model_path"]
 
         # 2. Compare with current model (if exists)
         if self.current_model_path.exists():
             comparison = compare_models(self.current_model_path, new_model_path)
-            result['comparison'] = comparison
+            result["comparison"] = comparison
 
-            if comparison['status'] == 'success':
+            if comparison["status"] == "success":
                 # Deploy if improved (or force deploy)
-                if comparison['improvement'] > 0 or force_deploy:
-                    deploy_new_model(
-                        new_model_path, self.current_model_path, self.backup_dir
-                    )
-                    result['deployed'] = True
+                if comparison["improvement"] > 0 or force_deploy:
+                    deploy_new_model(new_model_path, self.current_model_path, self.backup_dir)
+                    result["deployed"] = True
                     logger.info("New model deployed")
                 else:
                     logger.info("No improvement, keeping current model")
@@ -107,17 +92,16 @@ class WeeklyRetrain:
                     Path(new_model_path).unlink()
             elif force_deploy:
                 # Force deploy even if comparison failed
-                deploy_new_model(
-                    new_model_path, self.current_model_path, self.backup_dir
-                )
-                result['deployed'] = True
+                deploy_new_model(new_model_path, self.current_model_path, self.backup_dir)
+                result["deployed"] = True
                 logger.info("Force deployed (comparison failed)")
         else:
             # No current model, deploy directly
             import shutil
+
             shutil.move(new_model_path, self.current_model_path)
-            result['deployed'] = True
-            result['comparison'] = {'note': 'initial_deployment'}
+            result["deployed"] = True
+            result["comparison"] = {"note": "initial_deployment"}
             logger.info("Initial deployment complete")
 
         # 3. Send notification
@@ -126,7 +110,7 @@ class WeeklyRetrain:
 
         # Save result
         result_path = self.model_dir / f"retrain_result_{date.today().strftime('%Y%m%d')}.json"
-        with open(result_path, 'w', encoding='utf-8') as f:
+        with open(result_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
 
         return result
@@ -137,17 +121,19 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description="Weekly model retrain (ensemble_model)")
-    parser.add_argument("--force", "-f", action="store_true", help="Deploy even without improvement")
+    parser.add_argument(
+        "--force", "-f", action="store_true", help="Deploy even without improvement"
+    )
     parser.add_argument("--no-notify", action="store_true", help="Skip Discord notification")
-    parser.add_argument("--years", "-y", type=int, default=3, help="Years of training data (default: 3)")
+    parser.add_argument(
+        "--years", "-y", type=int, default=3, help="Years of training data (default: 3)"
+    )
 
     args = parser.parse_args()
 
     retrain = WeeklyRetrain()
     result = retrain.run_weekly_job(
-        force_deploy=args.force,
-        notify=not args.no_notify,
-        years=args.years
+        force_deploy=args.force, notify=not args.no_notify, years=args.years
     )
 
     print("\n=== Retrain Result ===")

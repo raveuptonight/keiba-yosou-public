@@ -18,23 +18,28 @@ async def get_table_schema(table_name: str):
     """テーブルスキーマを取得（デバッグ用）"""
     async with get_connection() as conn:
         # Get table schema
-        rows = await conn.fetch("""
+        rows = await conn.fetch(
+            """
             SELECT column_name, data_type, character_maximum_length
             FROM information_schema.columns
             WHERE table_name = $1
             ORDER BY ordinal_position;
-        """, table_name)
+        """,
+            table_name,
+        )
 
         if not rows:
             return {"error": f"Table '{table_name}' not found"}
 
         columns = []
         for row in rows:
-            columns.append({
-                "column_name": row['column_name'],
-                "data_type": row['data_type'],
-                "max_length": row['character_maximum_length']
-            })
+            columns.append(
+                {
+                    "column_name": row["column_name"],
+                    "data_type": row["data_type"],
+                    "max_length": row["character_maximum_length"],
+                }
+            )
 
         # Get sample data
         try:
@@ -43,8 +48,4 @@ async def get_table_schema(table_name: str):
         except Exception as e:
             sample_data = f"Error: {e}"
 
-        return {
-            "table_name": table_name,
-            "columns": columns,
-            "sample_data": sample_data
-        }
+        return {"table_name": table_name, "columns": columns, "sample_data": sample_data}

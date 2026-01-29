@@ -25,17 +25,17 @@ from src.scheduler.result.notifier import (
 
 __all__ = [
     # DB operations
-    'get_race_results',
-    'get_payouts',
-    'load_predictions_from_db',
-    'save_analysis_to_db',
-    'update_accuracy_tracking',
-    'get_cumulative_stats',
-    'get_recent_race_dates',
+    "get_race_results",
+    "get_payouts",
+    "load_predictions_from_db",
+    "save_analysis_to_db",
+    "update_accuracy_tracking",
+    "get_cumulative_stats",
+    "get_recent_race_dates",
     # Analyzer
-    'compare_results',
-    'calculate_accuracy',
+    "compare_results",
+    "calculate_accuracy",
     # Notifier
-    'send_discord_notification',
-    'send_weekend_notification',
+    "send_discord_notification",
+    "send_weekend_notification",
 ]

@@ -110,9 +110,7 @@ async def get_horse_info(conn: Connection, kettonum: str) -> dict[str, Any] | No
 
 
 async def get_horses_recent_races(
-    conn: Connection,
-    kettonums: list[str],
-    limit: int = 10
+    conn: Connection, kettonums: list[str], limit: int = 10
 ) -> dict[str, list[dict[str, Any]]]:
     """
     複数の馬の過去成績を一括取得（直近N走）
@@ -198,9 +196,7 @@ async def get_horses_recent_races(
 
 
 async def get_horse_recent_races(
-    conn: Connection,
-    kettonum: str,
-    limit: int = 10
+    conn: Connection, kettonum: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
     単一馬の過去成績を取得（直近N走）
@@ -217,10 +213,7 @@ async def get_horse_recent_races(
     return result.get(kettonum, [])
 
 
-async def get_horses_pedigree(
-    conn: Connection,
-    kettonums: list[str]
-) -> dict[str, dict[str, Any]]:
+async def get_horses_pedigree(conn: Connection, kettonums: list[str]) -> dict[str, dict[str, Any]]:
     """
     複数の馬の血統情報を一括取得
 
@@ -278,9 +271,7 @@ async def get_horses_pedigree(
 
 
 async def get_horses_training(
-    conn: Connection,
-    kettonums: list[str],
-    days_back: int = 30
+    conn: Connection, kettonums: list[str], days_back: int = 30
 ) -> dict[str, list[dict[str, Any]]]:
     """
     複数の馬の調教情報を一括取得（直近N日分）
@@ -353,7 +344,7 @@ async def get_horses_training(
         # kettonum ごとにグループ化
         result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
-            kettonum = row['ketto_toroku_bango']
+            kettonum = row["ketto_toroku_bango"]
             if kettonum not in result:
                 result[kettonum] = []
             result[kettonum].append(dict(row))
@@ -365,9 +356,7 @@ async def get_horses_training(
 
 
 async def get_horses_statistics(
-    conn: Connection,
-    race_id: str,
-    kettonums: list[str]
+    conn: Connection, race_id: str, kettonums: list[str]
 ) -> dict[str, dict[str, Any]]:
     """
     複数の馬の着度数統計を一括取得
@@ -411,9 +400,7 @@ async def get_horses_statistics(
 
 
 async def get_horse_detail(
-    conn: Connection,
-    kettonum: str,
-    history_limit: int = 10
+    conn: Connection, kettonum: str, history_limit: int = 10
 ) -> dict[str, Any] | None:
     """
     馬の詳細情報を取得（基本情報+過去成績+血統）
@@ -447,7 +434,7 @@ async def get_horse_detail(
         "recent_races": recent_races,
         "pedigree": pedigree,
         "training": training,
-        "total_races": len(recent_races)
+        "total_races": len(recent_races),
     }
 
 
@@ -471,16 +458,14 @@ async def check_horse_exists(conn: Connection, kettonum: str) -> bool:
 
     try:
         row = await conn.fetchrow(sql, kettonum)
-        return row['exists'] if row else False
+        return row["exists"] if row else False
     except Exception as e:
         logger.error(f"Failed to check horse exists: kettonum={kettonum}, error={e}")
         raise
 
 
 async def search_horses_by_name(
-    conn: Connection,
-    name: str,
-    limit: int = 10
+    conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
     馬名で馬を検索
@@ -526,14 +511,18 @@ async def search_horses_by_name(
 
         result = []
         for row in rows:
-            result.append({
-                "kettonum": row["ketto_toroku_bango"].strip() if row["ketto_toroku_bango"] else "",
-                "name": row["bamei"].strip() if row["bamei"] else "",
-                "sex": row["seibetsu_code"].strip() if row["seibetsu_code"] else "",
-                "birth_date": row["seinengappi"],
-                "runs": row["race_count"] or 0,
-                "wins": row["win_count"] or 0,
-            })
+            result.append(
+                {
+                    "kettonum": (
+                        row["ketto_toroku_bango"].strip() if row["ketto_toroku_bango"] else ""
+                    ),
+                    "name": row["bamei"].strip() if row["bamei"] else "",
+                    "sex": row["seibetsu_code"].strip() if row["seibetsu_code"] else "",
+                    "birth_date": row["seinengappi"],
+                    "runs": row["race_count"] or 0,
+                    "wins": row["win_count"] or 0,
+                }
+            )
 
         return result
     except Exception as e:
@@ -542,10 +531,7 @@ async def search_horses_by_name(
 
 
 async def get_training_before_race(
-    conn: Connection,
-    kettonum: str,
-    race_date: str,
-    days_before: int = 14
+    conn: Connection, kettonum: str, race_date: str, days_before: int = 14
 ) -> dict[str, Any] | None:
     """
     レース前の直近調教データを取得
@@ -587,11 +573,7 @@ async def get_training_before_race(
         """
 
         hanro_row = await conn.fetchrow(
-            hanro_sql,
-            kettonum,
-            start_date_str,
-            race_date,
-            DATA_KUBUN_KAKUTEI
+            hanro_sql, kettonum, start_date_str, race_date, DATA_KUBUN_KAKUTEI
         )
 
         # ウッドチップ調教データを検索
@@ -611,11 +593,7 @@ async def get_training_before_race(
         """
 
         wood_row = await conn.fetchrow(
-            wood_sql,
-            kettonum,
-            start_date_str,
-            race_date,
-            DATA_KUBUN_KAKUTEI
+            wood_sql, kettonum, start_date_str, race_date, DATA_KUBUN_KAKUTEI
         )
 
         # より新しい方を返す
@@ -632,5 +610,7 @@ async def get_training_before_race(
             return None
 
     except Exception as e:
-        logger.error(f"Failed to get training data: kettonum={kettonum}, race_date={race_date}, error={e}")
+        logger.error(
+            f"Failed to get training data: kettonum={kettonum}, race_date={race_date}, error={e}"
+        )
         return None

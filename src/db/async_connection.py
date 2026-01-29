@@ -44,9 +44,7 @@ async def init_db_pool() -> None:
             max_size=DB_POOL_MAX_SIZE,
             command_timeout=120,  # 120秒でタイムアウト
         )
-        logger.info(
-            f"Database pool initialized: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-        )
+        logger.info(f"Database pool initialized: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
     except Exception as e:
         logger.error(f"Failed to initialize database pool: {e}")
         raise
@@ -80,9 +78,7 @@ def get_pool() -> asyncpg.Pool:
         RuntimeError: プールが初期化されていない場合
     """
     if _pool is None:
-        raise RuntimeError(
-            "Database pool not initialized. Call init_db_pool() first."
-        )
+        raise RuntimeError("Database pool not initialized. Call init_db_pool() first.")
     return _pool
 
 

@@ -42,15 +42,15 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     logger.info(f"Starting model training: {len(df)} samples")
 
     # Separate features and target
-    target_col = 'target'
-    exclude_cols = {target_col, 'race_code'}  # race_code is object type, exclude
+    target_col = "target"
+    exclude_cols = {target_col, "race_code"}  # race_code is object type, exclude
     feature_cols = [c for c in df.columns if c not in exclude_cols]
 
     X = df[feature_cols].fillna(0)
     y = df[target_col]
 
     # Classification targets
-    y_win = (y == 1).astype(int)    # Win (1st place)
+    y_win = (y == 1).astype(int)  # Win (1st place)
     y_place = (y <= 3).astype(int)  # Place (top 3)
 
     # ===== 3-way split (time-ordered) =====
@@ -60,7 +60,7 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
 
     X_train = X.iloc[:train_end]
     X_calib = X.iloc[train_end:calib_end]  # For calibrator
-    X_test = X.iloc[calib_end:]             # Final evaluation
+    X_test = X.iloc[calib_end:]  # Final evaluation
     X_val = X_calib  # Use calib data for early stopping
 
     y_train = y.iloc[:train_end]
@@ -82,21 +82,21 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
 
     # Common parameters
     base_params = {
-        'n_estimators': 800,
-        'max_depth': 7,
-        'learning_rate': 0.03,
-        'subsample': 0.8,
-        'colsample_bytree': 0.8,
-        'reg_alpha': 0.1,
-        'reg_lambda': 1.0,
-        'random_state': 42,
-        'n_jobs': -1
+        "n_estimators": 800,
+        "max_depth": 7,
+        "learning_rate": 0.03,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+        "reg_alpha": 0.1,
+        "reg_lambda": 1.0,
+        "random_state": 42,
+        "n_jobs": -1,
     }
 
     # GPU settings
     if use_gpu:
-        base_params['tree_method'] = 'hist'
-        base_params['device'] = 'cuda'
+        base_params["tree_method"] = "hist"
+        base_params["device"] = "cuda"
         logger.info("GPU training mode")
     else:
         logger.info("CPU training mode")
@@ -106,16 +106,10 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     # ===== 1. Regression Model (Finishing Position) =====
     logger.info("Training regression model...")
     reg_model = xgb.XGBRegressor(
-        objective='reg:squarederror',
-        early_stopping_rounds=50,
-        **base_params
+        objective="reg:squarederror", early_stopping_rounds=50, **base_params
     )
-    reg_model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        verbose=100
-    )
-    models['regressor'] = reg_model
+    reg_model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=100)
+    models["regressor"] = reg_model
 
     # Regression validation
     pred_reg = reg_model.predict(X_val)
@@ -125,18 +119,14 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     # ===== 2. Win Classifier =====
     logger.info("Training win classifier...")
     win_params = base_params.copy()
-    win_params['scale_pos_weight'] = len(y_win_train[y_win_train == 0]) / max(len(y_win_train[y_win_train == 1]), 1)
+    win_params["scale_pos_weight"] = len(y_win_train[y_win_train == 0]) / max(
+        len(y_win_train[y_win_train == 1]), 1
+    )
     win_model = xgb.XGBClassifier(
-        objective='binary:logistic',
-        early_stopping_rounds=50,
-        **win_params
+        objective="binary:logistic", early_stopping_rounds=50, **win_params
     )
-    win_model.fit(
-        X_train, y_win_train,
-        eval_set=[(X_val, y_win_val)],
-        verbose=100
-    )
-    models['win_classifier'] = win_model
+    win_model.fit(X_train, y_win_train, eval_set=[(X_val, y_win_val)], verbose=100)
+    models["win_classifier"] = win_model
 
     # Win classifier validation
     pred_win_prob = win_model.predict_proba(X_val)[:, 1]
@@ -146,18 +136,14 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     # ===== 3. Place Classifier =====
     logger.info("Training place classifier...")
     place_params = base_params.copy()
-    place_params['scale_pos_weight'] = len(y_place_train[y_place_train == 0]) / max(len(y_place_train[y_place_train == 1]), 1)
+    place_params["scale_pos_weight"] = len(y_place_train[y_place_train == 0]) / max(
+        len(y_place_train[y_place_train == 1]), 1
+    )
     place_model = xgb.XGBClassifier(
-        objective='binary:logistic',
-        early_stopping_rounds=50,
-        **place_params
+        objective="binary:logistic", early_stopping_rounds=50, **place_params
     )
-    place_model.fit(
-        X_train, y_place_train,
-        eval_set=[(X_val, y_place_val)],
-        verbose=100
-    )
-    models['place_classifier'] = place_model
+    place_model.fit(X_train, y_place_train, eval_set=[(X_val, y_place_val)], verbose=100)
+    models["place_classifier"] = place_model
 
     # Place classifier validation
     pred_place_prob = place_model.predict_proba(X_val)[:, 1]
@@ -172,14 +158,14 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     pred_place_prob_calib = place_model.predict_proba(X_calib)[:, 1]
 
     # Win probability calibration
-    win_calibrator = IsotonicRegression(out_of_bounds='clip')
+    win_calibrator = IsotonicRegression(out_of_bounds="clip")
     win_calibrator.fit(pred_win_prob_calib, y_win_calib)
-    models['win_calibrator'] = win_calibrator
+    models["win_calibrator"] = win_calibrator
 
     # Place probability calibration
-    place_calibrator = IsotonicRegression(out_of_bounds='clip')
+    place_calibrator = IsotonicRegression(out_of_bounds="clip")
     place_calibrator.fit(pred_place_prob_calib, y_place_calib)
-    models['place_calibrator'] = place_calibrator
+    models["place_calibrator"] = place_calibrator
 
     # ===== 5. Final Evaluation (Test data) =====
     logger.info("Final evaluation (test data)...")
@@ -205,31 +191,35 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     place_brier = brier_score_loss(y_place_test, calibrated_place_test)
 
     logger.info(f"Win AUC: {win_auc:.4f} (raw: {win_auc_raw:.4f})")
-    logger.info(f"Win Brier: {win_brier:.4f} (raw: {win_brier_raw:.4f}, improvement: {(win_brier_raw - win_brier) / win_brier_raw * 100:.1f}%)")
+    logger.info(
+        f"Win Brier: {win_brier:.4f} (raw: {win_brier_raw:.4f}, improvement: {(win_brier_raw - win_brier) / win_brier_raw * 100:.1f}%)"
+    )
     logger.info(f"Place AUC: {place_auc:.4f} (raw: {place_auc_raw:.4f})")
-    logger.info(f"Place Brier: {place_brier:.4f} (raw: {place_brier_raw:.4f}, improvement: {(place_brier_raw - place_brier) / place_brier_raw * 100:.1f}%)")
-    logger.info(f"Calibrated - Win prob mean: {calibrated_win_test.mean():.4f}, Place prob mean: {calibrated_place_test.mean():.4f}")
+    logger.info(
+        f"Place Brier: {place_brier:.4f} (raw: {place_brier_raw:.4f}, improvement: {(place_brier_raw - place_brier) / place_brier_raw * 100:.1f}%)"
+    )
+    logger.info(
+        f"Calibrated - Win prob mean: {calibrated_win_test.mean():.4f}, Place prob mean: {calibrated_place_test.mean():.4f}"
+    )
 
     # Feature importance (from regression model)
-    importance = dict(sorted(
-        zip(feature_cols, reg_model.feature_importances_),
-        key=lambda x: x[1],
-        reverse=True
-    ))
+    importance = dict(
+        sorted(zip(feature_cols, reg_model.feature_importances_), key=lambda x: x[1], reverse=True)
+    )
 
     return models, {
-        'feature_names': feature_cols,
-        'rmse': rmse,
-        'win_accuracy': win_accuracy,
-        'place_accuracy': place_accuracy,
-        'win_auc': win_auc,
-        'win_brier': win_brier,
-        'place_auc': place_auc,
-        'place_brier': place_brier,
-        'importance': importance,
-        'train_size': len(X_train),
-        'calib_size': len(X_calib),
-        'test_size': len(X_test)
+        "feature_names": feature_cols,
+        "rmse": rmse,
+        "win_accuracy": win_accuracy,
+        "place_accuracy": place_accuracy,
+        "win_auc": win_auc,
+        "win_brier": win_brier,
+        "place_auc": place_auc,
+        "place_brier": place_brier,
+        "importance": importance,
+        "train_size": len(X_train),
+        "calib_size": len(X_calib),
+        "test_size": len(X_test),
     }
 
 
@@ -252,16 +242,16 @@ def save_model(models: dict, results: dict, output_dir: str) -> str:
 
     model_data = {
         # Backward compatibility: keep 'model' key for regression model
-        'model': models['regressor'],
+        "model": models["regressor"],
         # New model structure
-        'models': models,
-        'feature_names': results['feature_names'],
-        'feature_importance': results['importance'],
-        'trained_at': timestamp,
-        'rmse': results['rmse'],
-        'win_accuracy': results.get('win_accuracy'),
-        'place_accuracy': results.get('place_accuracy'),
-        'version': 'v2_enhanced'
+        "models": models,
+        "feature_names": results["feature_names"],
+        "feature_importance": results["importance"],
+        "trained_at": timestamp,
+        "rmse": results["rmse"],
+        "win_accuracy": results.get("win_accuracy"),
+        "place_accuracy": results.get("place_accuracy"),
+        "version": "v2_enhanced",
     }
 
     joblib.dump(model_data, model_path)

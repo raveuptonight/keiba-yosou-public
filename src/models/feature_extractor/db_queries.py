@@ -55,7 +55,7 @@ def get_all_entries(conn, race_codes: list[str]) -> list[dict]:
     if not race_codes:
         return []
 
-    placeholders = ','.join(['%s'] * len(race_codes))
+    placeholders = ",".join(["%s"] * len(race_codes))
     sql = f"""
         SELECT
             race_code, umaban, wakuban, ketto_toroku_bango,
@@ -97,12 +97,12 @@ def get_past_stats_batch(conn, kettonums: list[str], entries: list[dict] = None)
     horse_race_map = {}
     if entries:
         for e in entries:
-            k = e.get('ketto_toroku_bango', '')
-            rc = e.get('race_code', '')
+            k = e.get("ketto_toroku_bango", "")
+            rc = e.get("race_code", "")
             if k and rc:
                 horse_race_map[k] = rc
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     # Add condition to exclude current race
     if horse_race_map:
@@ -110,7 +110,7 @@ def get_past_stats_batch(conn, kettonums: list[str], entries: list[dict] = None)
         values_parts = []
         params = list(kettonums)
         for k in kettonums:
-            rc = horse_race_map.get(k, '9999999999999999')  # Include all if not found
+            rc = horse_race_map.get(k, "9999999999999999")  # Include all if not found
             values_parts.append("(%s, %s)")
             params.extend([k, rc])
 
@@ -220,21 +220,21 @@ def get_past_stats_batch(conn, kettonums: list[str], entries: list[dict] = None)
         recent_time = float(row[7]) if row[7] else None
 
         result[kettonum] = {
-            'race_count': race_count,
-            'avg_rank': float(row[2]) if row[2] else 8.0,
-            'win_rate': int(row[3] or 0) / race_count if race_count > 0 else 0,
-            'place_rate': int(row[4] or 0) / race_count if race_count > 0 else 0,
-            'win_count': int(row[3] or 0),
-            'avg_time': avg_time,
-            'best_time': best_time,
-            'recent_time': recent_time,
-            'avg_last3f': float(row[8] or 350) / 10.0,
-            'best_last3f': float(row[9] or 350) / 10.0 if row[9] else 35.0,
-            'avg_corner3': float(row[10]) if row[10] else 8.0,
-            'avg_corner4': float(row[11]) if row[11] else 8.0,
-            'best_finish': int(row[12]) if row[12] else 10,
-            'last_jockey': row[13],
-            'last_race_date': row[14]
+            "race_count": race_count,
+            "avg_rank": float(row[2]) if row[2] else 8.0,
+            "win_rate": int(row[3] or 0) / race_count if race_count > 0 else 0,
+            "place_rate": int(row[4] or 0) / race_count if race_count > 0 else 0,
+            "win_count": int(row[3] or 0),
+            "avg_time": avg_time,
+            "best_time": best_time,
+            "recent_time": recent_time,
+            "avg_last3f": float(row[8] or 350) / 10.0,
+            "best_last3f": float(row[9] or 350) / 10.0 if row[9] else 35.0,
+            "avg_corner3": float(row[10]) if row[10] else 8.0,
+            "avg_corner4": float(row[11]) if row[11] else 8.0,
+            "best_finish": int(row[12]) if row[12] else 10,
+            "last_jockey": row[13],
+            "last_race_date": row[14],
         }
 
     return result
@@ -289,7 +289,7 @@ def get_jockey_horse_combo_batch(conn, pairs: list[tuple[str, str]]) -> dict[str
         result = {}
         for row in rows:
             key = f"{row[0]}_{row[1]}"
-            result[key] = {'runs': int(row[2] or 0), 'wins': int(row[3] or 0)}
+            result[key] = {"runs": int(row[2] or 0), "wins": int(row[3] or 0)}
         return result
     except Exception as e:
         logger.debug(f"Jockey-horse combo batch failed: {e}")
@@ -310,7 +310,7 @@ def get_training_stats_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     if not kettonums:
         return {}
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
 
     # Slope training data
     sql_hanro = f"""
@@ -343,12 +343,12 @@ def get_training_stats_batch(conn, kettonums: list[str]) -> dict[str, dict]:
             score = max(30.0, min(80.0, score))
 
             result[kettonum] = {
-                'count': count,
-                'score': score,
-                'time_4f': avg_4f,
-                'time_3f': avg_3f,
-                'lap_1f': avg_1f,
-                'days_before': 7
+                "count": count,
+                "score": score,
+                "time_4f": avg_4f,
+                "time_3f": avg_3f,
+                "lap_1f": avg_1f,
+                "days_before": 7,
             }
 
         cur.close()
@@ -394,10 +394,7 @@ def cache_jockey_trainer_stats(conn, year: int) -> tuple[dict, dict]:
     for row in cur.fetchall():
         code, total, wins, places = row
         if code and total > 0:
-            jockey_cache[code] = {
-                'win_rate': wins / total,
-                'place_rate': places / total
-            }
+            jockey_cache[code] = {"win_rate": wins / total, "place_rate": places / total}
     cur.close()
 
     # Trainer stats
@@ -419,10 +416,7 @@ def cache_jockey_trainer_stats(conn, year: int) -> tuple[dict, dict]:
     for row in cur.fetchall():
         code, total, wins, places = row
         if code and total > 0:
-            trainer_cache[code] = {
-                'win_rate': wins / total,
-                'place_rate': places / total
-            }
+            trainer_cache[code] = {"win_rate": wins / total, "place_rate": places / total}
     cur.close()
 
     logger.info(f"  Jockey cache: {len(jockey_cache)}, Trainer cache: {len(trainer_cache)}")

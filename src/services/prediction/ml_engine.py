@@ -18,7 +18,9 @@ logger = logging.getLogger(__name__)
 ML_MODEL_PATH = Path("/app/models/ensemble_model_latest.pkl")
 if not ML_MODEL_PATH.exists():
     # Local development path
-    ML_MODEL_PATH = Path(__file__).parent.parent.parent.parent / "models" / "ensemble_model_latest.pkl"
+    ML_MODEL_PATH = (
+        Path(__file__).parent.parent.parent.parent / "models" / "ensemble_model_latest.pkl"
+    )
 
 
 def extract_future_race_features(conn, race_id: str, extractor, year: int):
@@ -41,7 +43,8 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     cur = conn.cursor()
 
     # 1. Get race information (registered data)
-    cur.execute('''
+    cur.execute(
+        """
         SELECT race_code, kaisai_nen, kaisai_gappi, keibajo_code,
                kyori, track_code, grade_code,
                shiba_babajotai_code, dirt_babajotai_code
@@ -49,7 +52,9 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
         WHERE race_code = %s
           AND data_kubun IN ('1', '2', '3', '4', '5', '6')
         LIMIT 1
-    ''', (race_id,))
+    """,
+        (race_id,),
+    )
 
     race_row = cur.fetchone()
     if not race_row:
@@ -60,7 +65,8 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     races = [dict(zip(race_cols, race_row))]
 
     # 2. Get horse entry data
-    cur.execute('''
+    cur.execute(
+        """
         SELECT
             race_code, umaban, wakuban, ketto_toroku_bango,
             seibetsu_code, barei, futan_juryo,
@@ -70,7 +76,9 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
         WHERE race_code = %s
           AND data_kubun IN ('1', '2', '3', '4', '5', '6')
         ORDER BY umaban::int
-    ''', (race_id,))
+    """,
+        (race_id,),
+    )
 
     cols = [d[0] for d in cur.description]
     rows = cur.fetchall()
@@ -83,7 +91,7 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     # Filter out horse_number 0 (scratched or registration-only entries)
     valid_entries = []
     for e in entries:
-        umaban = e.get('umaban', '00')
+        umaban = e.get("umaban", "00")
         try:
             if int(umaban) >= 1:
                 valid_entries.append(e)
@@ -94,37 +102,40 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     logger.info(f"Future race entries: {len(entries)} horses")
 
     # 3. Get past performance stats
-    kettonums = [e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')]
+    kettonums = [e["ketto_toroku_bango"] for e in entries if e.get("ketto_toroku_bango")]
     past_stats = extractor._get_past_stats_batch(kettonums)
 
     # 4. Cache jockey/trainer stats
     extractor._cache_jockey_trainer_stats(year)
 
     # 5. Get additional data
-    jh_pairs = [(e.get('kishu_code', ''), e.get('ketto_toroku_bango', ''))
-                for e in entries if e.get('kishu_code') and e.get('ketto_toroku_bango')]
+    jh_pairs = [
+        (e.get("kishu_code", ""), e.get("ketto_toroku_bango", ""))
+        for e in entries
+        if e.get("kishu_code") and e.get("ketto_toroku_bango")
+    ]
     jockey_horse_stats = extractor._get_jockey_horse_combo_batch(jh_pairs)
     surface_stats = extractor._get_surface_stats_batch(kettonums)
     turn_stats = extractor._get_turn_rates_batch(kettonums)
     for kettonum, stats in turn_stats.items():
         if kettonum in past_stats:
-            past_stats[kettonum]['right_turn_rate'] = stats['right_turn_rate']
-            past_stats[kettonum]['left_turn_rate'] = stats['left_turn_rate']
-            past_stats[kettonum]['right_turn_runs'] = stats.get('right_turn_runs', 0)
-            past_stats[kettonum]['left_turn_runs'] = stats.get('left_turn_runs', 0)
+            past_stats[kettonum]["right_turn_rate"] = stats["right_turn_rate"]
+            past_stats[kettonum]["left_turn_rate"] = stats["left_turn_rate"]
+            past_stats[kettonum]["right_turn_runs"] = stats.get("right_turn_runs", 0)
+            past_stats[kettonum]["left_turn_runs"] = stats.get("left_turn_runs", 0)
     training_stats = extractor._get_training_stats_batch(kettonums)
     # Venue stats (for prediction, use all data - don't pass entries)
     venue_stats = extractor._get_venue_stats_batch(kettonums)
 
     # 5.5 Get pedigree/sire/jockey maiden stats
     pedigree_info = extractor._get_pedigree_batch(kettonums)
-    race_codes = [e['race_code'] for e in entries]
+    race_codes = [e["race_code"] for e in entries]
     zenso_info = extractor._get_zenso_batch(kettonums, race_codes, entries)
-    jockey_codes = list({e.get('kishu_code', '') for e in entries if e.get('kishu_code')})
+    jockey_codes = list({e.get("kishu_code", "") for e in entries if e.get("kishu_code")})
     jockey_recent = extractor._get_jockey_recent_batch(jockey_codes, year)
 
     # Sire stats
-    sire_ids = [p.get('sire_id', '') for p in pedigree_info.values() if p.get('sire_id')]
+    sire_ids = [p.get("sire_id", "") for p in pedigree_info.values() if p.get("sire_id")]
     sire_stats_turf = extractor._get_sire_stats_batch(sire_ids, year, is_turf=True)
     sire_stats_dirt = extractor._get_sire_stats_batch(sire_ids, year, is_turf=False)
 
@@ -136,10 +147,12 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     # 6. Build features (with dummy finishing position)
     features_list = []
     for entry in entries:
-        entry['kakutei_chakujun'] = '01'  # Dummy for prediction
+        entry["kakutei_chakujun"] = "01"  # Dummy for prediction
 
         features = extractor._build_features(
-            entry, races, past_stats,
+            entry,
+            races,
+            past_stats,
             jockey_horse_stats=jockey_horse_stats,
             distance_stats=surface_stats,
             training_stats=training_stats,
@@ -151,10 +164,10 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
             sire_stats_dirt=sire_stats_dirt,
             sire_maiden_stats=sire_maiden_stats,
             jockey_maiden_stats=jockey_maiden_stats,
-            year=year
+            year=year,
         )
         if features:
-            features['bamei'] = entry.get('bamei', '')
+            features["bamei"] = entry.get("bamei", "")
             features_list.append(features)
 
     cur.close()
@@ -166,10 +179,7 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
 
 
 def compute_ml_predictions(
-    race_id: str,
-    horses: list[dict],
-    bias_date: str | None = None,
-    is_final: bool = False
+    race_id: str, horses: list[dict], bias_date: str | None = None, is_final: bool = False
 ) -> dict[str, Any]:
     """
     Compute ML predictions for a race.
@@ -212,52 +222,52 @@ def compute_ml_predictions(
         # Format 1: v2_enhanced_ensemble (new: classification model + calibration)
         # Format 2: xgb_model, lgb_model (weekly retrain format)
         # Format 3: models.xgboost, models.lightgbm (legacy)
-        models_dict = model_data.get('models', {})
-        model_data.get('version', '')
+        models_dict = model_data.get("models", {})
+        model_data.get("version", "")
 
         # Get regression models
-        if 'xgb_regressor' in models_dict:
-            xgb_model = models_dict['xgb_regressor']
-            lgb_model = models_dict.get('lgb_regressor')
-        elif 'xgb_model' in model_data:
-            xgb_model = model_data['xgb_model']
-            lgb_model = model_data.get('lgb_model')
-        elif 'xgboost' in models_dict:
-            xgb_model = models_dict.get('xgboost')
-            lgb_model = models_dict.get('lightgbm')
+        if "xgb_regressor" in models_dict:
+            xgb_model = models_dict["xgb_regressor"]
+            lgb_model = models_dict.get("lgb_regressor")
+        elif "xgb_model" in model_data:
+            xgb_model = model_data["xgb_model"]
+            lgb_model = model_data.get("lgb_model")
+        elif "xgboost" in models_dict:
+            xgb_model = models_dict.get("xgboost")
+            lgb_model = models_dict.get("lightgbm")
         else:
             logger.error("Invalid model format: ensemble_model required")
             return {}
 
         # Get classification models and calibrators (new format only)
-        xgb_win = models_dict.get('xgb_win')
-        lgb_win = models_dict.get('lgb_win')
-        xgb_quinella = models_dict.get('xgb_quinella')
-        lgb_quinella = models_dict.get('lgb_quinella')
-        xgb_place = models_dict.get('xgb_place')
-        lgb_place = models_dict.get('lgb_place')
-        win_calibrator = models_dict.get('win_calibrator')
-        quinella_calibrator = models_dict.get('quinella_calibrator')
-        place_calibrator = models_dict.get('place_calibrator')
+        xgb_win = models_dict.get("xgb_win")
+        lgb_win = models_dict.get("lgb_win")
+        xgb_quinella = models_dict.get("xgb_quinella")
+        lgb_quinella = models_dict.get("lgb_quinella")
+        xgb_place = models_dict.get("xgb_place")
+        lgb_place = models_dict.get("lgb_place")
+        win_calibrator = models_dict.get("win_calibrator")
+        quinella_calibrator = models_dict.get("quinella_calibrator")
+        place_calibrator = models_dict.get("place_calibrator")
 
         # Get CatBoost models (v5+)
-        cb_model = models_dict.get('cb_regressor')
-        cb_win = models_dict.get('cb_win')
-        cb_quinella = models_dict.get('cb_quinella')
-        cb_place = models_dict.get('cb_place')
+        cb_model = models_dict.get("cb_regressor")
+        cb_win = models_dict.get("cb_win")
+        cb_quinella = models_dict.get("cb_quinella")
+        cb_place = models_dict.get("cb_place")
         has_catboost = cb_model is not None
 
         # Ensemble weights (default: XGB+LGB equal)
-        ensemble_weights = model_data.get('ensemble_weights', {
-            'xgb': 0.5, 'lgb': 0.5, 'cb': 0.0
-        })
+        ensemble_weights = model_data.get("ensemble_weights", {"xgb": 0.5, "lgb": 0.5, "cb": 0.0})
 
         has_classifiers = xgb_win is not None and lgb_win is not None
         has_quinella = xgb_quinella is not None and lgb_quinella is not None
 
-        feature_names = model_data.get('feature_names', [])
-        logger.info(f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}, "
-                   f"CatBoost={'yes' if has_catboost else 'no'}")
+        feature_names = model_data.get("feature_names", [])
+        logger.info(
+            f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}, "
+            f"CatBoost={'yes' if has_catboost else 'no'}"
+        )
 
         # Get DB connection
         db = get_db()
@@ -275,7 +285,7 @@ def compute_ml_predictions(
 
             # First try to get confirmed data (past races)
             df = extractor.extract_year_data(year, max_races=10000)
-            race_df = df[df['race_code'] == race_id].copy() if len(df) > 0 else pd.DataFrame()
+            race_df = df[df["race_code"] == race_id].copy() if len(df) > 0 else pd.DataFrame()
 
             # If no confirmed data, extract features directly for future race
             if len(race_df) == 0:
@@ -297,7 +307,7 @@ def compute_ml_predictions(
                     race_df[f] = 0
 
             X = race_df[feature_names].fillna(0)
-            features_list = race_df.to_dict('records')
+            features_list = race_df.to_dict("records")
 
             # ML prediction (ensemble_model: XGBoost + LightGBM + CatBoost)
             if not xgb_model or not lgb_model:
@@ -312,12 +322,12 @@ def compute_ml_predictions(
             if has_catboost:
                 cb_pred = cb_model.predict(X)
                 w = ensemble_weights
-                rank_scores = (xgb_pred * w['xgb'] + lgb_pred * w['lgb'] + cb_pred * w['cb'])
+                rank_scores = xgb_pred * w["xgb"] + lgb_pred * w["lgb"] + cb_pred * w["cb"]
             else:
                 # Backward compatibility: XGB+LGB only
                 w = ensemble_weights
-                xgb_w = w.get('xgb', 0.5)
-                lgb_w = w.get('lgb', 0.5)
+                xgb_w = w.get("xgb", 0.5)
+                lgb_w = w.get("lgb", 0.5)
                 total = xgb_w + lgb_w
                 rank_scores = (xgb_pred * xgb_w + lgb_pred * lgb_w) / total
 
@@ -333,11 +343,13 @@ def compute_ml_predictions(
                 if has_catboost and cb_win is not None:
                     cb_win_prob = cb_win.predict_proba(X)[:, 1]
                     w = ensemble_weights
-                    win_probs = (xgb_win_prob * w['xgb'] + lgb_win_prob * w['lgb'] + cb_win_prob * w['cb'])
+                    win_probs = (
+                        xgb_win_prob * w["xgb"] + lgb_win_prob * w["lgb"] + cb_win_prob * w["cb"]
+                    )
                 else:
                     w = ensemble_weights
-                    xgb_w = w.get('xgb', 0.5)
-                    lgb_w = w.get('lgb', 0.5)
+                    xgb_w = w.get("xgb", 0.5)
+                    lgb_w = w.get("lgb", 0.5)
                     total = xgb_w + lgb_w
                     win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
 
@@ -349,13 +361,19 @@ def compute_ml_predictions(
                     if has_catboost and cb_quinella is not None:
                         cb_quinella_prob = cb_quinella.predict_proba(X)[:, 1]
                         w = ensemble_weights
-                        quinella_probs = (xgb_quinella_prob * w['xgb'] + lgb_quinella_prob * w['lgb'] + cb_quinella_prob * w['cb'])
+                        quinella_probs = (
+                            xgb_quinella_prob * w["xgb"]
+                            + lgb_quinella_prob * w["lgb"]
+                            + cb_quinella_prob * w["cb"]
+                        )
                     else:
                         w = ensemble_weights
-                        xgb_w = w.get('xgb', 0.5)
-                        lgb_w = w.get('lgb', 0.5)
+                        xgb_w = w.get("xgb", 0.5)
+                        lgb_w = w.get("lgb", 0.5)
                         total = xgb_w + lgb_w
-                        quinella_probs = (xgb_quinella_prob * xgb_w + lgb_quinella_prob * lgb_w) / total
+                        quinella_probs = (
+                            xgb_quinella_prob * xgb_w + lgb_quinella_prob * lgb_w
+                        ) / total
                 else:
                     # Legacy compatibility: estimate from win and place rates
                     quinella_probs = None
@@ -367,11 +385,15 @@ def compute_ml_predictions(
                 if has_catboost and cb_place is not None:
                     cb_place_prob = cb_place.predict_proba(X)[:, 1]
                     w = ensemble_weights
-                    place_probs = (xgb_place_prob * w['xgb'] + lgb_place_prob * w['lgb'] + cb_place_prob * w['cb'])
+                    place_probs = (
+                        xgb_place_prob * w["xgb"]
+                        + lgb_place_prob * w["lgb"]
+                        + cb_place_prob * w["cb"]
+                    )
                 else:
                     w = ensemble_weights
-                    xgb_w = w.get('xgb', 0.5)
-                    lgb_w = w.get('lgb', 0.5)
+                    xgb_w = w.get("xgb", 0.5)
+                    lgb_w = w.get("lgb", 0.5)
                     total = xgb_w + lgb_w
                     place_probs = (xgb_place_prob * xgb_w + lgb_place_prob * lgb_w) / total
 
@@ -415,10 +437,10 @@ def compute_ml_predictions(
             # Convert results to dictionary format
             ml_scores = {}
             for i, features in enumerate(features_list):
-                horse_num = features.get('umaban', i + 1)
+                horse_num = features.get("umaban", i + 1)
                 score_data = {
                     "rank_score": float(rank_scores[i]),
-                    "win_probability": float(min(1.0, win_probs[i]))  # Clip
+                    "win_probability": float(min(1.0, win_probs[i])),  # Clip
                 }
                 if quinella_probs is not None:
                     # Clip individual probability to not exceed 1.0
@@ -433,7 +455,9 @@ def compute_ml_predictions(
             # Debug: Check ML scores
             sample_scores = list(ml_scores.items())[:3]
             for umaban, data in sample_scores:
-                logger.info(f"DEBUG ml_score[{umaban}]: win={data.get('win_probability', 0)*100:.4f}%")
+                logger.info(
+                    f"DEBUG ml_score[{umaban}]: win={data.get('win_probability', 0)*100:.4f}%"
+                )
 
             # Apply bias
             # Priority:
@@ -443,16 +467,14 @@ def compute_ml_predictions(
             from datetime import date, timedelta
 
             # Determine bias date from parameter or environment
-            bias_date_str = bias_date or os.environ.get('KEIBA_BIAS_DATE')
+            bias_date_str = bias_date or os.environ.get("KEIBA_BIAS_DATE")
 
             if bias_date_str:
                 # Use specified bias
                 bias_data = load_bias_for_date(bias_date_str)
                 if bias_data:
                     logger.info(f"Applying bias: {bias_date_str}")
-                    ml_scores = apply_bias_to_scores(
-                        ml_scores, race_id, horses, bias_data
-                    )
+                    ml_scores = apply_bias_to_scores(ml_scores, race_id, horses, bias_data)
                 else:
                     logger.warning(f"Bias file not found: {bias_date_str}")
             else:
@@ -467,9 +489,7 @@ def compute_ml_predictions(
                         bias_data = load_bias_for_date(saturday_date.isoformat())
                         if bias_data:
                             logger.info(f"Auto-detected bias applied: {saturday_date}")
-                            ml_scores = apply_bias_to_scores(
-                                ml_scores, race_id, horses, bias_data
-                            )
+                            ml_scores = apply_bias_to_scores(ml_scores, race_id, horses, bias_data)
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Bias application skipped: {e}")
 
@@ -477,15 +497,19 @@ def compute_ml_predictions(
             if is_final:
                 logger.info("Final prediction: applying track condition adjustment")
                 track_condition = get_current_track_condition(conn, race_id)
-                if track_condition and track_condition.get('condition', 0) > 0:
+                if track_condition and track_condition.get("condition", 0) > 0:
                     # Get horse registration numbers
-                    kettonums = [h.get('ketto_toroku_bango', '') for h in horses if h.get('ketto_toroku_bango')]
+                    kettonums = [
+                        h.get("ketto_toroku_bango", "")
+                        for h in horses
+                        if h.get("ketto_toroku_bango")
+                    ]
                     if kettonums:
                         baba_performance = get_horse_baba_performance(
                             conn,
                             kettonums,
-                            track_condition['track_type'],
-                            track_condition['condition']
+                            track_condition["track_type"],
+                            track_condition["condition"],
                         )
                         if baba_performance:
                             ml_scores = apply_track_condition_adjustment(

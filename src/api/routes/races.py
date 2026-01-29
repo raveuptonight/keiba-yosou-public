@@ -68,7 +68,7 @@ def _get_race_name_with_fallback(
     race_name: str,
     grade_code: str = None,
     kyoso_joken_code: str = None,
-    kyoso_shubetsu_code: str = None
+    kyoso_shubetsu_code: str = None,
 ) -> str:
     """レース名が空の場合にフォールバック値を返す"""
     if race_name and race_name.strip():
@@ -77,17 +77,13 @@ def _get_race_name_with_fallback(
     # レース名が空の場合、条件コードから生成
     from src.db.code_mappings import generate_race_condition_name
 
-    condition_name = generate_race_condition_name(
-        kyoso_joken_code,
-        kyoso_shubetsu_code,
-        grade_code
-    )
+    condition_name = generate_race_condition_name(kyoso_joken_code, kyoso_shubetsu_code, grade_code)
 
     if condition_name:
         return condition_name
 
     # それでも生成できない場合
-    if grade_code in ['A', 'B', 'C', 'D']:
+    if grade_code in ["A", "B", "C", "D"]:
         return "重賞レース"
     return "条件戦"
 
@@ -95,9 +91,16 @@ def _get_race_name_with_fallback(
 def _get_venue_name(venue_code: str) -> str:
     """競馬場コードから名称を取得"""
     venue_map = {
-        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
-        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
-        "09": "阪神", "10": "小倉"
+        "01": "札幌",
+        "02": "函館",
+        "03": "福島",
+        "04": "新潟",
+        "05": "東京",
+        "06": "中山",
+        "07": "中京",
+        "08": "京都",
+        "09": "阪神",
+        "10": "小倉",
     }
     return venue_map.get(venue_code, "不明")
 
@@ -134,17 +137,11 @@ def _format_track_code(track_code: str) -> str:
     response_model=RaceListResponse,
     status_code=status.HTTP_200_OK,
     summary="今日のレース一覧取得",
-    description="本日開催のレース一覧を取得します。グレードや競馬場でフィルタ可能。"
+    description="本日開催のレース一覧を取得します。グレードや競馬場でフィルタ可能。",
 )
 async def get_today_races(
-    grade: str | None = Query(
-        None,
-        description="グレードフィルタ（A=G1, B=G2, C=G3）"
-    ),
-    venue: str | None = Query(
-        None,
-        description="競馬場コード（01=札幌, 02=函館, etc.）"
-    )
+    grade: str | None = Query(None, description="グレードフィルタ（A=G1, B=G2, C=G3）"),
+    venue: str | None = Query(None, description="競馬場コード（01=札幌, 02=函館, etc.）"),
 ) -> RaceListResponse:
     """
     今日のレース一覧を取得
@@ -171,28 +168,28 @@ async def get_today_races(
                 # 出走頭数を取得
                 await get_race_entry_count(conn, race[COL_RACE_ID])
 
-                races.append(RaceBase(
-                    race_id=race[COL_RACE_ID],
-                    race_name=_get_race_name_with_fallback(
-                        race[COL_RACE_NAME],
-                        race.get(COL_GRADE_CD),
-                        race.get("kyoso_joken_code"),
-                        race.get(COL_KYOSO_SHUBETSU_CD)
-                    ),
-                    race_number=f"{race[COL_RACE_NUM]}R" if race.get(COL_RACE_NUM) else "不明",
-                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
-                    venue=_get_venue_name(race[COL_JYOCD]),
-                    venue_code=race[COL_JYOCD],
-                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
-                    distance=race[COL_KYORI],
-                    track_code=race[COL_TRACK_CD],
-                ))
+                races.append(
+                    RaceBase(
+                        race_id=race[COL_RACE_ID],
+                        race_name=_get_race_name_with_fallback(
+                            race[COL_RACE_NAME],
+                            race.get(COL_GRADE_CD),
+                            race.get("kyoso_joken_code"),
+                            race.get(COL_KYOSO_SHUBETSU_CD),
+                        ),
+                        race_number=f"{race[COL_RACE_NUM]}R" if race.get(COL_RACE_NUM) else "不明",
+                        race_time=race.get(COL_HASSO_JIKOKU, "不明"),
+                        venue=_get_venue_name(race[COL_JYOCD]),
+                        venue_code=race[COL_JYOCD],
+                        grade=_get_grade_display(race.get(COL_GRADE_CD)),
+                        distance=race[COL_KYORI],
+                        track_code=race[COL_TRACK_CD],
+                    )
+                )
 
             today = date.today()
             response = RaceListResponse(
-                date=today.strftime("%Y-%m-%d"),
-                races=races,
-                count=len(races)
+                date=today.strftime("%Y-%m-%d"), races=races, count=len(races)
             )
 
             logger.info(f"Found {len(races)} races for today")
@@ -208,19 +205,11 @@ async def get_today_races(
     response_model=RaceListResponse,
     status_code=status.HTTP_200_OK,
     summary="今後のレース一覧取得",
-    description="今後開催予定のレース一覧を取得します。"
+    description="今後開催予定のレース一覧を取得します。",
 )
 async def get_upcoming_races_list(
-    days: int = Query(
-        7,
-        ge=1,
-        le=30,
-        description="何日先まで取得するか（1-30日）"
-    ),
-    grade: str | None = Query(
-        None,
-        description="グレードフィルタ（A=G1, B=G2, C=G3）"
-    )
+    days: int = Query(7, ge=1, le=30, description="何日先まで取得するか（1-30日）"),
+    grade: str | None = Query(None, description="グレードフィルタ（A=G1, B=G2, C=G3）"),
 ) -> RaceListResponse:
     """
     今後のレース一覧を取得
@@ -240,28 +229,28 @@ async def get_upcoming_races_list(
 
             races = []
             for race in races_data:
-                races.append(RaceBase(
-                    race_id=race[COL_RACE_ID],
-                    race_name=_get_race_name_with_fallback(
-                        race[COL_RACE_NAME],
-                        race.get(COL_GRADE_CD),
-                        race.get("kyoso_joken_code"),
-                        race.get(COL_KYOSO_SHUBETSU_CD)
-                    ),
-                    race_number=f"{race.get(COL_RACE_NUM, '?')}R",
-                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
-                    venue=_get_venue_name(race[COL_JYOCD]),
-                    venue_code=race[COL_JYOCD],
-                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
-                    distance=race[COL_KYORI],
-                    track_code=race[COL_TRACK_CD],
-                    race_date=f"{race[COL_KAISAI_YEAR]}-{race[COL_KAISAI_MONTHDAY][:2]}-{race[COL_KAISAI_MONTHDAY][2:]}"
-                ))
+                races.append(
+                    RaceBase(
+                        race_id=race[COL_RACE_ID],
+                        race_name=_get_race_name_with_fallback(
+                            race[COL_RACE_NAME],
+                            race.get(COL_GRADE_CD),
+                            race.get("kyoso_joken_code"),
+                            race.get(COL_KYOSO_SHUBETSU_CD),
+                        ),
+                        race_number=f"{race.get(COL_RACE_NUM, '?')}R",
+                        race_time=race.get(COL_HASSO_JIKOKU, "不明"),
+                        venue=_get_venue_name(race[COL_JYOCD]),
+                        venue_code=race[COL_JYOCD],
+                        grade=_get_grade_display(race.get(COL_GRADE_CD)),
+                        distance=race[COL_KYORI],
+                        track_code=race[COL_TRACK_CD],
+                        race_date=f"{race[COL_KAISAI_YEAR]}-{race[COL_KAISAI_MONTHDAY][:2]}-{race[COL_KAISAI_MONTHDAY][2:]}",
+                    )
+                )
 
             response = RaceListResponse(
-                date=date.today().strftime("%Y-%m-%d"),
-                races=races,
-                count=len(races)
+                date=date.today().strftime("%Y-%m-%d"), races=races, count=len(races)
             )
 
             logger.info(f"Found {len(races)} upcoming races")
@@ -277,21 +266,12 @@ async def get_upcoming_races_list(
     response_model=RaceListResponse,
     status_code=status.HTTP_200_OK,
     summary="指定日のレース一覧取得",
-    description="指定した日付のレース一覧を取得します。"
+    description="指定した日付のレース一覧を取得します。",
 )
 async def get_races_for_date(
-    target_date: str = Path(
-        ...,
-        description="対象日（YYYY-MM-DD形式）"
-    ),
-    venue: str | None = Query(
-        None,
-        description="競馬場コード（01=札幌, 02=函館, etc.）"
-    ),
-    grade: str | None = Query(
-        None,
-        description="グレードフィルタ（A=G1, B=G2, C=G3）"
-    )
+    target_date: str = Path(..., description="対象日（YYYY-MM-DD形式）"),
+    venue: str | None = Query(None, description="競馬場コード（01=札幌, 02=函館, etc.）"),
+    grade: str | None = Query(None, description="グレードフィルタ（A=G1, B=G2, C=G3）"),
 ) -> RaceListResponse:
     """
     指定日のレース一覧を取得
@@ -308,6 +288,7 @@ async def get_races_for_date(
 
     try:
         from datetime import datetime
+
         parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
     except ValueError as e:
         raise DatabaseErrorException(f"Invalid date format: {target_date}. Use YYYY-MM-DD") from e
@@ -320,29 +301,27 @@ async def get_races_for_date(
 
             races = []
             for race in races_data:
-                races.append(RaceBase(
-                    race_id=race[COL_RACE_ID],
-                    race_name=_get_race_name_with_fallback(
-                        race[COL_RACE_NAME],
-                        race.get(COL_GRADE_CD),
-                        race.get("kyoso_joken_code"),
-                        race.get(COL_KYOSO_SHUBETSU_CD)
-                    ),
-                    race_number=f"{race.get(COL_RACE_NUM, '?')}R",
-                    race_time=race.get(COL_HASSO_JIKOKU, '不明'),
-                    venue=_get_venue_name(race[COL_JYOCD]),
-                    venue_code=race[COL_JYOCD],
-                    grade=_get_grade_display(race.get(COL_GRADE_CD)),
-                    distance=race[COL_KYORI],
-                    track_code=race[COL_TRACK_CD],
-                    race_date=target_date
-                ))
+                races.append(
+                    RaceBase(
+                        race_id=race[COL_RACE_ID],
+                        race_name=_get_race_name_with_fallback(
+                            race[COL_RACE_NAME],
+                            race.get(COL_GRADE_CD),
+                            race.get("kyoso_joken_code"),
+                            race.get(COL_KYOSO_SHUBETSU_CD),
+                        ),
+                        race_number=f"{race.get(COL_RACE_NUM, '?')}R",
+                        race_time=race.get(COL_HASSO_JIKOKU, "不明"),
+                        venue=_get_venue_name(race[COL_JYOCD]),
+                        venue_code=race[COL_JYOCD],
+                        grade=_get_grade_display(race.get(COL_GRADE_CD)),
+                        distance=race[COL_KYORI],
+                        track_code=race[COL_TRACK_CD],
+                        race_date=target_date,
+                    )
+                )
 
-            response = RaceListResponse(
-                date=target_date,
-                races=races,
-                count=len(races)
-            )
+            response = RaceListResponse(date=target_date, races=races, count=len(races))
 
             logger.info(f"Found {len(races)} races for {target_date}")
             return response
@@ -357,15 +336,10 @@ async def get_races_for_date(
     response_model=RaceDetail,
     status_code=status.HTTP_200_OK,
     summary="レース詳細取得",
-    description="特定レースの詳細情報（出走馬一覧含む）を取得します。"
+    description="特定レースの詳細情報（出走馬一覧含む）を取得します。",
 )
 async def get_race(
-    race_id: str = Path(
-        ...,
-        min_length=16,
-        max_length=16,
-        description="レースID（16桁）"
-    )
+    race_id: str = Path(..., min_length=16, max_length=16, description="レースID（16桁）")
 ) -> RaceDetail:
     """
     レース詳細情報を取得
@@ -407,22 +381,26 @@ async def get_race(
                     last_finish = entry["last_finish"]
                     last_race_str = f"{last_venue}{last_finish}着"
 
-                entries.append(RaceEntry(
-                    horse_number=entry[COL_UMABAN],
-                    kettonum=entry[COL_KETTONUM],
-                    horse_name=entry[COL_BAMEI],
-                    sex=sex,
-                    age=entry.get(COL_BAREI),
-                    sire=entry.get("sire_name"),
-                    jockey_code=entry[COL_KISYUCODE],
-                    jockey_name=entry.get(COL_KISYU_NAME, "不明"),
-                    trainer_code=entry[COL_CHOKYOSICODE],
-                    trainer_name=entry.get(COL_CHOKYOSI_NAME, "不明"),
-                    weight=float(entry.get(COL_KINRYO, 0)) / 10.0,
-                    horse_weight=entry.get(COL_BATAIJU),
-                    odds=float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None,
-                    last_race=last_race_str
-                ))
+                entries.append(
+                    RaceEntry(
+                        horse_number=entry[COL_UMABAN],
+                        kettonum=entry[COL_KETTONUM],
+                        horse_name=entry[COL_BAMEI],
+                        sex=sex,
+                        age=entry.get(COL_BAREI),
+                        sire=entry.get("sire_name"),
+                        jockey_code=entry[COL_KISYUCODE],
+                        jockey_name=entry.get(COL_KISYU_NAME, "不明"),
+                        trainer_code=entry[COL_CHOKYOSICODE],
+                        trainer_name=entry.get(COL_CHOKYOSI_NAME, "不明"),
+                        weight=float(entry.get(COL_KINRYO, 0)) / 10.0,
+                        horse_weight=entry.get(COL_BATAIJU),
+                        odds=(
+                            float(entry["tansho_odds"]) / 10.0 if entry.get("tansho_odds") else None
+                        ),
+                        last_race=last_race_str,
+                    )
+                )
 
             # 賞金情報
             prize_money = PrizeMoneyResponse(
@@ -430,7 +408,7 @@ async def get_race(
                 second=race.get("honshokin2", 0),
                 third=race.get("honshokin3", 0),
                 fourth=race.get("honshokin4", 0),
-                fifth=race.get("honshokin5", 0)
+                fifth=race.get("honshokin5", 0),
             )
 
             # 馬場状態（芝またはダート）
@@ -457,13 +435,13 @@ async def get_race(
                     if results_raw:
                         results_data = [
                             RaceResult(
-                                horse_number=r['umaban'],
-                                horse_name=r['bamei'],
-                                jockey_name=r['kishumei'],
-                                finish_position=r['chakujun'],
-                                finish_time=r['time'],
-                                odds=r.get('odds'),
-                                kohan_3f=r.get('kohan_3f')
+                                horse_number=r["umaban"],
+                                horse_name=r["bamei"],
+                                jockey_name=r["kishumei"],
+                                finish_position=r["chakujun"],
+                                finish_time=r["time"],
+                                odds=r.get("odds"),
+                                kohan_3f=r.get("kohan_3f"),
                             )
                             for r in results_raw
                         ]
@@ -471,14 +449,44 @@ async def get_race(
                     payoffs_raw = await get_race_payoffs(conn, race_id)
                     if payoffs_raw:
                         payoffs_data = RacePayoffs(
-                            win=PayoffInfo(**payoffs_raw['win']) if payoffs_raw.get('win') else None,
-                            place=[PayoffInfo(**p) for p in payoffs_raw['place']] if payoffs_raw.get('place') else None,
-                            bracket_quinella=PayoffInfo(**payoffs_raw['bracket_quinella']) if payoffs_raw.get('bracket_quinella') else None,
-                            quinella=PayoffInfo(**payoffs_raw['quinella']) if payoffs_raw.get('quinella') else None,
-                            exacta=PayoffInfo(**payoffs_raw['exacta']) if payoffs_raw.get('exacta') else None,
-                            wide=[PayoffInfo(**w) for w in payoffs_raw['wide']] if payoffs_raw.get('wide') else None,
-                            trio=PayoffInfo(**payoffs_raw['trio']) if payoffs_raw.get('trio') else None,
-                            trifecta=PayoffInfo(**payoffs_raw['trifecta']) if payoffs_raw.get('trifecta') else None
+                            win=(
+                                PayoffInfo(**payoffs_raw["win"]) if payoffs_raw.get("win") else None
+                            ),
+                            place=(
+                                [PayoffInfo(**p) for p in payoffs_raw["place"]]
+                                if payoffs_raw.get("place")
+                                else None
+                            ),
+                            bracket_quinella=(
+                                PayoffInfo(**payoffs_raw["bracket_quinella"])
+                                if payoffs_raw.get("bracket_quinella")
+                                else None
+                            ),
+                            quinella=(
+                                PayoffInfo(**payoffs_raw["quinella"])
+                                if payoffs_raw.get("quinella")
+                                else None
+                            ),
+                            exacta=(
+                                PayoffInfo(**payoffs_raw["exacta"])
+                                if payoffs_raw.get("exacta")
+                                else None
+                            ),
+                            wide=(
+                                [PayoffInfo(**w) for w in payoffs_raw["wide"]]
+                                if payoffs_raw.get("wide")
+                                else None
+                            ),
+                            trio=(
+                                PayoffInfo(**payoffs_raw["trio"])
+                                if payoffs_raw.get("trio")
+                                else None
+                            ),
+                            trifecta=(
+                                PayoffInfo(**payoffs_raw["trifecta"])
+                                if payoffs_raw.get("trifecta")
+                                else None
+                            ),
                         )
 
                     lap_times_data = await get_race_lap_times(conn, race_id)
@@ -505,10 +513,10 @@ async def get_race(
                                         kettonum=h["kettonum"],
                                         name=h["name"],
                                         horse_number=h["horse_number"],
-                                        finish_position=h["finish_position"]
+                                        finish_position=h["finish_position"],
                                     )
                                     for h in m["horses"]
-                                ]
+                                ],
                             )
                             for m in matchups_raw
                         ]
@@ -522,10 +530,10 @@ async def get_race(
                     race[COL_RACE_NAME],
                     race.get(COL_GRADE_CD),
                     race.get("kyoso_joken_code"),
-                    race.get(COL_KYOSO_SHUBETSU_CD)
+                    race.get(COL_KYOSO_SHUBETSU_CD),
                 ),
                 race_number=f"{race.get(COL_RACE_NUM, '?')}R",
-                race_time=race.get(COL_HASSO_JIKOKU, '不明'),
+                race_time=race.get(COL_HASSO_JIKOKU, "不明"),
                 venue=_get_venue_name(race[COL_JYOCD]),
                 venue_code=race[COL_JYOCD],
                 grade=_get_grade_display(race.get(COL_GRADE_CD)),
@@ -538,7 +546,7 @@ async def get_race(
                 results=results_data,
                 payoffs=payoffs_data,
                 lap_times=lap_times_data if lap_times_data else None,
-                head_to_head=head_to_head_data
+                head_to_head=head_to_head_data,
             )
 
             logger.info(f"Race detail retrieved: {race[COL_RACE_NAME]} ({len(entries)} horses)")
@@ -556,32 +564,13 @@ async def get_race(
     response_model=RaceListResponse,
     status_code=status.HTTP_200_OK,
     summary="レース名検索",
-    description="レース名で検索します（部分一致、過去30日〜未来30日）。"
+    description="レース名で検索します（部分一致、過去30日〜未来30日）。",
 )
 async def search_races_by_name(
-    query: str = Query(
-        ...,
-        min_length=1,
-        description="レース名検索クエリ（部分一致）"
-    ),
-    days_before: int = Query(
-        30,
-        ge=0,
-        le=365,
-        description="過去何日前まで検索するか（0〜365日）"
-    ),
-    days_after: int = Query(
-        30,
-        ge=0,
-        le=365,
-        description="未来何日先まで検索するか（0〜365日）"
-    ),
-    limit: int = Query(
-        20,
-        ge=1,
-        le=100,
-        description="最大取得件数（1〜100）"
-    )
+    query: str = Query(..., min_length=1, description="レース名検索クエリ（部分一致）"),
+    days_before: int = Query(30, ge=0, le=365, description="過去何日前まで検索するか（0〜365日）"),
+    days_after: int = Query(30, ge=0, le=365, description="未来何日先まで検索するか（0〜365日）"),
+    limit: int = Query(20, ge=1, le=100, description="最大取得件数（1〜100）"),
 ) -> RaceListResponse:
     """
     レース名で検索
@@ -598,42 +587,40 @@ async def search_races_by_name(
     Raises:
         DatabaseErrorException: DB接続エラー
     """
-    logger.info(f"GET /races/search/name: query={query}, days_before={days_before}, days_after={days_after}")
+    logger.info(
+        f"GET /races/search/name: query={query}, days_before={days_before}, days_after={days_after}"
+    )
 
     try:
         async with get_connection() as conn:
             races_data = await search_races_by_name_db(
-                conn,
-                query,
-                days_before=days_before,
-                days_after=days_after,
-                limit=limit
+                conn, query, days_before=days_before, days_after=days_after, limit=limit
             )
 
             races = []
             for race in races_data:
-                races.append(RaceBase(
-                    race_id=race["race_id"],
-                    race_name=_get_race_name_with_fallback(
-                        race["race_name"],
-                        race.get("grade_code"),
-                        race.get("kyoso_joken_code"),
-                        race.get("kyoso_shubetsu_code")
-                    ),
-                    race_number=f"{race.get('race_number', '?')}R",
-                    race_time=None,
-                    venue=_get_venue_name(race["venue_code"]),
-                    venue_code=race["venue_code"],
-                    grade=_get_grade_display(race.get("grade_code")),
-                    distance=race["distance"],
-                    track_code=race["track_code"]
-                ))
+                races.append(
+                    RaceBase(
+                        race_id=race["race_id"],
+                        race_name=_get_race_name_with_fallback(
+                            race["race_name"],
+                            race.get("grade_code"),
+                            race.get("kyoso_joken_code"),
+                            race.get("kyoso_shubetsu_code"),
+                        ),
+                        race_number=f"{race.get('race_number', '?')}R",
+                        race_time=None,
+                        venue=_get_venue_name(race["venue_code"]),
+                        venue_code=race["venue_code"],
+                        grade=_get_grade_display(race.get("grade_code")),
+                        distance=race["distance"],
+                        track_code=race["track_code"],
+                    )
+                )
 
             logger.info(f"Found {len(races)} races matching '{query}'")
             return RaceListResponse(
-                date=None,  # 複数日付にまたがる可能性があるためNone
-                races=races,
-                count=len(races)
+                date=None, races=races, count=len(races)  # 複数日付にまたがる可能性があるためNone
             )
 
     except Exception as e:

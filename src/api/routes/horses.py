@@ -52,20 +52,11 @@ router = APIRouter()
     response_model=list[HorseSearchResult],
     status_code=status.HTTP_200_OK,
     summary="馬名検索",
-    description="馬名で馬を検索します（部分一致）。"
+    description="馬名で馬を検索します（部分一致）。",
 )
 async def search_horses(
-    name: str = Query(
-        ...,
-        min_length=1,
-        description="検索する馬名（部分一致）"
-    ),
-    limit: int = Query(
-        10,
-        ge=1,
-        le=50,
-        description="取得件数上限（デフォルト: 10）"
-    )
+    name: str = Query(..., min_length=1, description="検索する馬名（部分一致）"),
+    limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[HorseSearchResult]:
     """
     馬名で馬を検索
@@ -97,15 +88,17 @@ async def search_horses(
                     except (ValueError, IndexError):
                         birth_date_val = None
 
-                horses.append(HorseSearchResult(
-                    kettonum=row["kettonum"],
-                    name=row["name"].strip() if row["name"] else "",
-                    sex=sex_map.get(row.get("sex", ""), ""),
-                    birth_date=birth_date_val,
-                    runs=row.get("runs", 0),
-                    wins=row.get("wins", 0),
-                    prize=0  # TODO: 賞金情報取得
-                ))
+                horses.append(
+                    HorseSearchResult(
+                        kettonum=row["kettonum"],
+                        name=row["name"].strip() if row["name"] else "",
+                        sex=sex_map.get(row.get("sex", ""), ""),
+                        birth_date=birth_date_val,
+                        runs=row.get("runs", 0),
+                        wins=row.get("wins", 0),
+                        prize=0,  # TODO: 賞金情報取得
+                    )
+                )
 
             logger.info(f"Found {len(horses)} horses matching '{name}'")
             return horses
@@ -118,9 +111,16 @@ async def search_horses(
 def _get_venue_name(venue_code: str) -> str:
     """競馬場コードから名称を取得"""
     venue_map = {
-        "01": "札幌", "02": "函館", "03": "福島", "04": "新潟",
-        "05": "東京", "06": "中山", "07": "中京", "08": "京都",
-        "09": "阪神", "10": "小倉"
+        "01": "札幌",
+        "02": "函館",
+        "03": "福島",
+        "04": "新潟",
+        "05": "東京",
+        "06": "中山",
+        "07": "中京",
+        "08": "京都",
+        "09": "阪神",
+        "10": "小倉",
     }
     return venue_map.get(venue_code, "不明")
 
@@ -134,8 +134,15 @@ def _get_sex_name(sex_code: str) -> str:
 def _get_color_name(color_code: str) -> str:
     """毛色コードから名称を取得"""
     color_map = {
-        "1": "鹿毛", "2": "栗毛", "3": "栃栗毛", "4": "黒鹿毛",
-        "5": "青鹿毛", "6": "青毛", "7": "芦毛", "8": "白毛", "9": "栗毛"
+        "1": "鹿毛",
+        "2": "栗毛",
+        "3": "栃栗毛",
+        "4": "黒鹿毛",
+        "5": "青鹿毛",
+        "6": "青毛",
+        "7": "芦毛",
+        "8": "白毛",
+        "9": "栗毛",
     }
     return color_map.get(color_code, "不明")
 
@@ -151,21 +158,11 @@ def _get_affiliation(tozai_code: str) -> str:
     response_model=HorseDetail,
     status_code=status.HTTP_200_OK,
     summary="馬詳細情報取得",
-    description="馬の詳細情報、過去成績、血統情報を取得します。"
+    description="馬の詳細情報、過去成績、血統情報を取得します。",
 )
 async def get_horse(
-    kettonum: str = Path(
-        ...,
-        min_length=10,
-        max_length=10,
-        description="血統登録番号（10桁）"
-    ),
-    history_limit: int = Query(
-        10,
-        ge=1,
-        le=50,
-        description="過去成績取得件数（デフォルト: 10）"
-    )
+    kettonum: str = Path(..., min_length=10, max_length=10, description="血統登録番号（10桁）"),
+    history_limit: int = Query(10, ge=1, le=50, description="過去成績取得件数（デフォルト: 10）"),
 ) -> HorseDetail:
     """
     馬の詳細情報を取得
@@ -199,7 +196,7 @@ async def get_horse(
             trainer = Trainer(
                 code=horse_info.get(COL_CHOKYOSICODE, "不明"),
                 name=horse_info.get(COL_CHOKYOSI_NAME, "不明"),
-                affiliation=_get_affiliation(horse_info.get("tozai_code", "1"))
+                affiliation=_get_affiliation(horse_info.get("tozai_code", "1")),
             )
 
             # 血統情報
@@ -209,7 +206,7 @@ async def get_horse(
                 sire_sire=pedigree_data.get("chichi_chichi_name", "不明"),
                 sire_dam=pedigree_data.get("chichi_haha_name", "不明"),
                 dam_sire=pedigree_data.get("haha_chichi_name", "不明"),
-                dam_dam=pedigree_data.get("haha_haha_name", "不明")
+                dam_dam=pedigree_data.get("haha_haha_name", "不明"),
             )
 
             # 過去成績
@@ -222,7 +219,9 @@ async def get_horse(
 
                 # 調教データを取得（レース前14日以内）
                 race_date_str = f"{race_year}{race_monthday}"
-                training_data = await get_training_before_race(conn, kettonum, race_date_str, days_before=14)
+                training_data = await get_training_before_race(
+                    conn, kettonum, race_date_str, days_before=14
+                )
 
                 training_obj = None
                 if training_data:
@@ -230,27 +229,29 @@ async def get_horse(
                         training_type=training_data.get("training_type", "不明"),
                         training_date=training_data.get("training_date", ""),
                         time_4f=training_data.get("time_4f"),
-                        time_3f=training_data.get("time_3f")
+                        time_3f=training_data.get("time_3f"),
                     )
 
-                recent_races.append(RecentRace(
-                    race_id=race[COL_RACE_ID],
-                    race_name=race[COL_RACE_NAME],
-                    race_date=race_date,
-                    venue=_get_venue_name(race[COL_JYOCD]),
-                    distance=race[COL_KYORI],
-                    track_condition=race.get("baba_jotai", "不明"),
-                    finish_position=race[COL_KAKUTEI_CHAKUJUN],
-                    time=race.get(COL_TIME, "不明"),
-                    time_diff=race.get("time_sa"),  # 勝ち馬とのタイム差
-                    winner_name=race.get("winner_name"),  # 勝ち馬名
-                    jockey=race.get(COL_KISYU_NAME, "不明"),
-                    weight=float(race.get("futan", 0)) / 10.0,
-                    horse_weight=race.get("bataiju"),
-                    odds=float(race["tansho_odds"]) / 10.0 if race.get("tansho_odds") else None,
-                    prize_money=race.get("syogkin", 0),
-                    training=training_obj
-                ))
+                recent_races.append(
+                    RecentRace(
+                        race_id=race[COL_RACE_ID],
+                        race_name=race[COL_RACE_NAME],
+                        race_date=race_date,
+                        venue=_get_venue_name(race[COL_JYOCD]),
+                        distance=race[COL_KYORI],
+                        track_condition=race.get("baba_jotai", "不明"),
+                        finish_position=race[COL_KAKUTEI_CHAKUJUN],
+                        time=race.get(COL_TIME, "不明"),
+                        time_diff=race.get("time_sa"),  # 勝ち馬とのタイム差
+                        winner_name=race.get("winner_name"),  # 勝ち馬名
+                        jockey=race.get(COL_KISYU_NAME, "不明"),
+                        weight=float(race.get("futan", 0)) / 10.0,
+                        horse_weight=race.get("bataiju"),
+                        odds=float(race["tansho_odds"]) / 10.0 if race.get("tansho_odds") else None,
+                        prize_money=race.get("syogkin", 0),
+                        training=training_obj,
+                    )
+                )
 
             # 通算成績を計算（総合成績から）
             sogo_1 = int(horse_info.get("sogo_1chaku", "0") or "0")
@@ -281,12 +282,14 @@ async def get_horse(
             training_data = detail.get("training", [])
             training_records = []
             for t in training_data[:5]:  # 直近5件
-                training_records.append(TrainingRecord(
-                    training_type=t.get("training_type", "unknown"),
-                    chokyo_nengappi=t.get("chokyo_nengappi", ""),
-                    time_gokei_4furlong=t.get("time_gokei_4furlong"),
-                    time_gokei_3furlong=t.get("time_gokei_3furlong"),
-                ))
+                training_records.append(
+                    TrainingRecord(
+                        training_type=t.get("training_type", "unknown"),
+                        chokyo_nengappi=t.get("chokyo_nengappi", ""),
+                        time_gokei_4furlong=t.get("time_gokei_4furlong"),
+                        time_gokei_3furlong=t.get("time_gokei_3furlong"),
+                    )
+                )
 
             response = HorseDetail(
                 kettonum=kettonum,
@@ -306,7 +309,7 @@ async def get_horse(
                 running_style=None,  # TODO: 脚質判定ロジックを追加
                 pedigree=pedigree,
                 recent_races=recent_races,
-                training=training_records
+                training=training_records,
             )
 
             logger.info(f"Horse detail retrieved: {horse_info[COL_BAMEI]} ({total_races} races)")
@@ -324,21 +327,11 @@ async def get_horse(
     response_model=list[TrainingData],
     status_code=status.HTTP_200_OK,
     summary="馬の調教データ取得",
-    description="指定した馬の調教データ（坂路・ウッドチップ）を取得します。"
+    description="指定した馬の調教データ（坂路・ウッドチップ）を取得します。",
 )
 async def get_horse_training(
-    kettonum: str = Path(
-        ...,
-        min_length=10,
-        max_length=10,
-        description="血統登録番号（10桁）"
-    ),
-    days_back: int = Query(
-        30,
-        ge=7,
-        le=90,
-        description="何日前まで取得するか（7〜90日）"
-    )
+    kettonum: str = Path(..., min_length=10, max_length=10, description="血統登録番号（10桁）"),
+    days_back: int = Query(30, ge=7, le=90, description="何日前まで取得するか（7〜90日）"),
 ) -> list[TrainingData]:
     """
     馬の調教データを取得
@@ -362,12 +355,14 @@ async def get_horse_training(
 
             results = []
             for t in training_list:
-                results.append(TrainingData(
-                    training_type="坂路" if t["training_type"] == "hanro" else "ウッド",
-                    training_date=t["chokyo_nengappi"],
-                    time_4f=t.get("time_gokei_4furlong"),
-                    time_3f=t.get("time_gokei_3furlong")
-                ))
+                results.append(
+                    TrainingData(
+                        training_type="坂路" if t["training_type"] == "hanro" else "ウッド",
+                        training_date=t["chokyo_nengappi"],
+                        time_4f=t.get("time_gokei_4furlong"),
+                        time_3f=t.get("time_gokei_3furlong"),
+                    )
+                )
 
             logger.info(f"Found {len(results)} training records for {kettonum}")
             return results

@@ -84,8 +84,12 @@ DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # Max stats to display
 SCHEDULER_EVENING_PREDICTION_HOUR: Final[int] = 21  # Pre-race prediction execution hour
 SCHEDULER_EVENING_PREDICTION_MINUTE: Final[int] = 0  # Pre-race prediction execution minute
 SCHEDULER_CHECK_INTERVAL_MINUTES: Final[int] = 10  # Race time check interval (minutes)
-SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 30  # Final prediction timing (minutes before race)
-SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # Final prediction time tolerance (minutes)
+SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = (
+    30  # Final prediction timing (minutes before race)
+)
+SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = (
+    5  # Final prediction time tolerance (minutes)
+)
 
 # =====================================
 # CORS Settings (Security)

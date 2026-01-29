@@ -52,10 +52,14 @@ class KeibaBot(commands.Bot):
         channel_id_str = os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID", "0")
         try:
             self.notification_channel_id = int(channel_id_str)
-            logger.info(f"KeibaBot initialized: notification_channel_id={self.notification_channel_id}")
+            logger.info(
+                f"KeibaBot initialized: notification_channel_id={self.notification_channel_id}"
+            )
         except ValueError as e:
             logger.error(f"DISCORD_NOTIFICATION_CHANNEL_ID has invalid value: {channel_id_str}")
-            raise BotError(f"DISCORD_NOTIFICATION_CHANNEL_ID has invalid value: {channel_id_str}") from e
+            raise BotError(
+                f"DISCORD_NOTIFICATION_CHANNEL_ID has invalid value: {channel_id_str}"
+            ) from e
 
         # Command channel ID
         command_channel_id_str = os.getenv("DISCORD_COMMAND_CHANNEL_ID", "0")
@@ -64,7 +68,9 @@ class KeibaBot(commands.Bot):
             logger.info(f"KeibaBot initialized: command_channel_id={self.command_channel_id}")
         except ValueError:
             self.command_channel_id = 0
-            logger.warning(f"DISCORD_COMMAND_CHANNEL_ID has invalid value: {command_channel_id_str}")
+            logger.warning(
+                f"DISCORD_COMMAND_CHANNEL_ID has invalid value: {command_channel_id_str}"
+            )
 
     async def setup_hook(self):
         """
@@ -91,24 +97,28 @@ class KeibaBot(commands.Bot):
 
         try:
             # Set status
-            await self.change_presence(
-                activity=discord.Game(name="Horse Racing Prediction")
-            )
+            await self.change_presence(activity=discord.Game(name="Horse Racing Prediction"))
 
             # Verify channels (don't send startup message)
             if self.notification_channel_id:
                 channel = self.get_channel(self.notification_channel_id)
                 if channel:
-                    logger.info(f"Notification channel verified: channel_id={self.notification_channel_id}")
+                    logger.info(
+                        f"Notification channel verified: channel_id={self.notification_channel_id}"
+                    )
                 else:
-                    logger.warning(f"Notification channel not found: channel_id={self.notification_channel_id}")
+                    logger.warning(
+                        f"Notification channel not found: channel_id={self.notification_channel_id}"
+                    )
 
             if self.command_channel_id:
                 channel = self.get_channel(self.command_channel_id)
                 if channel:
                     logger.info(f"Command channel verified: channel_id={self.command_channel_id}")
                 else:
-                    logger.warning(f"Command channel not found: channel_id={self.command_channel_id}")
+                    logger.warning(
+                        f"Command channel not found: channel_id={self.command_channel_id}"
+                    )
 
         except Exception as e:
             logger.error(f"Error in on_ready handler: {e}")
@@ -178,8 +188,7 @@ def run_bot():
 
 if __name__ == "__main__":
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     run_bot()

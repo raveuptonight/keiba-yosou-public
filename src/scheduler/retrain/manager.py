@@ -12,10 +12,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def backup_current_model(
-    current_model_path: Path,
-    backup_dir: Path
-) -> str | None:
+def backup_current_model(current_model_path: Path, backup_dir: Path) -> str | None:
     """
     Backup current model.
 
@@ -41,11 +38,7 @@ def backup_current_model(
     return str(backup_path)
 
 
-def deploy_new_model(
-    new_model_path: str,
-    current_model_path: Path,
-    backup_dir: Path
-) -> None:
+def deploy_new_model(new_model_path: str, current_model_path: Path, backup_dir: Path) -> None:
     """
     Deploy new model to production.
 

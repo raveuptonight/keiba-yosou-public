@@ -52,10 +52,7 @@ def load_bias_for_date(target_date: str) -> dict | None:
 
 
 def apply_bias_to_scores(
-    ml_scores: dict[str, Any],
-    race_id: str,
-    horses: list[dict],
-    bias_data: dict
+    ml_scores: dict[str, Any], race_id: str, horses: list[dict], bias_data: dict
 ) -> dict[str, Any]:
     """
     Apply bias adjustment to ML scores.
@@ -72,19 +69,21 @@ def apply_bias_to_scores(
     # Extract venue code from race_id (digits 9-10 are venue code: YYYY+MM+kai+venue)
     venue_code = race_id[8:10]
 
-    venue_biases = bias_data.get('venue_biases', {})
-    jockey_performances = bias_data.get('jockey_performances', {})
+    venue_biases = bias_data.get("venue_biases", {})
+    jockey_performances = bias_data.get("jockey_performances", {})
 
     if venue_code not in venue_biases:
         logger.info(f"No venue bias found: venue_code={venue_code}")
         return ml_scores
 
     vb = venue_biases[venue_code]
-    waku_bias = vb.get('waku_bias', 0)
-    pace_bias = vb.get('pace_bias', 0)
+    waku_bias = vb.get("waku_bias", 0)
+    pace_bias = vb.get("pace_bias", 0)
 
-    logger.info(f"Applying bias: {vb.get('venue_name', venue_code)}, "
-                f"waku={waku_bias:.3f}, pace={pace_bias:.3f}")
+    logger.info(
+        f"Applying bias: {vb.get('venue_name', venue_code)}, "
+        f"waku={waku_bias:.3f}, pace={pace_bias:.3f}"
+    )
 
     adjusted_scores = {}
 
@@ -98,7 +97,7 @@ def apply_bias_to_scores(
         # Find horse info
         horse_info = None
         for h in horses:
-            h_umaban = h.get('umaban', '')
+            h_umaban = h.get("umaban", "")
             try:
                 if int(h_umaban) == umaban:
                     horse_info = h
@@ -111,7 +110,7 @@ def apply_bias_to_scores(
 
         # 1. Waku (post position) bias
         if horse_info:
-            wakuban = horse_info.get('wakuban', '')
+            wakuban = horse_info.get("wakuban", "")
             try:
                 waku = int(wakuban)
                 if 1 <= waku <= 4:
@@ -125,34 +124,34 @@ def apply_bias_to_scores(
 
         # 2. Jockey daily performance bias
         if horse_info:
-            kishu_code = horse_info.get('kishu_code', '')
+            kishu_code = horse_info.get("kishu_code", "")
             if kishu_code and kishu_code in jockey_performances:
                 jp = jockey_performances[kishu_code]
-                jockey_win_rate = jp.get('win_rate', 0)
-                jockey_top3_rate = jp.get('top3_rate', 0)
+                jockey_win_rate = jp.get("win_rate", 0)
+                jockey_top3_rate = jp.get("top3_rate", 0)
 
                 # Add points for jockeys performing well today
                 adjustment += jockey_win_rate * 0.03
                 adjustment += jockey_top3_rate * 0.01
 
         # Adjust score (rank_score: lower is better)
-        new_rank_score = score_data.get('rank_score', 999) - adjustment
+        new_rank_score = score_data.get("rank_score", 999) - adjustment
 
         # Adjust probability (positive adjustment increases probability)
-        old_prob = score_data.get('win_probability', 0)
+        old_prob = score_data.get("win_probability", 0)
         new_prob = old_prob * (1 + adjustment * 2)
         new_prob = max(0.001, min(0.99, new_prob))  # Clamp to range
 
         adjusted_scores[umaban_str] = {
-            'rank_score': new_rank_score,
-            'win_probability': new_prob,
-            'bias_adjustment': adjustment,
+            "rank_score": new_rank_score,
+            "win_probability": new_prob,
+            "bias_adjustment": adjustment,
         }
 
     # Normalize probabilities
-    total_prob = sum(s.get('win_probability', 0) for s in adjusted_scores.values())
+    total_prob = sum(s.get("win_probability", 0) for s in adjusted_scores.values())
     if total_prob > 0:
         for umaban_str in adjusted_scores:
-            adjusted_scores[umaban_str]['win_probability'] /= total_prob
+            adjusted_scores[umaban_str]["win_probability"] /= total_prob
 
     return adjusted_scores

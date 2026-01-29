@@ -28,10 +28,7 @@ from src.db.table_names import COL_KETTONUM, COL_RACE_NAME
 logger = logging.getLogger(__name__)
 
 
-async def get_race_prediction_data(
-    conn: Connection,
-    race_id: str
-) -> dict[str, Any]:
+async def get_race_prediction_data(conn: Connection, race_id: str) -> dict[str, Any]:
     """
     予想生成に必要な全データを集約
 
@@ -76,7 +73,7 @@ async def get_race_prediction_data(
             "pedigrees": {},
             "training": {},
             "statistics": {},
-            "odds": {}
+            "odds": {},
         }
 
     logger.debug(f"Found {len(horses)} horses")
@@ -116,13 +113,12 @@ async def get_race_prediction_data(
         "pedigrees": pedigrees,
         "training": training,
         "statistics": statistics,
-        "odds": odds
+        "odds": odds,
     }
 
 
 async def get_multiple_races_prediction_data(
-    conn: Connection,
-    race_ids: list[str]
+    conn: Connection, race_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
     """
     複数レースの予想データを一括取得
@@ -150,10 +146,7 @@ async def get_multiple_races_prediction_data(
     return result
 
 
-async def get_race_prediction_data_slim(
-    conn: Connection,
-    race_id: str
-) -> dict[str, Any]:
+async def get_race_prediction_data_slim(conn: Connection, race_id: str) -> dict[str, Any]:
     """
     予想データの軽量版を取得（過去成績を5走に制限）
 
@@ -183,10 +176,11 @@ async def get_race_prediction_data_slim(
             "pedigrees": {},
             "training": {},
             "statistics": {},
-            "odds": {}
+            "odds": {},
         }
 
     from src.db.table_names import COL_KETTONUM
+
     kettonums = [horse[COL_KETTONUM] for horse in horses]
 
     # 過去成績は5走まで
@@ -213,7 +207,7 @@ async def get_race_prediction_data_slim(
         "pedigrees": pedigrees,
         "training": training,
         "statistics": statistics,
-        "odds": odds
+        "odds": odds,
     }
 
 
@@ -232,23 +226,14 @@ async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
         }
     """
     warnings = []
-    missing_data = {
-        "histories": [],
-        "pedigrees": [],
-        "training": [],
-        "statistics": []
-    }
+    missing_data = {"histories": [], "pedigrees": [], "training": [], "statistics": []}
 
     from src.db.table_names import COL_BAMEI, COL_KETTONUM
 
     # 出走馬がいるかチェック
     if not data.get("horses"):
         warnings.append("No horses found")
-        return {
-            "is_valid": False,
-            "warnings": warnings,
-            "missing_data": missing_data
-        }
+        return {"is_valid": False, "warnings": warnings, "missing_data": missing_data}
 
     # 各馬のデータ完全性チェック
     for horse in data["horses"]:
@@ -282,11 +267,7 @@ async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
     # 警告があってもデータ取得自体は成功とみなす
     is_valid = len(data["horses"]) > 0
 
-    return {
-        "is_valid": is_valid,
-        "warnings": warnings,
-        "missing_data": missing_data
-    }
+    return {"is_valid": is_valid, "warnings": warnings, "missing_data": missing_data}
 
 
 async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
@@ -333,16 +314,20 @@ async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
                 "pedigrees": 0.0,
                 "training": 0.0,
                 "statistics": 0.0,
-                "odds": False
-            }
+                "odds": False,
+            },
         }
 
     # データ完全性の計算
     kettonums = [h[COL_KETTONUM] for h in horses]
 
-    histories_count = sum(1 for k in kettonums if k in data.get("histories", {}) and data["histories"][k])
+    histories_count = sum(
+        1 for k in kettonums if k in data.get("histories", {}) and data["histories"][k]
+    )
     pedigrees_count = sum(1 for k in kettonums if k in data.get("pedigrees", {}))
-    training_count = sum(1 for k in kettonums if k in data.get("training", {}) and data["training"][k])
+    training_count = sum(
+        1 for k in kettonums if k in data.get("training", {}) and data["training"][k]
+    )
     statistics_count = sum(1 for k in kettonums if k in data.get("statistics", {}))
 
     return {
@@ -355,6 +340,6 @@ async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
             "pedigrees": pedigrees_count / entry_count,
             "training": training_count / entry_count,
             "statistics": statistics_count / entry_count,
-            "odds": bool(data.get("odds", {}).get("win"))
-        }
+            "odds": bool(data.get("odds", {}).get("win")),
+        },
     }

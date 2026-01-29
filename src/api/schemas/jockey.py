@@ -2,7 +2,6 @@
 騎手・調教師関連のPydanticスキーマ
 """
 
-
 from pydantic import BaseModel, Field
 
 
@@ -75,12 +74,8 @@ class JockeyStats(BaseModel):
     basic_info: JockeyBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
     surface_stats: SurfaceStats = Field(..., description="馬場別成績")
-    distance_stats: list[DistanceCategoryStats] = Field(
-        ..., description="距離別成績"
-    )
-    venue_stats: list[VenueStats] = Field(
-        ..., description="競馬場別成績（上位5件）"
-    )
+    distance_stats: list[DistanceCategoryStats] = Field(..., description="距離別成績")
+    venue_stats: list[VenueStats] = Field(..., description="競馬場別成績（上位5件）")
 
 
 class TrainerBasicInfo(BaseModel):
@@ -100,15 +95,9 @@ class TrainerStats(BaseModel):
     basic_info: TrainerBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
     surface_stats: SurfaceStats = Field(..., description="馬場別成績")
-    distance_stats: list[DistanceCategoryStats] = Field(
-        ..., description="距離別成績"
-    )
-    venue_stats: list[VenueStats] = Field(
-        ..., description="競馬場別成績（上位5件）"
-    )
-    top_jockeys: list[TopJockey] = Field(
-        ..., description="主戦騎手（上位5名）"
-    )
+    distance_stats: list[DistanceCategoryStats] = Field(..., description="距離別成績")
+    venue_stats: list[VenueStats] = Field(..., description="競馬場別成績（上位5件）")
+    top_jockeys: list[TopJockey] = Field(..., description="主戦騎手（上位5名）")
 
 
 class JockeySearchResult(BaseModel):

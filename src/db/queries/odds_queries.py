@@ -29,10 +29,7 @@ logger = logging.getLogger(__name__)
 DATA_KUBUN_SAISYU_ODDS = "3"  # 最終オッズ
 
 
-async def get_odds_win_place(
-    conn: Connection,
-    race_id: str
-) -> dict[str, Any]:
+async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
     """
     単勝・複勝オッズを取得
 
@@ -76,38 +73,37 @@ async def get_odds_win_place(
         win_rows = await conn.fetch(sql_win, race_id, DATA_KUBUN_SAISYU_ODDS)
         win_odds = []
         for row in win_rows:
-            if row['odds']:
-                win_odds.append({
-                    "umaban": row[COL_UMABAN],
-                    "odds": float(row['odds']) / 10.0,  # JRA-VANは10倍値で格納
-                    "ninki": row['ninki']
-                })
+            if row["odds"]:
+                win_odds.append(
+                    {
+                        "umaban": row[COL_UMABAN],
+                        "odds": float(row["odds"]) / 10.0,  # JRA-VANは10倍値で格納
+                        "ninki": row["ninki"],
+                    }
+                )
 
         # 複勝オッズ
         place_rows = await conn.fetch(sql_place, race_id, DATA_KUBUN_SAISYU_ODDS)
         place_odds = []
         for row in place_rows:
-            if row['odds_saitei'] and row['odds_saikou']:
-                place_odds.append({
-                    "umaban": row[COL_UMABAN],
-                    "odds_min": float(row['odds_saitei']) / 10.0,
-                    "odds_max": float(row['odds_saikou']) / 10.0,
-                    "ninki": row['ninki']
-                })
+            if row["odds_saitei"] and row["odds_saikou"]:
+                place_odds.append(
+                    {
+                        "umaban": row[COL_UMABAN],
+                        "odds_min": float(row["odds_saitei"]) / 10.0,
+                        "odds_max": float(row["odds_saikou"]) / 10.0,
+                        "ninki": row["ninki"],
+                    }
+                )
 
-        return {
-            "win": win_odds,
-            "place": place_odds
-        }
+        return {"win": win_odds, "place": place_odds}
     except Exception as e:
         logger.error(f"Failed to get win/place odds: race_id={race_id}, error={e}")
         raise
 
 
 async def get_odds_quinella(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     馬連オッズを取得
@@ -140,14 +136,16 @@ async def get_odds_quinella(
 
         result = []
         for row in rows:
-            if row['umaren_odds']:
-                result.append({
-                    "kumi": f"{row['umaban_1']}-{row['umaban_2']}",
-                    "umaban1": row['umaban_1'],
-                    "umaban2": row['umaban_2'],
-                    "odds": float(row['umaren_odds']) / 10.0,
-                    "ninki": row['umaren_ninki']
-                })
+            if row["umaren_odds"]:
+                result.append(
+                    {
+                        "kumi": f"{row['umaban_1']}-{row['umaban_2']}",
+                        "umaban1": row["umaban_1"],
+                        "umaban2": row["umaban_2"],
+                        "odds": float(row["umaren_odds"]) / 10.0,
+                        "ninki": row["umaren_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -156,9 +154,7 @@ async def get_odds_quinella(
 
 
 async def get_odds_exacta(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     馬単オッズを取得
@@ -191,14 +187,16 @@ async def get_odds_exacta(
 
         result = []
         for row in rows:
-            if row['umatan_odds']:
-                result.append({
-                    "kumi": f"{row['umaban_1']}→{row['umaban_2']}",
-                    "umaban1": row['umaban_1'],
-                    "umaban2": row['umaban_2'],
-                    "odds": float(row['umatan_odds']) / 10.0,
-                    "ninki": row['umatan_ninki']
-                })
+            if row["umatan_odds"]:
+                result.append(
+                    {
+                        "kumi": f"{row['umaban_1']}→{row['umaban_2']}",
+                        "umaban1": row["umaban_1"],
+                        "umaban2": row["umaban_2"],
+                        "odds": float(row["umatan_odds"]) / 10.0,
+                        "ninki": row["umatan_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -207,9 +205,7 @@ async def get_odds_exacta(
 
 
 async def get_odds_wide(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     ワイドオッズを取得
@@ -243,15 +239,17 @@ async def get_odds_wide(
 
         result = []
         for row in rows:
-            if row['wide_odds_min'] and row['wide_odds_max']:
-                result.append({
-                    "kumi": f"{row['umaban_1']}-{row['umaban_2']}",
-                    "umaban1": row['umaban_1'],
-                    "umaban2": row['umaban_2'],
-                    "odds_min": float(row['wide_odds_min']) / 10.0,
-                    "odds_max": float(row['wide_odds_max']) / 10.0,
-                    "ninki": row['wide_ninki']
-                })
+            if row["wide_odds_min"] and row["wide_odds_max"]:
+                result.append(
+                    {
+                        "kumi": f"{row['umaban_1']}-{row['umaban_2']}",
+                        "umaban1": row["umaban_1"],
+                        "umaban2": row["umaban_2"],
+                        "odds_min": float(row["wide_odds_min"]) / 10.0,
+                        "odds_max": float(row["wide_odds_max"]) / 10.0,
+                        "ninki": row["wide_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -260,9 +258,7 @@ async def get_odds_wide(
 
 
 async def get_odds_trio(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     3連複オッズを取得
@@ -297,15 +293,17 @@ async def get_odds_trio(
 
         result = []
         for row in rows:
-            if row['sanrenpuku_odds']:
-                result.append({
-                    "kumi": f"{row['umaban_1']}-{row['umaban_2']}-{row['umaban_3']}",
-                    "umaban1": row['umaban_1'],
-                    "umaban2": row['umaban_2'],
-                    "umaban3": row['umaban_3'],
-                    "odds": float(row['sanrenpuku_odds']) / 10.0,
-                    "ninki": row['sanrenpuku_ninki']
-                })
+            if row["sanrenpuku_odds"]:
+                result.append(
+                    {
+                        "kumi": f"{row['umaban_1']}-{row['umaban_2']}-{row['umaban_3']}",
+                        "umaban1": row["umaban_1"],
+                        "umaban2": row["umaban_2"],
+                        "umaban3": row["umaban_3"],
+                        "odds": float(row["sanrenpuku_odds"]) / 10.0,
+                        "ninki": row["sanrenpuku_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -314,9 +312,7 @@ async def get_odds_trio(
 
 
 async def get_odds_trifecta(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     3連単オッズを取得
@@ -351,15 +347,17 @@ async def get_odds_trifecta(
 
         result = []
         for row in rows:
-            if row['sanrentan_odds']:
-                result.append({
-                    "kumi": f"{row['umaban_1']}→{row['umaban_2']}→{row['umaban_3']}",
-                    "umaban1": row['umaban_1'],
-                    "umaban2": row['umaban_2'],
-                    "umaban3": row['umaban_3'],
-                    "odds": float(row['sanrentan_odds']) / 10.0,
-                    "ninki": row['sanrentan_ninki']
-                })
+            if row["sanrentan_odds"]:
+                result.append(
+                    {
+                        "kumi": f"{row['umaban_1']}→{row['umaban_2']}→{row['umaban_3']}",
+                        "umaban1": row["umaban_1"],
+                        "umaban2": row["umaban_2"],
+                        "umaban3": row["umaban_3"],
+                        "odds": float(row["sanrentan_odds"]) / 10.0,
+                        "ninki": row["sanrentan_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -368,9 +366,7 @@ async def get_odds_trifecta(
 
 
 async def get_odds_bracket_quinella(
-    conn: Connection,
-    race_id: str,
-    limit: int | None = None
+    conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
     枠連オッズを取得
@@ -403,14 +399,16 @@ async def get_odds_bracket_quinella(
 
         result = []
         for row in rows:
-            if row['wakuren_odds']:
-                result.append({
-                    "kumi": f"{row['wakuban_1']}-{row['wakuban_2']}",
-                    "wakuban1": row['wakuban_1'],
-                    "wakuban2": row['wakuban_2'],
-                    "odds": float(row['wakuren_odds']) / 10.0,
-                    "ninki": row['wakuren_ninki']
-                })
+            if row["wakuren_odds"]:
+                result.append(
+                    {
+                        "kumi": f"{row['wakuban_1']}-{row['wakuban_2']}",
+                        "wakuban1": row["wakuban_1"],
+                        "wakuban2": row["wakuban_2"],
+                        "odds": float(row["wakuren_odds"]) / 10.0,
+                        "ninki": row["wakuren_ninki"],
+                    }
+                )
 
         return result
     except Exception as e:
@@ -419,9 +417,7 @@ async def get_odds_bracket_quinella(
 
 
 async def get_race_odds(
-    conn: Connection,
-    race_id: str,
-    ticket_types: list[str] | None = None
+    conn: Connection, race_id: str, ticket_types: list[str] | None = None
 ) -> dict[str, Any]:
     """
     レースの全オッズ情報を取得

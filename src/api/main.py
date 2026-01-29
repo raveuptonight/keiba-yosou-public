@@ -84,7 +84,7 @@ app = FastAPI(
     title="Horse Racing Prediction API",
     description="REST API for horse racing prediction system aiming for 200% ROI",
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # CORS settings (for development)

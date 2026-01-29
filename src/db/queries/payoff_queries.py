@@ -19,10 +19,7 @@ from src.db.table_names import (
 logger = logging.getLogger(__name__)
 
 
-async def get_race_payoffs(
-    conn: Connection,
-    race_id: str
-) -> dict[str, Any]:
+async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
     """
     レースの払戻金（配当）を全券種取得
 
@@ -85,88 +82,112 @@ async def get_race_payoffs(
         result = {}
 
         # 単勝
-        if row['tansho1_umaban']:
-            result['win'] = {
-                'kumi': row['tansho1_umaban'].strip(),
-                'payoff': int(row['tansho1_haraimodoshikin']) if row['tansho1_haraimodoshikin'] else 0,
-                'ninki': int(row['tansho1_ninkijun']) if row['tansho1_ninkijun'] else 0
+        if row["tansho1_umaban"]:
+            result["win"] = {
+                "kumi": row["tansho1_umaban"].strip(),
+                "payoff": (
+                    int(row["tansho1_haraimodoshikin"]) if row["tansho1_haraimodoshikin"] else 0
+                ),
+                "ninki": int(row["tansho1_ninkijun"]) if row["tansho1_ninkijun"] else 0,
             }
 
         # 複勝
         place_list = []
         for i in range(1, 4):
-            umaban_col = f'fukusho{i}_umaban'
-            kin_col = f'fukusho{i}_haraimodoshikin'
-            ninki_col = f'fukusho{i}_ninkijun'
+            umaban_col = f"fukusho{i}_umaban"
+            kin_col = f"fukusho{i}_haraimodoshikin"
+            ninki_col = f"fukusho{i}_ninkijun"
             if row[umaban_col]:
-                place_list.append({
-                    'kumi': row[umaban_col].strip(),
-                    'payoff': int(row[kin_col]) if row[kin_col] else 0,
-                    'ninki': int(row[ninki_col]) if row[ninki_col] else 0
-                })
+                place_list.append(
+                    {
+                        "kumi": row[umaban_col].strip(),
+                        "payoff": int(row[kin_col]) if row[kin_col] else 0,
+                        "ninki": int(row[ninki_col]) if row[ninki_col] else 0,
+                    }
+                )
         if place_list:
-            result['place'] = place_list
+            result["place"] = place_list
 
         # 枠連
-        if row['wakuren1_kumiban1'] and row['wakuren1_kumiban2']:
+        if row["wakuren1_kumiban1"] and row["wakuren1_kumiban2"]:
             kumi = f"{row['wakuren1_kumiban1'].strip()}-{row['wakuren1_kumiban2'].strip()}"
-            result['bracket_quinella'] = {
-                'kumi': kumi,
-                'payoff': int(row['wakuren1_haraimodoshikin']) if row['wakuren1_haraimodoshikin'] else 0,
-                'ninki': int(row['wakuren1_ninkijun']) if row['wakuren1_ninkijun'] else 0
+            result["bracket_quinella"] = {
+                "kumi": kumi,
+                "payoff": (
+                    int(row["wakuren1_haraimodoshikin"]) if row["wakuren1_haraimodoshikin"] else 0
+                ),
+                "ninki": int(row["wakuren1_ninkijun"]) if row["wakuren1_ninkijun"] else 0,
             }
 
         # 馬連
-        if row['umaren1_kumiban1'] and row['umaren1_kumiban2']:
+        if row["umaren1_kumiban1"] and row["umaren1_kumiban2"]:
             kumi = f"{row['umaren1_kumiban1'].strip()}-{row['umaren1_kumiban2'].strip()}"
-            result['quinella'] = {
-                'kumi': kumi,
-                'payoff': int(row['umaren1_haraimodoshikin']) if row['umaren1_haraimodoshikin'] else 0,
-                'ninki': int(row['umaren1_ninkijun']) if row['umaren1_ninkijun'] else 0
+            result["quinella"] = {
+                "kumi": kumi,
+                "payoff": (
+                    int(row["umaren1_haraimodoshikin"]) if row["umaren1_haraimodoshikin"] else 0
+                ),
+                "ninki": int(row["umaren1_ninkijun"]) if row["umaren1_ninkijun"] else 0,
             }
 
         # 馬単
-        if row['umatan1_kumiban1'] and row['umatan1_kumiban2']:
+        if row["umatan1_kumiban1"] and row["umatan1_kumiban2"]:
             kumi = f"{row['umatan1_kumiban1'].strip()}→{row['umatan1_kumiban2'].strip()}"
-            result['exacta'] = {
-                'kumi': kumi,
-                'payoff': int(row['umatan1_haraimodoshikin']) if row['umatan1_haraimodoshikin'] else 0,
-                'ninki': int(row['umatan1_ninkijun']) if row['umatan1_ninkijun'] else 0
+            result["exacta"] = {
+                "kumi": kumi,
+                "payoff": (
+                    int(row["umatan1_haraimodoshikin"]) if row["umatan1_haraimodoshikin"] else 0
+                ),
+                "ninki": int(row["umatan1_ninkijun"]) if row["umatan1_ninkijun"] else 0,
             }
 
         # ワイド
         wide_list = []
         for i in range(1, 4):
-            kumi1_col = f'wide{i}_kumiban1'
-            kumi2_col = f'wide{i}_kumiban2'
-            kin_col = f'wide{i}_haraimodoshikin'
-            ninki_col = f'wide{i}_ninkijun'
+            kumi1_col = f"wide{i}_kumiban1"
+            kumi2_col = f"wide{i}_kumiban2"
+            kin_col = f"wide{i}_haraimodoshikin"
+            ninki_col = f"wide{i}_ninkijun"
             if row[kumi1_col] and row[kumi2_col]:
                 kumi = f"{row[kumi1_col].strip()}-{row[kumi2_col].strip()}"
-                wide_list.append({
-                    'kumi': kumi,
-                    'payoff': int(row[kin_col]) if row[kin_col] else 0,
-                    'ninki': int(row[ninki_col]) if row[ninki_col] else 0
-                })
+                wide_list.append(
+                    {
+                        "kumi": kumi,
+                        "payoff": int(row[kin_col]) if row[kin_col] else 0,
+                        "ninki": int(row[ninki_col]) if row[ninki_col] else 0,
+                    }
+                )
         if wide_list:
-            result['wide'] = wide_list
+            result["wide"] = wide_list
 
         # 3連複
-        if row['sanrenpuku1_kumiban1'] and row['sanrenpuku1_kumiban2'] and row['sanrenpuku1_kumiban3']:
+        if (
+            row["sanrenpuku1_kumiban1"]
+            and row["sanrenpuku1_kumiban2"]
+            and row["sanrenpuku1_kumiban3"]
+        ):
             kumi = f"{row['sanrenpuku1_kumiban1'].strip()}-{row['sanrenpuku1_kumiban2'].strip()}-{row['sanrenpuku1_kumiban3'].strip()}"
-            result['trio'] = {
-                'kumi': kumi,
-                'payoff': int(row['sanrenpuku1_haraimodoshikin']) if row['sanrenpuku1_haraimodoshikin'] else 0,
-                'ninki': int(row['sanrenpuku1_ninkijun']) if row['sanrenpuku1_ninkijun'] else 0
+            result["trio"] = {
+                "kumi": kumi,
+                "payoff": (
+                    int(row["sanrenpuku1_haraimodoshikin"])
+                    if row["sanrenpuku1_haraimodoshikin"]
+                    else 0
+                ),
+                "ninki": int(row["sanrenpuku1_ninkijun"]) if row["sanrenpuku1_ninkijun"] else 0,
             }
 
         # 3連単
-        if row['sanrentan1_kumiban1'] and row['sanrentan1_kumiban2'] and row['sanrentan1_kumiban3']:
+        if row["sanrentan1_kumiban1"] and row["sanrentan1_kumiban2"] and row["sanrentan1_kumiban3"]:
             kumi = f"{row['sanrentan1_kumiban1'].strip()}→{row['sanrentan1_kumiban2'].strip()}→{row['sanrentan1_kumiban3'].strip()}"
-            result['trifecta'] = {
-                'kumi': kumi,
-                'payoff': int(row['sanrentan1_haraimodoshikin']) if row['sanrentan1_haraimodoshikin'] else 0,
-                'ninki': int(row['sanrentan1_ninkijun']) if row['sanrentan1_ninkijun'] else 0
+            result["trifecta"] = {
+                "kumi": kumi,
+                "payoff": (
+                    int(row["sanrentan1_haraimodoshikin"])
+                    if row["sanrentan1_haraimodoshikin"]
+                    else 0
+                ),
+                "ninki": int(row["sanrentan1_ninkijun"]) if row["sanrentan1_ninkijun"] else 0,
             }
 
         return result
@@ -176,10 +197,7 @@ async def get_race_payoffs(
         raise
 
 
-async def get_race_results(
-    conn: Connection,
-    race_id: str
-) -> list[dict[str, Any]]:
+async def get_race_results(conn: Connection, race_id: str) -> list[dict[str, Any]]:
     """
     レースの結果（着順付き出走馬一覧）を取得
 
@@ -238,15 +256,19 @@ async def get_race_results(
             except (ValueError, TypeError):
                 chakujun = 0
 
-            results.append({
-                'chakujun': chakujun,
-                'umaban': int(row[COL_UMABAN]) if row[COL_UMABAN] else 0,
-                'bamei': row[COL_BAMEI].strip() if row[COL_BAMEI] else "",
-                'kishumei': row['kishumei_ryakusho'].strip() if row['kishumei_ryakusho'] else "",
-                'time': row[COL_TIME].strip() if row[COL_TIME] else "",
-                'odds': float(row['tansho_odds']) / 10.0 if row['tansho_odds'] else None,
-                'kohan_3f': row['kohan_3f'].strip() if row.get('kohan_3f') else None
-            })
+            results.append(
+                {
+                    "chakujun": chakujun,
+                    "umaban": int(row[COL_UMABAN]) if row[COL_UMABAN] else 0,
+                    "bamei": row[COL_BAMEI].strip() if row[COL_BAMEI] else "",
+                    "kishumei": (
+                        row["kishumei_ryakusho"].strip() if row["kishumei_ryakusho"] else ""
+                    ),
+                    "time": row[COL_TIME].strip() if row[COL_TIME] else "",
+                    "odds": float(row["tansho_odds"]) / 10.0 if row["tansho_odds"] else None,
+                    "kohan_3f": row["kohan_3f"].strip() if row.get("kohan_3f") else None,
+                }
+            )
 
         return results
 
@@ -255,10 +277,7 @@ async def get_race_results(
         raise
 
 
-async def get_race_lap_times(
-    conn: Connection,
-    race_id: str
-) -> list[str]:
+async def get_race_lap_times(conn: Connection, race_id: str) -> list[str]:
     """
     レースのラップタイム（200m毎）を取得
 
@@ -292,8 +311,8 @@ async def get_race_lap_times(
         # ラップタイムを収集（空でないものだけ）
         lap_times = []
         for i in range(1, 26):
-            lap_col = f'lap_time{i}'
-            if row.get(lap_col) and row[lap_col].strip() not in ('', '0', '00', '000'):
+            lap_col = f"lap_time{i}"
+            if row.get(lap_col) and row[lap_col].strip() not in ("", "0", "00", "000"):
                 lap_times.append(row[lap_col].strip())
             else:
                 break  # 空のラップがあったらそこで終了

@@ -76,9 +76,7 @@ def _get_distance_category_name(category: str) -> str:
 )
 async def search_jockeys(
     name: str = Query(..., min_length=1, description="検索する騎手名（部分一致）"),
-    limit: int = Query(
-        10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"
-    ),
+    limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[JockeySearchResult]:
     """
     騎手名で検索
@@ -100,12 +98,8 @@ async def search_jockeys(
                 JockeySearchResult(
                     kishu_code=row["kishu_code"],
                     name=row["name"].strip() if row["name"] else "",
-                    name_short=row["name_short"].strip()
-                    if row["name_short"]
-                    else "",
-                    affiliation=_get_affiliation_name(
-                        row.get("tozai_shozoku_code", "1")
-                    ),
+                    name_short=row["name_short"].strip() if row["name_short"] else "",
+                    affiliation=_get_affiliation_name(row.get("tozai_shozoku_code", "1")),
                 )
                 for row in results
             ]
@@ -126,9 +120,7 @@ async def search_jockeys(
     description="騎手の詳細統計情報を取得します。",
 )
 async def get_jockey(
-    kishu_code: str = Path(
-        ..., min_length=5, max_length=5, description="騎手コード（5桁）"
-    )
+    kishu_code: str = Path(..., min_length=5, max_length=5, description="騎手コード（5桁）")
 ) -> JockeyStats:
     """
     騎手の詳細統計を取得
@@ -181,9 +173,7 @@ async def get_jockey(
                     kishu_code=basic_info["kishu_code"],
                     name=basic_info["name"],
                     name_short=basic_info["name_short"],
-                    affiliation=_get_affiliation_name(
-                        basic_info.get("tozai_shozoku_code", "1")
-                    ),
+                    affiliation=_get_affiliation_name(basic_info.get("tozai_shozoku_code", "1")),
                     birth_date=basic_info.get("birth_date"),
                     license_date=basic_info.get("license_date"),
                 ),
@@ -242,9 +232,7 @@ async def get_jockey(
 )
 async def search_trainers(
     name: str = Query(..., min_length=1, description="検索する調教師名（部分一致）"),
-    limit: int = Query(
-        10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"
-    ),
+    limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[TrainerSearchResult]:
     """
     調教師名で検索
@@ -266,12 +254,8 @@ async def search_trainers(
                 TrainerSearchResult(
                     chokyoshi_code=row["chokyoshi_code"],
                     name=row["name"].strip() if row["name"] else "",
-                    name_short=row["name_short"].strip()
-                    if row["name_short"]
-                    else "",
-                    affiliation=_get_affiliation_name(
-                        row.get("tozai_shozoku_code", "1")
-                    ),
+                    name_short=row["name_short"].strip() if row["name_short"] else "",
+                    affiliation=_get_affiliation_name(row.get("tozai_shozoku_code", "1")),
                 )
                 for row in results
             ]
@@ -292,9 +276,7 @@ async def search_trainers(
     description="調教師の詳細統計情報を取得します。",
 )
 async def get_trainer(
-    chokyoshi_code: str = Path(
-        ..., min_length=5, max_length=5, description="調教師コード（5桁）"
-    )
+    chokyoshi_code: str = Path(..., min_length=5, max_length=5, description="調教師コード（5桁）")
 ) -> TrainerStats:
     """
     調教師の詳細統計を取得
@@ -315,9 +297,7 @@ async def get_trainer(
             data = await get_trainer_stats(conn, chokyoshi_code)
 
             if not data:
-                raise DatabaseErrorException(
-                    f"Trainer not found: {chokyoshi_code}"
-                )
+                raise DatabaseErrorException(f"Trainer not found: {chokyoshi_code}")
 
             basic_info = data["basic_info"]
             overall = data["overall_stats"]
@@ -350,9 +330,7 @@ async def get_trainer(
                     chokyoshi_code=basic_info["chokyoshi_code"],
                     name=basic_info["name"],
                     name_short=basic_info["name_short"],
-                    affiliation=_get_affiliation_name(
-                        basic_info.get("tozai_shozoku_code", "1")
-                    ),
+                    affiliation=_get_affiliation_name(basic_info.get("tozai_shozoku_code", "1")),
                     birth_date=basic_info.get("birth_date"),
                     license_date=basic_info.get("license_date"),
                 ),

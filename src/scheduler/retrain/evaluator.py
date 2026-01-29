@@ -18,11 +18,7 @@ from src.models.feature_extractor import FastFeatureExtractor
 logger = logging.getLogger(__name__)
 
 
-def compare_models(
-    current_model_path: Path,
-    new_model_path: str,
-    test_year: int = 2022
-) -> dict:
+def compare_models(current_model_path: Path, new_model_path: str, test_year: int = 2022) -> dict:
     """
     Compare old and new models using comprehensive evaluation.
 
@@ -55,14 +51,14 @@ def compare_models(
         new_model_data = joblib.load(new_model_path)
     except Exception as e:
         logger.error(f"Model load error: {e}")
-        return {'status': 'error', 'message': str(e)}
+        return {"status": "error", "message": str(e)}
 
-    old_features = old_model_data['feature_names']
-    new_features = new_model_data['feature_names']
+    old_features = old_model_data["feature_names"]
+    new_features = new_model_data["feature_names"]
 
     # Get classification models
-    old_model_data.get('models', {})
-    new_model_data.get('models', {})
+    old_model_data.get("models", {})
+    new_model_data.get("models", {})
 
     # Get test data (including payout data)
     db = get_db()
@@ -73,7 +69,7 @@ def compare_models(
         test_data = extractor.extract_year_data(test_year)
 
         if test_data is None or len(test_data) == 0:
-            return {'status': 'error', 'message': 'no_test_data'}
+            return {"status": "error", "message": "no_test_data"}
 
         if isinstance(test_data, list):
             df = pd.DataFrame(test_data)
@@ -108,7 +104,9 @@ def compare_models(
             improvement = new_score - old_score
             logger.info(f"Old model composite score: {old_score:.4f}")
             logger.info(f"New model composite score: {new_score:.4f}")
-            logger.info(f"Improvement: {improvement:+.4f} ({'New model wins' if improvement > 0 else 'Keep old model'})")
+            logger.info(
+                f"Improvement: {improvement:+.4f} ({'New model wins' if improvement > 0 else 'Keep old model'})"
+            )
         else:
             # Force new model adoption when features changed
             old_score = 0.0
@@ -118,16 +116,16 @@ def compare_models(
             logger.info("Adopting new model due to feature set change")
 
         return {
-            'status': 'success',
-            'old_eval': old_eval,
-            'new_eval': new_eval,
-            'old_score': float(old_score),
-            'new_score': float(new_score),
-            'improvement': float(improvement),
-            'test_samples': len(df),
+            "status": "success",
+            "old_eval": old_eval,
+            "new_eval": new_eval,
+            "old_score": float(old_score),
+            "new_score": float(new_score),
+            "improvement": float(improvement),
+            "test_samples": len(df),
             # Backward compatibility
-            'old_rmse': old_eval.get('rmse', 0) if old_eval else 0,
-            'new_rmse': new_eval.get('rmse', 0)
+            "old_rmse": old_eval.get("rmse", 0) if old_eval else 0,
+            "new_rmse": new_eval.get("rmse", 0),
         }
 
     finally:
@@ -135,11 +133,7 @@ def compare_models(
 
 
 def evaluate_model(
-    df: pd.DataFrame,
-    model_data: dict,
-    features: list,
-    payouts: dict,
-    model_name: str
+    df: pd.DataFrame, model_data: dict, features: list, payouts: dict, model_name: str
 ) -> dict:
     """
     Run comprehensive model evaluation.
@@ -156,89 +150,100 @@ def evaluate_model(
     """
     from sklearn.metrics import roc_auc_score
 
-    models = model_data.get('models', {})
-    weights = model_data.get('ensemble_weights')  # CatBoost-compatible weights
+    models = model_data.get("models", {})
+    weights = model_data.get("ensemble_weights")  # CatBoost-compatible weights
     X = df[features].fillna(0)
 
     # Regression prediction (ranking)
-    xgb_reg = models.get('xgb_regressor') or model_data.get('xgb_model')
-    lgb_reg = models.get('lgb_regressor') or model_data.get('lgb_model')
-    cb_reg = models.get('cb_regressor') or model_data.get('cb_model')
+    xgb_reg = models.get("xgb_regressor") or model_data.get("xgb_model")
+    lgb_reg = models.get("lgb_regressor") or model_data.get("lgb_model")
+    cb_reg = models.get("cb_regressor") or model_data.get("cb_model")
 
     if cb_reg is not None and weights is not None:
         # 3-model ensemble
-        reg_pred = (xgb_reg.predict(X) * weights['xgb'] +
-                   lgb_reg.predict(X) * weights['lgb'] +
-                   cb_reg.predict(X) * weights['cb'])
+        reg_pred = (
+            xgb_reg.predict(X) * weights["xgb"]
+            + lgb_reg.predict(X) * weights["lgb"]
+            + cb_reg.predict(X) * weights["cb"]
+        )
     else:
         # 2-model average (backward compatibility)
         reg_pred = (xgb_reg.predict(X) + lgb_reg.predict(X)) / 2
 
-    rmse = float(np.sqrt(np.mean((reg_pred - df['target']) ** 2)))
+    rmse = float(np.sqrt(np.mean((reg_pred - df["target"]) ** 2)))
 
     # Classification predictions
-    eval_result = {'rmse': rmse}
+    eval_result = {"rmse": rmse}
 
     # CatBoost classifiers
-    cb_win = models.get('cb_win')
-    cb_quinella = models.get('cb_quinella')
-    cb_place = models.get('cb_place')
+    cb_win = models.get("cb_win")
+    cb_quinella = models.get("cb_quinella")
+    cb_place = models.get("cb_place")
 
     # Win AUC
-    if 'xgb_win' in models and 'lgb_win' in models:
+    if "xgb_win" in models and "lgb_win" in models:
         win_prob = get_ensemble_proba(
-            models['xgb_win'], models['lgb_win'], X,
-            models.get('win_calibrator'),
-            cb_clf=cb_win, weights=weights
+            models["xgb_win"],
+            models["lgb_win"],
+            X,
+            models.get("win_calibrator"),
+            cb_clf=cb_win,
+            weights=weights,
         )
-        win_actual = (df['target'] == 1).astype(int)
+        win_actual = (df["target"] == 1).astype(int)
         try:
-            eval_result['win_auc'] = float(roc_auc_score(win_actual, win_prob))
+            eval_result["win_auc"] = float(roc_auc_score(win_actual, win_prob))
         except Exception:
-            eval_result['win_auc'] = 0.5
+            eval_result["win_auc"] = 0.5
 
     # Quinella AUC
-    if 'xgb_quinella' in models and 'lgb_quinella' in models:
+    if "xgb_quinella" in models and "lgb_quinella" in models:
         quinella_prob = get_ensemble_proba(
-            models['xgb_quinella'], models['lgb_quinella'], X,
-            models.get('quinella_calibrator'),
-            cb_clf=cb_quinella, weights=weights
+            models["xgb_quinella"],
+            models["lgb_quinella"],
+            X,
+            models.get("quinella_calibrator"),
+            cb_clf=cb_quinella,
+            weights=weights,
         )
-        quinella_actual = (df['target'] <= 2).astype(int)
+        quinella_actual = (df["target"] <= 2).astype(int)
         try:
-            eval_result['quinella_auc'] = float(roc_auc_score(quinella_actual, quinella_prob))
+            eval_result["quinella_auc"] = float(roc_auc_score(quinella_actual, quinella_prob))
         except Exception:
-            eval_result['quinella_auc'] = 0.5
+            eval_result["quinella_auc"] = 0.5
 
     # Place AUC
-    if 'xgb_place' in models and 'lgb_place' in models:
+    if "xgb_place" in models and "lgb_place" in models:
         place_prob = get_ensemble_proba(
-            models['xgb_place'], models['lgb_place'], X,
-            models.get('place_calibrator'),
-            cb_clf=cb_place, weights=weights
+            models["xgb_place"],
+            models["lgb_place"],
+            X,
+            models.get("place_calibrator"),
+            cb_clf=cb_place,
+            weights=weights,
         )
-        place_actual = (df['target'] <= 3).astype(int)
+        place_actual = (df["target"] <= 3).astype(int)
         try:
-            eval_result['place_auc'] = float(roc_auc_score(place_actual, place_prob))
+            eval_result["place_auc"] = float(roc_auc_score(place_actual, place_prob))
         except Exception:
-            eval_result['place_auc'] = 0.5
+            eval_result["place_auc"] = 0.5
 
     # Top-3 coverage (calculated per race)
     df_eval = df.copy()
-    df_eval['pred_rank'] = reg_pred
+    df_eval["pred_rank"] = reg_pred
 
-    if 'race_code' in df_eval.columns:
+    if "race_code" in df_eval.columns:
         top3_hits = 0
         total_races = 0
 
-        for _race_code, race_df in df_eval.groupby('race_code'):
-            race_df_sorted = race_df.sort_values('pred_rank')
-            top3_pred = race_df_sorted.head(3)['target'].values
+        for _race_code, race_df in df_eval.groupby("race_code"):
+            race_df_sorted = race_df.sort_values("pred_rank")
+            top3_pred = race_df_sorted.head(3)["target"].values
             if any(t == 1 for t in top3_pred):
                 top3_hits += 1
             total_races += 1
 
-        eval_result['top3_coverage'] = float(top3_hits / total_races) if total_races > 0 else 0
+        eval_result["top3_coverage"] = float(top3_hits / total_races) if total_races > 0 else 0
 
     # Return simulation
     returns = simulate_returns(df_eval, reg_pred, payouts)
@@ -258,12 +263,7 @@ def evaluate_model(
 
 
 def get_ensemble_proba(
-    xgb_clf,
-    lgb_clf,
-    X,
-    calibrator=None,
-    cb_clf=None,
-    weights=None
+    xgb_clf, lgb_clf, X, calibrator=None, cb_clf=None, weights=None
 ) -> np.ndarray:
     """
     Get ensemble probability (with calibration, CatBoost support).
@@ -285,10 +285,10 @@ def get_ensemble_proba(
     if cb_clf is not None and weights is not None:
         # 3-model ensemble
         cb_prob = cb_clf.predict_proba(X)[:, 1]
-        raw_prob = xgb_prob * weights['xgb'] + lgb_prob * weights['lgb'] + cb_prob * weights['cb']
+        raw_prob = xgb_prob * weights["xgb"] + lgb_prob * weights["lgb"] + cb_prob * weights["cb"]
     elif weights is not None:
         # 2-model weighted ensemble
-        raw_prob = xgb_prob * weights.get('xgb', 0.5) + lgb_prob * weights.get('lgb', 0.5)
+        raw_prob = xgb_prob * weights.get("xgb", 0.5) + lgb_prob * weights.get("lgb", 0.5)
     else:
         # 2-model simple average (backward compatibility)
         raw_prob = (xgb_prob + lgb_prob) / 2
@@ -314,7 +314,8 @@ def get_payouts_for_year(conn, year: int) -> dict:
     """
     try:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-        cur.execute('''
+        cur.execute(
+            """
             SELECT race_code,
                    tansho1_umaban, tansho1_haraimodoshikin,
                    fukusho1_umaban, fukusho1_haraimodoshikin,
@@ -322,43 +323,47 @@ def get_payouts_for_year(conn, year: int) -> dict:
                    fukusho3_umaban, fukusho3_haraimodoshikin
             FROM haraimodoshi
             WHERE EXTRACT(YEAR FROM TO_DATE(SUBSTRING(race_code, 1, 8), 'YYYYMMDD')) = %s
-        ''', (year,))
+        """,
+            (year,),
+        )
 
         payouts = {}
         for row in cur.fetchall():
-            race_code = row['race_code']
+            race_code = row["race_code"]
 
             # Safely get win payout
-            tansho_umaban = row['tansho1_umaban']
-            tansho_payout = row['tansho1_haraimodoshikin']
+            tansho_umaban = row["tansho1_umaban"]
+            tansho_payout = row["tansho1_haraimodoshikin"]
             tansho_umaban_str = str(tansho_umaban).strip() if tansho_umaban else None
             try:
-                tansho_payout_int = int(str(tansho_payout).strip()) if tansho_payout and str(tansho_payout).strip() else 0
+                tansho_payout_int = (
+                    int(str(tansho_payout).strip())
+                    if tansho_payout and str(tansho_payout).strip()
+                    else 0
+                )
             except ValueError:
                 tansho_payout_int = 0
 
             payouts[race_code] = {
-                'tansho': {
-                    'umaban': tansho_umaban_str,
-                    'payout': tansho_payout_int
-                },
-                'fukusho': []
+                "tansho": {"umaban": tansho_umaban_str, "payout": tansho_payout_int},
+                "fukusho": [],
             }
 
             # Safely get place payouts
             for i in range(1, 4):
-                umaban = row.get(f'fukusho{i}_umaban')
-                payout = row.get(f'fukusho{i}_haraimodoshikin')
+                umaban = row.get(f"fukusho{i}_umaban")
+                payout = row.get(f"fukusho{i}_haraimodoshikin")
                 if umaban and str(umaban).strip():
                     try:
-                        payout_int = int(str(payout).strip()) if payout and str(payout).strip() else 0
+                        payout_int = (
+                            int(str(payout).strip()) if payout and str(payout).strip() else 0
+                        )
                     except ValueError:
                         payout_int = 0
                     if payout_int > 0:
-                        payouts[race_code]['fukusho'].append({
-                            'umaban': str(umaban).strip(),
-                            'payout': payout_int
-                        })
+                        payouts[race_code]["fukusho"].append(
+                            {"umaban": str(umaban).strip(), "payout": payout_int}
+                        )
         cur.close()
         logger.info(f"Payout data retrieved: {len(payouts)} races")
         return payouts
@@ -380,7 +385,7 @@ def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: dict) -
         Return statistics dictionary
     """
     df_sim = df.copy()
-    df_sim['pred_rank'] = predictions
+    df_sim["pred_rank"] = predictions
 
     tansho_bet = 0
     tansho_win = 0
@@ -388,13 +393,15 @@ def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: dict) -
     fukusho_win = 0
 
     # Check horse number column (umaban or horse_number)
-    umaban_col = 'umaban' if 'umaban' in df_sim.columns else 'horse_number'
-    if 'race_code' not in df_sim.columns or umaban_col not in df_sim.columns:
-        logger.warning(f"Missing columns for return calculation: race_code={('race_code' in df_sim.columns)}, {umaban_col}={(umaban_col in df_sim.columns)}")
-        return {'tansho_return': 0, 'fukusho_return': 0}
+    umaban_col = "umaban" if "umaban" in df_sim.columns else "horse_number"
+    if "race_code" not in df_sim.columns or umaban_col not in df_sim.columns:
+        logger.warning(
+            f"Missing columns for return calculation: race_code={('race_code' in df_sim.columns)}, {umaban_col}={(umaban_col in df_sim.columns)}"
+        )
+        return {"tansho_return": 0, "fukusho_return": 0}
 
-    for race_code, race_df in df_sim.groupby('race_code'):
-        race_df_sorted = race_df.sort_values('pred_rank')
+    for race_code, race_df in df_sim.groupby("race_code"):
+        race_df_sorted = race_df.sort_values("pred_rank")
         if len(race_df_sorted) == 0:
             continue
 
@@ -405,24 +412,24 @@ def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: dict) -
 
         # Win bet
         tansho_bet += 100
-        tansho_info = payout_data.get('tansho', {})
-        if tansho_info.get('umaban') == pred_umaban:
-            tansho_win += tansho_info.get('payout', 0)
+        tansho_info = payout_data.get("tansho", {})
+        if tansho_info.get("umaban") == pred_umaban:
+            tansho_win += tansho_info.get("payout", 0)
 
         # Place bet
         fukusho_bet += 100
-        for fuku in payout_data.get('fukusho', []):
-            if fuku.get('umaban') == pred_umaban:
-                fukusho_win += fuku.get('payout', 0)
+        for fuku in payout_data.get("fukusho", []):
+            if fuku.get("umaban") == pred_umaban:
+                fukusho_win += fuku.get("payout", 0)
                 break
 
     return {
-        'tansho_return': float(tansho_win / tansho_bet) if tansho_bet > 0 else 0,
-        'fukusho_return': float(fukusho_win / fukusho_bet) if fukusho_bet > 0 else 0,
-        'tansho_bet': tansho_bet,
-        'tansho_win': tansho_win,
-        'fukusho_bet': fukusho_bet,
-        'fukusho_win': fukusho_win
+        "tansho_return": float(tansho_win / tansho_bet) if tansho_bet > 0 else 0,
+        "fukusho_return": float(fukusho_win / fukusho_bet) if fukusho_bet > 0 else 0,
+        "tansho_bet": tansho_bet,
+        "tansho_win": tansho_win,
+        "fukusho_bet": fukusho_bet,
+        "fukusho_win": fukusho_win,
     }
 
 
@@ -445,19 +452,19 @@ def calculate_composite_score(eval_result: dict) -> float:
         Composite score
     """
     weights = {
-        'win_auc': 0.25,
-        'quinella_auc': 0.15,
-        'place_auc': 0.15,
-        'top3_coverage': 0.20,
-        'tansho_return': 0.15,
-        'fukusho_return': 0.10
+        "win_auc": 0.25,
+        "quinella_auc": 0.15,
+        "place_auc": 0.15,
+        "top3_coverage": 0.20,
+        "tansho_return": 0.15,
+        "fukusho_return": 0.10,
     }
 
     score = 0
     for metric, weight in weights.items():
         value = eval_result.get(metric, 0)
         # AUC is in 0.5-1.0 range, so subtract 0.5 and double to get 0-1 scale
-        if 'auc' in metric:
+        if "auc" in metric:
             value = (value - 0.5) * 2
         # Return rate: 1.0 = 100%, use as-is
         score += value * weight

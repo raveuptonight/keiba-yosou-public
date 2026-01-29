@@ -20,7 +20,7 @@ router = APIRouter()
     response_model=HealthCheckResponse,
     status_code=status.HTTP_200_OK,
     summary="ヘルスチェック",
-    description="APIサーバーの稼働状態とDB接続状態を確認"
+    description="APIサーバーの稼働状態とDB接続状態を確認",
 )
 async def health_check() -> HealthCheckResponse:
     """
@@ -56,7 +56,7 @@ async def health_check() -> HealthCheckResponse:
         status=overall_status,
         timestamp=datetime.now(),
         database=db_status,
-        claude_api=claude_api_status
+        claude_api=claude_api_status,
     )
 
     logger.info(

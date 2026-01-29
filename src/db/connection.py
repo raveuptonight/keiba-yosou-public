@@ -32,6 +32,7 @@ class MockConnection:
     """
     Mock connection class (dummy for when DB is not connected).
     """
+
     def cursor(self):
         return MockCursor()
 
@@ -49,6 +50,7 @@ class MockCursor:
     """
     Mock cursor class.
     """
+
     def execute(self, query, params=None):
         logger.debug(f"[MOCK] Execute: {query[:100]}...")
 
@@ -103,7 +105,9 @@ class DatabaseConnection:
                 logger.error("DB_PASSWORD is not set")
                 raise MissingEnvironmentVariableError("DB_PASSWORD")
 
-            logger.info(f"DB connection settings (local): host={self.host}, port={self.port}, database={self.database}")
+            logger.info(
+                f"DB connection settings (local): host={self.host}, port={self.port}, database={self.database}"
+            )
 
         elif self.db_mode == "neon":
             # Future Neon support
@@ -135,7 +139,9 @@ class DatabaseConnection:
 
         try:
             if self.db_mode == "local":
-                logger.debug(f"Starting DB connection (local): {self.host}:{self.port}/{self.database}")
+                logger.debug(
+                    f"Starting DB connection (local): {self.host}:{self.port}/{self.database}"
+                )
                 conn = psycopg2.connect(
                     host=self.host,
                     port=self.port,
@@ -163,9 +169,7 @@ class DatabaseConnection:
             raise DatabaseConnectionError(f"Database connection failed: {e}") from e
 
     def get_connection_pool(
-        self,
-        minconn: int = DB_CONNECTION_POOL_MIN,
-        maxconn: int = DB_CONNECTION_POOL_MAX
+        self, minconn: int = DB_CONNECTION_POOL_MIN, maxconn: int = DB_CONNECTION_POOL_MAX
     ) -> pool.SimpleConnectionPool:
         """
         Get connection pool (for cases requiring multiple connections).
@@ -314,8 +318,7 @@ def test_connection() -> bool:
 if __name__ == "__main__":
     # Run connection test when this file is executed directly
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     test_connection()

@@ -36,9 +36,7 @@ def _is_mock_mode() -> bool:
 
 
 async def generate_prediction(
-    race_id: str,
-    is_final: bool = False,
-    bias_date: str | None = None
+    race_id: str, is_final: bool = False, bias_date: str | None = None
 ) -> PredictionResponse:
     """
     Main prediction generation function (ML model only, no LLM).
@@ -81,9 +79,7 @@ async def generate_prediction(
             race_data = await get_race_prediction_data(conn, race_id)
 
             if not race_data or not race_data.get("horses"):
-                raise MissingDataError(
-                    f"Insufficient race data: race_id={race_id}"
-                )
+                raise MissingDataError(f"Insufficient race data: race_id={race_id}")
 
         # 2. Compute ML predictions
         ml_scores = {}
@@ -101,17 +97,12 @@ async def generate_prediction(
 
         # 3. Generate probability-based ranking prediction from ML scores
         logger.debug("Generating probability-based ranking prediction")
-        ml_result = generate_ml_only_prediction(
-            race_data=race_data,
-            ml_scores=ml_scores
-        )
+        ml_result = generate_ml_only_prediction(race_data=race_data, ml_scores=ml_scores)
 
         # 4. Convert prediction result to Pydantic model
         logger.debug("Converting ML result to PredictionResponse")
         prediction_response = convert_to_prediction_response(
-            race_data=race_data,
-            ml_result=ml_result,
-            is_final=is_final
+            race_data=race_data, ml_result=ml_result, is_final=is_final
         )
 
         # 5. Save to DB
@@ -132,18 +123,17 @@ async def generate_prediction(
 
 # Re-export persistence functions for backward compatibility
 __all__ = [
-    'generate_prediction',
-    'save_prediction',
-    'get_prediction_by_id',
-    'get_predictions_by_race',
+    "generate_prediction",
+    "save_prediction",
+    "get_prediction_by_id",
+    "get_predictions_by_race",
 ]
 
 
 if __name__ == "__main__":
     # Logging setup
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
     import asyncio
@@ -154,19 +144,20 @@ if __name__ == "__main__":
         test_race_id = "2024031005011112"
 
         try:
-            prediction = await generate_prediction(
-                race_id=test_race_id,
-                is_final=False
-            )
+            prediction = await generate_prediction(race_id=test_race_id, is_final=False)
 
             print("\nPrediction Result (probability-based ranking):")
             print(f"Prediction ID: {prediction.prediction_id}")
             print(f"Race: {prediction.race_name}")
-            print(f"Prediction confidence: {prediction.prediction_result.prediction_confidence:.2%}")
+            print(
+                f"Prediction confidence: {prediction.prediction_result.prediction_confidence:.2%}"
+            )
             print("\nFull ranking:")
             for h in prediction.prediction_result.ranked_horses:
-                print(f"  Rank {h.rank}: #{h.horse_number} {h.horse_name} "
-                      f"(Win: {h.win_probability:.1%}, Place: {h.place_probability:.1%})")
+                print(
+                    f"  Rank {h.rank}: #{h.horse_number} {h.horse_name} "
+                    f"(Win: {h.win_probability:.1%}, Place: {h.place_probability:.1%})"
+                )
 
         except Exception as e:
             print(f"Error: {e}")

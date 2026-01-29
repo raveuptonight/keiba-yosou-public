@@ -25,7 +25,7 @@ def get_pedigree_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     if not kettonums:
         return {}
 
-    placeholders = ','.join(['%s'] * len(kettonums))
+    placeholders = ",".join(["%s"] * len(kettonums))
     sql = f"""
         SELECT
             ketto_toroku_bango,
@@ -40,10 +40,7 @@ def get_pedigree_batch(conn, kettonums: list[str]) -> dict[str, dict]:
         cur.execute(sql, kettonums)
         for row in cur.fetchall():
             kettonum, sire_id, bms_id = row
-            result[kettonum] = {
-                'sire_id': sire_id or '',
-                'broodmare_sire_id': bms_id or ''
-            }
+            result[kettonum] = {"sire_id": sire_id or "", "broodmare_sire_id": bms_id or ""}
         cur.close()
         return result
     except Exception as e:
@@ -52,7 +49,9 @@ def get_pedigree_batch(conn, kettonums: list[str]) -> dict[str, dict]:
         return {}
 
 
-def get_sire_stats_batch(conn, sire_ids: list[str], year: int, is_turf: bool = True) -> dict[str, dict]:
+def get_sire_stats_batch(
+    conn, sire_ids: list[str], year: int, is_turf: bool = True
+) -> dict[str, dict]:
     """Batch fetch sire offspring performance statistics.
 
     Retrieves aggregated performance of sire's offspring from the last 3 years.
@@ -75,7 +74,7 @@ def get_sire_stats_batch(conn, sire_ids: list[str], year: int, is_turf: bool = T
 
     # Limit to 1000 sires
     unique_ids = unique_ids[:1000]
-    placeholders = ','.join(['%s'] * len(unique_ids))
+    placeholders = ",".join(["%s"] * len(unique_ids))
     year_from = str(year - 3)
 
     sql = f"""
@@ -100,12 +99,12 @@ def get_sire_stats_batch(conn, sire_ids: list[str], year: int, is_turf: bool = T
             sire_id, runs, wins, places = row
             runs = int(runs or 0)
             # Set same value for both turf and dirt (simplified version)
-            for surface in ['turf', 'dirt']:
+            for surface in ["turf", "dirt"]:
                 key = f"{sire_id}_{surface}"
                 result[key] = {
-                    'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
-                    'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
-                    'runs': runs
+                    "win_rate": int(wins or 0) / runs if runs > 0 else 0.08,
+                    "place_rate": int(places or 0) / runs if runs > 0 else 0.25,
+                    "runs": runs,
                 }
         cur.close()
         return result
@@ -138,7 +137,7 @@ def get_sire_maiden_stats_batch(conn, sire_ids: list[str], year: int) -> dict[st
 
     # Limit to 1000 sires
     unique_ids = unique_ids[:1000]
-    placeholders = ','.join(['%s'] * len(unique_ids))
+    placeholders = ",".join(["%s"] * len(unique_ids))
     year_from = str(year - 5)  # 5 years of maiden race data
 
     sql = f"""
@@ -167,9 +166,9 @@ def get_sire_maiden_stats_batch(conn, sire_ids: list[str], year: int) -> dict[st
             runs = int(runs or 0)
             if runs >= 5:  # Only include sires with 5+ offspring runners
                 result[sire_id] = {
-                    'win_rate': int(wins or 0) / runs if runs > 0 else 0.08,
-                    'place_rate': int(places or 0) / runs if runs > 0 else 0.25,
-                    'runs': runs
+                    "win_rate": int(wins or 0) / runs if runs > 0 else 0.08,
+                    "place_rate": int(places or 0) / runs if runs > 0 else 0.25,
+                    "runs": runs,
                 }
         cur.close()
         return result

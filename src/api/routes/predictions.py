@@ -28,11 +28,9 @@ router = APIRouter()
     response_model=PredictionResponse,
     status_code=status.HTTP_200_OK,
     summary="予想生成",
-    description="MLモデルによる競馬予想を生成します。"
+    description="MLモデルによる競馬予想を生成します。",
 )
-async def generate_prediction(
-    request: PredictionRequest
-) -> PredictionResponse:
+async def generate_prediction(request: PredictionRequest) -> PredictionResponse:
     """
     予想を生成
 
@@ -55,9 +53,7 @@ async def generate_prediction(
 
     try:
         response = await prediction_service.generate_prediction(
-            race_id=request.race_id,
-            is_final=request.is_final,
-            bias_date=request.bias_date
+            race_id=request.race_id, is_final=request.is_final, bias_date=request.bias_date
         )
         logger.info(f"Prediction generated successfully: {response.prediction_id}")
         return response
@@ -76,13 +72,10 @@ async def generate_prediction(
     response_model=PredictionResponse,
     status_code=status.HTTP_200_OK,
     summary="予想取得",
-    description="保存済み予想結果を取得します。"
+    description="保存済み予想結果を取得します。",
 )
 async def get_prediction(
-    prediction_id: str = Path(
-        ...,
-        description="予想ID（UUID）"
-    )
+    prediction_id: str = Path(..., description="予想ID（UUID）")
 ) -> PredictionResponse:
     """
     保存済み予想を取得
@@ -121,19 +114,11 @@ async def get_prediction(
     response_model=PredictionHistoryResponse,
     status_code=status.HTTP_200_OK,
     summary="レース予想履歴取得",
-    description="特定レースの予想履歴を取得します。"
+    description="特定レースの予想履歴を取得します。",
 )
 async def get_race_predictions(
-    race_id: str = Path(
-        ...,
-        min_length=16,
-        max_length=16,
-        description="レースID（16桁）"
-    ),
-    is_final: bool | None = Query(
-        None,
-        description="最終予想のみ取得（true/false）"
-    )
+    race_id: str = Path(..., min_length=16, max_length=16, description="レースID（16桁）"),
+    is_final: bool | None = Query(None, description="最終予想のみ取得（true/false）"),
 ) -> PredictionHistoryResponse:
     """
     レースの予想履歴を取得
@@ -152,15 +137,9 @@ async def get_race_predictions(
 
     try:
         # get_predictions_by_race は既に PredictionHistoryItem のリストを返す
-        predictions = await prediction_service.get_predictions_by_race(
-            race_id,
-            is_final=is_final
-        )
+        predictions = await prediction_service.get_predictions_by_race(race_id, is_final=is_final)
 
-        response = PredictionHistoryResponse(
-            race_id=race_id,
-            predictions=predictions
-        )
+        response = PredictionHistoryResponse(race_id=race_id, predictions=predictions)
 
         logger.info(f"Found {len(predictions)} predictions for race {race_id}")
         return response

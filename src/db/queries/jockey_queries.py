@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 async def search_jockeys_by_name(
-    conn: Connection,
-    name: str,
-    limit: int = 10
+    conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
     騎手名で検索
@@ -69,9 +67,7 @@ async def search_jockeys_by_name(
 
 
 async def get_jockey_stats(
-    conn: Connection,
-    kishu_code: str,
-    years_back: int = ML_TRAINING_YEARS_BACK
+    conn: Connection, kishu_code: str, years_back: int = ML_TRAINING_YEARS_BACK
 ) -> dict[str, Any] | None:
     """
     騎手の詳細成績を取得
@@ -85,6 +81,7 @@ async def get_jockey_stats(
         騎手の詳細成績
     """
     from datetime import date
+
     cutoff_year = str(date.today().year - years_back)
 
     # 基本情報取得
@@ -175,7 +172,7 @@ async def get_jockey_stats(
             "basic_info": dict(basic_info),
             "overall_stats": dict(stats),
             "distance_stats": [dict(row) for row in distance_stats],
-            "venue_stats": [dict(row) for row in venue_stats]
+            "venue_stats": [dict(row) for row in venue_stats],
         }
 
     except Exception as e:
@@ -184,9 +181,7 @@ async def get_jockey_stats(
 
 
 async def search_trainers_by_name(
-    conn: Connection,
-    name: str,
-    limit: int = 10
+    conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
     調教師名で検索
@@ -223,9 +218,7 @@ async def search_trainers_by_name(
 
 
 async def get_trainer_stats(
-    conn: Connection,
-    chokyoshi_code: str,
-    years_back: int = ML_TRAINING_YEARS_BACK
+    conn: Connection, chokyoshi_code: str, years_back: int = ML_TRAINING_YEARS_BACK
 ) -> dict[str, Any] | None:
     """
     調教師の詳細成績を取得
@@ -239,6 +232,7 @@ async def get_trainer_stats(
         調教師の詳細成績
     """
     from datetime import date
+
     cutoff_year = str(date.today().year - years_back)
 
     # 基本情報取得
@@ -304,7 +298,9 @@ async def get_trainer_stats(
             GROUP BY distance_category
         """
 
-        distance_stats = await conn.fetch(distance_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year)
+        distance_stats = await conn.fetch(
+            distance_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year
+        )
 
         # 競馬場別成績
         venue_sql = f"""
@@ -340,7 +336,9 @@ async def get_trainer_stats(
             LIMIT 5
         """
 
-        top_jockeys = await conn.fetch(top_jockeys_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year)
+        top_jockeys = await conn.fetch(
+            top_jockeys_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year
+        )
 
         # 結果をまとめる
         return {
@@ -348,7 +346,7 @@ async def get_trainer_stats(
             "overall_stats": dict(stats),
             "distance_stats": [dict(row) for row in distance_stats],
             "venue_stats": [dict(row) for row in venue_stats],
-            "top_jockeys": [dict(row) for row in top_jockeys]
+            "top_jockeys": [dict(row) for row in top_jockeys],
         }
 
     except Exception as e:

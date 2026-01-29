@@ -23,9 +23,7 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(..., description="エラーコード")
     message: str = Field(..., description="エラーメッセージ")
-    details: dict[str, Any] | None = Field(
-        None, description="詳細情報"
-    )
+    details: dict[str, Any] | None = Field(None, description="詳細情報")
 
 
 class ErrorResponse(BaseModel):
@@ -39,9 +37,5 @@ class HealthCheckResponse(BaseModel):
 
     status: str = Field(..., description="ステータス (ok/ng)")
     timestamp: datetime = Field(..., description="チェック実行日時")
-    database: str | None = Field(
-        None, description="DB接続状態 (connected/disconnected)"
-    )
-    claude_api: str | None = Field(
-        None, description="Claude API状態 (available/unavailable)"
-    )
+    database: str | None = Field(None, description="DB接続状態 (connected/disconnected)")
+    claude_api: str | None = Field(None, description="Claude API状態 (available/unavailable)")
