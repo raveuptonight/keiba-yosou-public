@@ -1,18 +1,18 @@
 """
-システム全体の設定定数
+System-wide Configuration Constants
 
-マジックナンバーやハードコード値を集約管理
+Centralized management of magic numbers and hardcoded values.
 """
 
 import os
 from typing import Final
 from dotenv import load_dotenv
 
-# .envファイルを読み込み
+# Load .env file
 load_dotenv()
 
 # =====================================
-# データベース接続設定
+# Database Connection Settings
 # =====================================
 DB_HOST: Final[str] = os.getenv("DB_HOST", "localhost")
 DB_PORT: Final[int] = int(os.getenv("DB_PORT", "5432"))
@@ -20,12 +20,12 @@ DB_NAME: Final[str] = os.getenv("DB_NAME", "keiba_db")
 DB_USER: Final[str] = os.getenv("DB_USER", "postgres")
 DB_PASSWORD: Final[str] = os.getenv("DB_PASSWORD", "")
 
-# 接続プール設定
+# Connection pool settings
 DB_POOL_MIN_SIZE: Final[int] = int(os.getenv("DB_POOL_MIN_SIZE", "1"))
 DB_POOL_MAX_SIZE: Final[int] = int(os.getenv("DB_POOL_MAX_SIZE", "10"))
 
 # =====================================
-# データベース設定
+# Database Settings
 # =====================================
 DB_DEFAULT_LEARNING_POINTS_LIMIT: Final[int] = 10
 DB_DEFAULT_DAYS_BACK: Final[int] = 30
@@ -34,17 +34,17 @@ DB_CONNECTION_POOL_MIN: Final[int] = 1
 DB_CONNECTION_POOL_MAX: Final[int] = 10
 
 # =====================================
-# 機械学習設定
+# Machine Learning Settings
 # =====================================
-# 外れ値判定
-ML_OUTLIER_THRESHOLD: Final[float] = 3.0  # 着順誤差3着以上を外れ値とする
-ML_OUTLIER_RATE_THRESHOLD: Final[float] = 0.3  # 外れ値率30%超で再学習推奨
-ML_FEATURE_VARIANCE_THRESHOLD: Final[float] = 0.2  # 特徴量の分散閾値
+# Outlier detection
+ML_OUTLIER_THRESHOLD: Final[float] = 3.0  # Consider finish position error >= 3 as outlier
+ML_OUTLIER_RATE_THRESHOLD: Final[float] = 0.3  # Recommend retraining if outlier rate > 30%
+ML_FEATURE_VARIANCE_THRESHOLD: Final[float] = 0.2  # Feature variance threshold
 
-# 再学習設定
-ML_MIN_RETRAIN_SAMPLES: Final[int] = 100  # 最小再学習サンプル数
+# Retraining settings
+ML_MIN_RETRAIN_SAMPLES: Final[int] = 100  # Minimum samples for retraining
 
-# XGBoostパラメータ
+# XGBoost parameters
 XGBOOST_N_ESTIMATORS: Final[int] = 100
 XGBOOST_MAX_DEPTH: Final[int] = 6
 XGBOOST_LEARNING_RATE: Final[float] = 0.1
@@ -57,74 +57,74 @@ XGBOOST_REG_LAMBDA: Final[float] = 1.0
 XGBOOST_RANDOM_STATE: Final[int] = 42
 
 # =====================================
-# API設定
+# API Settings
 # =====================================
 API_DEFAULT_HOST: Final[str] = "0.0.0.0"
 API_DEFAULT_PORT: Final[int] = 8000
 API_BASE_URL_DEFAULT: Final[str] = "http://localhost:8000"
 
-# ページネーション
+# Pagination
 API_DEFAULT_LIMIT: Final[int] = 10
 API_MAX_LIMIT: Final[int] = 100
 
-# タイムアウト
-API_REQUEST_TIMEOUT: Final[int] = 300  # 5分
-API_STATS_TIMEOUT: Final[int] = 10  # 10秒
+# Timeouts
+API_REQUEST_TIMEOUT: Final[int] = 300  # 5 minutes
+API_STATS_TIMEOUT: Final[int] = 10  # 10 seconds
 
 # =====================================
-# Discord Bot設定
+# Discord Bot Settings
 # =====================================
-DISCORD_REQUEST_TIMEOUT: Final[int] = 300  # 5分
-DISCORD_STATS_TIMEOUT: Final[int] = 10  # 10秒
-DISCORD_MAX_PREDICTIONS_DISPLAY: Final[int] = 5  # 予想表示最大件数
-DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # 統計表示最大件数
+DISCORD_REQUEST_TIMEOUT: Final[int] = 300  # 5 minutes
+DISCORD_STATS_TIMEOUT: Final[int] = 10  # 10 seconds
+DISCORD_MAX_PREDICTIONS_DISPLAY: Final[int] = 5  # Max predictions to display
+DISCORD_MAX_STATS_DISPLAY: Final[int] = 10  # Max stats to display
 
-# 自動予想スケジューラー設定
-SCHEDULER_EVENING_PREDICTION_HOUR: Final[int] = 21  # 前日予想の実行時刻（時）
-SCHEDULER_EVENING_PREDICTION_MINUTE: Final[int] = 0  # 前日予想の実行時刻（分）
-SCHEDULER_CHECK_INTERVAL_MINUTES: Final[int] = 10  # レース時刻チェック間隔（分）
-SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 30  # 最終予想のタイミング（レース何分前）
-SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # 最終予想の時刻許容範囲（分）
+# Auto prediction scheduler settings
+SCHEDULER_EVENING_PREDICTION_HOUR: Final[int] = 21  # Pre-race prediction execution hour
+SCHEDULER_EVENING_PREDICTION_MINUTE: Final[int] = 0  # Pre-race prediction execution minute
+SCHEDULER_CHECK_INTERVAL_MINUTES: Final[int] = 10  # Race time check interval (minutes)
+SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE: Final[int] = 30  # Final prediction timing (minutes before race)
+SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES: Final[int] = 5  # Final prediction time tolerance (minutes)
 
 # =====================================
-# CORS設定（セキュリティ）
+# CORS Settings (Security)
 # =====================================
-CORS_ALLOW_ORIGINS_DEV: Final[list] = ["*"]  # 開発環境
+CORS_ALLOW_ORIGINS_DEV: Final[list] = ["*"]  # Development environment
 CORS_ALLOW_ORIGINS_PROD: Final[list] = [
-    "https://yourdomain.com",  # 本番環境のドメインに置き換える
+    "https://yourdomain.com",  # Replace with production domain
 ]
 
 # =====================================
-# ロギング設定
+# Logging Settings
 # =====================================
 LOG_LEVEL: Final[str] = "INFO"
 LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 # =====================================
-# ファイルパス
+# File Paths
 # =====================================
 MODEL_DIR: Final[str] = "models"
 MIGRATION_DIR: Final[str] = "src/db/migrations"
 
 # =====================================
-# データ取得期間設定
+# Data Retrieval Period Settings
 # =====================================
-# 機械学習の訓練に使用するデータ期間（年）
-ML_TRAINING_YEARS_BACK: Final[int] = 10  # 直近10年分のデータを使用
+# Data period for ML training (years)
+ML_TRAINING_YEARS_BACK: Final[int] = 10  # Use last 10 years of data
 
-# レース予測時の参考データ期間（年）
-PREDICTION_REFERENCE_YEARS: Final[int] = 5  # 直近5年分を主に参照
+# Reference data period for race prediction (years)
+PREDICTION_REFERENCE_YEARS: Final[int] = 5  # Mainly reference last 5 years
 
-# 統計情報の集計期間（年）
-STATS_MAX_YEARS_BACK: Final[int] = 10  # 最大10年分の統計を集計
+# Statistical data aggregation period (years)
+STATS_MAX_YEARS_BACK: Final[int] = 10  # Aggregate up to 10 years of statistics
 
 # =====================================
-# 特徴量設定
+# Feature Settings
 # =====================================
 FEATURE_SPEED_INDEX_MIN: Final[float] = 0.0
 FEATURE_SPEED_INDEX_MAX: Final[float] = 100.0
 FEATURE_JOCKEY_WIN_RATE_MIN: Final[float] = 0.0
 FEATURE_JOCKEY_WIN_RATE_MAX: Final[float] = 1.0
 
-# モック設定（開発用）
+# Mock settings (for development)
 FEATURE_MOCK_RANDOM_SEED: Final[int] = 42

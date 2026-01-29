@@ -1,8 +1,8 @@
 """
-期待値ベース馬券推奨モジュール
+Expected Value Based Betting Recommendation Module
 
-予測確率 × オッズ = 期待値 (EV)
-EV > 閾値 の馬を馬券候補として推奨
+Predicted probability × Odds = Expected Value (EV)
+Recommends horses with EV > threshold as betting candidates.
 """
 
 import logging
@@ -13,22 +13,22 @@ import psycopg2.extras
 
 from src.db.connection import get_db
 
-# 日本標準時
+# Japan Standard Time
 JST = timezone(timedelta(hours=9))
 
-# ロガー設定
+# Logger setup
 logger = logging.getLogger(__name__)
 
-# デフォルト閾値（バックテスト結果: EV>=1.5で回収率417%）
-DEFAULT_WIN_EV_THRESHOLD = 1.5   # 単勝期待値閾値
-DEFAULT_PLACE_EV_THRESHOLD = 1.5  # 複勝期待値閾値
-# 緩い閾値（推奨候補用）
+# Default thresholds (backtest result: 417% return rate with EV>=1.5)
+DEFAULT_WIN_EV_THRESHOLD = 1.5   # Win bet EV threshold
+DEFAULT_PLACE_EV_THRESHOLD = 1.5  # Place bet EV threshold
+# Loose thresholds (for candidates)
 LOOSE_WIN_EV_THRESHOLD = 1.2
 LOOSE_PLACE_EV_THRESHOLD = 1.2
 
 
 class EVRecommender:
-    """期待値ベースの馬券推奨クラス"""
+    """Expected value based betting recommendation class."""
 
     def __init__(
         self,
@@ -37,8 +37,8 @@ class EVRecommender:
     ):
         """
         Args:
-            win_ev_threshold: 単勝推奨の期待値閾値
-            place_ev_threshold: 複勝推奨の期待値閾値
+            win_ev_threshold: EV threshold for win bet recommendations
+            place_ev_threshold: EV threshold for place bet recommendations
         """
         self.win_ev_threshold = win_ev_threshold
         self.place_ev_threshold = place_ev_threshold
@@ -51,17 +51,17 @@ class EVRecommender:
         use_realtime_odds: bool = True,
     ) -> Dict:
         """
-        期待値ベースの馬券推奨を取得
+        Get expected value based betting recommendations.
 
         Args:
-            race_code: レースコード
-            ranked_horses: 予想結果（win_probability, place_probability を含む）
-            use_realtime_odds: True=時系列オッズ（最新）、False=確定オッズ
+            race_code: Race code
+            ranked_horses: Prediction results (containing win_probability, place_probability)
+            use_realtime_odds: True=time-series odds (latest), False=final odds
 
         Returns:
             {
-                "win_recommendations": [...],  # 単勝推奨リスト
-                "place_recommendations": [...],  # 複勝推奨リスト
+                "win_recommendations": [...],  # Win bet recommendation list
+                "place_recommendations": [...],  # Place bet recommendation list
                 "odds_source": "realtime" or "final",
                 "odds_time": "YYYY-MM-DD HH:MM" or None,
             }
@@ -69,7 +69,7 @@ class EVRecommender:
         try:
             conn = self.db.get_connection()
 
-            # オッズを取得
+            # Get odds
             if use_realtime_odds:
                 tansho_odds, odds_time = self._get_realtime_tansho_odds(conn, race_code)
                 fukusho_odds, _ = self._get_realtime_fukusho_odds(conn, race_code)
@@ -82,33 +82,33 @@ class EVRecommender:
 
             conn.close()
 
-            # オッズがない場合
+            # No odds available
             if not tansho_odds and not fukusho_odds:
-                logger.warning(f"オッズデータなし: race_code={race_code}")
+                logger.warning(f"No odds data: race_code={race_code}")
                 return {
                     "win_recommendations": [],
                     "place_recommendations": [],
                     "odds_source": odds_source,
                     "odds_time": odds_time,
-                    "error": "オッズデータがありません",
+                    "error": "No odds data available",
                 }
 
-            # 期待値計算と推奨生成
-            win_recommendations = []      # EV >= 1.5（強い推奨）
-            place_recommendations = []    # EV >= 1.5（強い推奨）
-            win_candidates = []           # EV >= 1.2（候補）
-            place_candidates = []         # EV >= 1.2（候補）
-            top1_win_rec = None           # 1位予想 + EV条件
-            top1_place_rec = None         # 1位予想 + EV条件
+            # Calculate EV and generate recommendations
+            win_recommendations = []      # EV >= 1.5 (strong recommendation)
+            place_recommendations = []    # EV >= 1.5 (strong recommendation)
+            win_candidates = []           # EV >= 1.2 (candidate)
+            place_candidates = []         # EV >= 1.2 (candidate)
+            top1_win_rec = None           # Rank 1 + EV condition
+            top1_place_rec = None         # Rank 1 + EV condition
 
             for horse in ranked_horses:
                 umaban = str(int(horse.get("horse_number", 0)))
-                horse_name = horse.get("horse_name", "不明")
+                horse_name = horse.get("horse_name", "Unknown")
                 win_prob = horse.get("win_probability", 0)
                 place_prob = horse.get("place_probability", 0)
                 rank = horse.get("rank", 99)
 
-                # 単勝期待値
+                # Win bet expected value
                 tansho_odd = tansho_odds.get(umaban, 0)
                 if tansho_odd > 0 and win_prob > 0:
                     win_ev = win_prob * tansho_odd
@@ -124,11 +124,11 @@ class EVRecommender:
                         win_recommendations.append(rec)
                     elif win_ev >= LOOSE_WIN_EV_THRESHOLD:
                         win_candidates.append(rec)
-                    # 1位予想 + EV >= 1.0
+                    # Rank 1 + EV >= 1.0
                     if rank == 1 and win_ev >= 1.0 and top1_win_rec is None:
                         top1_win_rec = rec
 
-                # 複勝期待値
+                # Place bet expected value
                 fukusho_odd = fukusho_odds.get(umaban, 0)
                 if fukusho_odd > 0 and place_prob > 0:
                     place_ev = place_prob * fukusho_odd
@@ -144,20 +144,20 @@ class EVRecommender:
                         place_recommendations.append(rec)
                     elif place_ev >= LOOSE_PLACE_EV_THRESHOLD:
                         place_candidates.append(rec)
-                    # 1位予想 + EV >= 1.0
+                    # Rank 1 + EV >= 1.0
                     if rank == 1 and place_ev >= 1.0 and top1_place_rec is None:
                         top1_place_rec = rec
 
-            # 期待値順でソート
+            # Sort by expected value
             win_recommendations.sort(key=lambda x: x["expected_value"], reverse=True)
             place_recommendations.sort(key=lambda x: x["expected_value"], reverse=True)
             win_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
             place_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
 
             logger.info(
-                f"EV推奨: race_code={race_code}, "
-                f"win={len(win_recommendations)}件(候補{len(win_candidates)}件), "
-                f"place={len(place_recommendations)}件(候補{len(place_candidates)}件)"
+                f"EV recommendations: race_code={race_code}, "
+                f"win={len(win_recommendations)}(candidates={len(win_candidates)}), "
+                f"place={len(place_recommendations)}(candidates={len(place_candidates)})"
             )
 
             return {
@@ -165,14 +165,14 @@ class EVRecommender:
                 "place_recommendations": place_recommendations,  # EV >= 1.5
                 "win_candidates": win_candidates,                # 1.2 <= EV < 1.5
                 "place_candidates": place_candidates,            # 1.2 <= EV < 1.5
-                "top1_win": top1_win_rec,                        # 1位予想 + EV >= 1.0
-                "top1_place": top1_place_rec,                    # 1位予想 + EV >= 1.0
+                "top1_win": top1_win_rec,                        # Rank 1 + EV >= 1.0
+                "top1_place": top1_place_rec,                    # Rank 1 + EV >= 1.0
                 "odds_source": odds_source,
                 "odds_time": odds_time,
             }
 
         except Exception as e:
-            logger.exception(f"EV推奨取得エラー: race_code={race_code}, error={e}")
+            logger.exception(f"EV recommendation error: race_code={race_code}, error={e}")
             return {
                 "win_recommendations": [],
                 "place_recommendations": [],
@@ -184,11 +184,11 @@ class EVRecommender:
     def _get_realtime_tansho_odds(
         self, conn, race_code: str
     ) -> Tuple[Dict[str, float], Optional[str]]:
-        """時系列から最新の単勝オッズを取得"""
+        """Get latest win odds from time-series data."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-            # 最新の発表時刻を取得
+            # Get latest announcement time
             cur.execute('''
                 SELECT MAX(happyo_tsukihi_jifun) as latest_time
                 FROM odds1_tansho_jikeiretsu
@@ -201,7 +201,7 @@ class EVRecommender:
                 cur.close()
                 return {}, None
 
-            # その時刻のオッズを取得
+            # Get odds at that time
             cur.execute('''
                 SELECT umaban, odds
                 FROM odds1_tansho_jikeiretsu
@@ -212,7 +212,7 @@ class EVRecommender:
             for row in cur.fetchall():
                 umaban = str(row['umaban']).strip()
                 try:
-                    odds = float(row['odds']) / 10  # 10倍で格納されている
+                    odds = float(row['odds']) / 10  # Stored as 10x value
                 except (ValueError, TypeError):
                     odds = 0
                 if odds > 0:
@@ -220,10 +220,10 @@ class EVRecommender:
 
             cur.close()
 
-            # 発表時刻をフォーマット
+            # Format announcement time
             odds_time_str = None
             if latest_time and len(latest_time) >= 8:
-                # MMDDHHMMSS or MMDDHHMM 形式
+                # MMDDHHMMSS or MMDDHHMM format
                 try:
                     month = latest_time[0:2]
                     day = latest_time[2:4]
@@ -231,28 +231,28 @@ class EVRecommender:
                     minute = latest_time[6:8]
                     now = datetime.now(JST)
                     year = now.year
-                    # 12月だが発表が1月の場合は翌年
+                    # If December but announcement is January, use next year
                     if now.month == 12 and month == "01":
                         year += 1
                     odds_time_str = f"{year}-{month}-{day} {hour}:{minute}"
                 except:
                     pass
 
-            logger.debug(f"時系列単勝オッズ取得: race_code={race_code}, 件数={len(odds_dict)}, time={latest_time}")
+            logger.debug(f"Time-series win odds retrieved: race_code={race_code}, count={len(odds_dict)}, time={latest_time}")
             return odds_dict, odds_time_str
 
         except Exception as e:
-            logger.error(f"時系列単勝オッズ取得エラー: {e}")
+            logger.error(f"Time-series win odds retrieval error: {e}")
             return {}, None
 
     def _get_realtime_fukusho_odds(
         self, conn, race_code: str
     ) -> Tuple[Dict[str, float], Optional[str]]:
-        """時系列から最新の複勝オッズを取得（最低オッズ使用）"""
+        """Get latest place odds from time-series data (using minimum odds)."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
 
-            # 複勝の時系列テーブルがあるか確認
+            # Check if place time-series table exists
             cur.execute('''
                 SELECT table_name FROM information_schema.tables
                 WHERE table_name = 'odds1_fukusho_jikeiretsu'
@@ -260,7 +260,7 @@ class EVRecommender:
             has_jikeiretsu = cur.fetchone() is not None
 
             if has_jikeiretsu:
-                # 時系列テーブルから取得
+                # Get from time-series table
                 cur.execute('''
                     SELECT MAX(happyo_tsukihi_jifun) as latest_time
                     FROM odds1_fukusho_jikeiretsu
@@ -276,14 +276,14 @@ class EVRecommender:
                         WHERE race_code = %s AND happyo_tsukihi_jifun = %s
                     ''', (race_code, latest_time))
                 else:
-                    # 時系列がなければ確定オッズにフォールバック
+                    # Fall back to final odds if no time-series
                     cur.execute('''
                         SELECT umaban, odds_saitei
                         FROM odds1_fukusho
                         WHERE race_code = %s
                     ''', (race_code,))
             else:
-                # 確定オッズから取得
+                # Get from final odds
                 cur.execute('''
                     SELECT umaban, odds_saitei
                     FROM odds1_fukusho
@@ -302,15 +302,15 @@ class EVRecommender:
 
             cur.close()
 
-            logger.debug(f"時系列複勝オッズ取得: race_code={race_code}, 件数={len(odds_dict)}")
+            logger.debug(f"Time-series place odds retrieved: race_code={race_code}, count={len(odds_dict)}")
             return odds_dict, None
 
         except Exception as e:
-            logger.error(f"時系列複勝オッズ取得エラー: {e}")
+            logger.error(f"Time-series place odds retrieval error: {e}")
             return {}, None
 
     def _get_final_tansho_odds(self, conn, race_code: str) -> Dict[str, float]:
-        """確定単勝オッズを取得"""
+        """Get final win odds."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             cur.execute('''
@@ -330,15 +330,15 @@ class EVRecommender:
                     odds_dict[umaban] = odds
 
             cur.close()
-            logger.debug(f"確定単勝オッズ取得: race_code={race_code}, 件数={len(odds_dict)}")
+            logger.debug(f"Final win odds retrieved: race_code={race_code}, count={len(odds_dict)}")
             return odds_dict
 
         except Exception as e:
-            logger.error(f"確定単勝オッズ取得エラー: {e}")
+            logger.error(f"Final win odds retrieval error: {e}")
             return {}
 
     def _get_final_fukusho_odds(self, conn, race_code: str) -> Dict[str, float]:
-        """確定複勝オッズを取得（最低オッズ使用）"""
+        """Get final place odds (using minimum odds)."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
             cur.execute('''
@@ -358,9 +358,9 @@ class EVRecommender:
                     odds_dict[umaban] = odds
 
             cur.close()
-            logger.debug(f"確定複勝オッズ取得: race_code={race_code}, 件数={len(odds_dict)}")
+            logger.debug(f"Final place odds retrieved: race_code={race_code}, count={len(odds_dict)}")
             return odds_dict
 
         except Exception as e:
-            logger.error(f"確定複勝オッズ取得エラー: {e}")
+            logger.error(f"Final place odds retrieval error: {e}")
             return {}
