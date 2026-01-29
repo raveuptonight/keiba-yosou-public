@@ -5,11 +5,10 @@ Calculates various biases from Saturday race results
 and generates features to apply to Sunday predictions.
 """
 
-import logging
-from datetime import date, datetime
-from typing import Dict, List, Optional, Any
-from dataclasses import dataclass, asdict
 import json
+import logging
+from dataclasses import asdict, dataclass
+from datetime import date, datetime
 
 from src.db.connection import get_db
 
@@ -63,10 +62,10 @@ class DailyBiasResult:
     target_date: str
     analyzed_at: str
     total_races: int
-    venue_biases: Dict[str, VenueBias]
-    jockey_performances: Dict[str, JockeyDayPerformance]
+    venue_biases: dict[str, VenueBias]
+    jockey_performances: dict[str, JockeyDayPerformance]
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             'target_date': self.target_date,
             'analyzed_at': self.analyzed_at,
@@ -91,7 +90,7 @@ class DailyBiasAnalyzer:
     def __init__(self):
         self.db = get_db()
 
-    def analyze(self, target_date: date) -> Optional[DailyBiasResult]:
+    def analyze(self, target_date: date) -> DailyBiasResult | None:
         """Analyze bias for the specified date."""
         logger.info(f"Starting bias analysis: {target_date}")
 
@@ -120,8 +119,8 @@ class DailyBiasAnalyzer:
             logger.info(f"Analyzing {len(races)} races")
 
             # Aggregate data by venue
-            venue_data: Dict[str, Dict] = {}
-            jockey_data: Dict[str, Dict] = {}
+            venue_data: dict[str, dict] = {}
+            jockey_data: dict[str, dict] = {}
 
             for race in races:
                 race_code = race[0]
@@ -311,7 +310,7 @@ class DailyBiasAnalyzer:
         finally:
             conn.close()
 
-    def load_bias(self, target_date: date) -> Optional[DailyBiasResult]:
+    def load_bias(self, target_date: date) -> DailyBiasResult | None:
         """Load bias result from database."""
         conn = self.db.get_connection()
         if not conn:
@@ -358,7 +357,7 @@ class DailyBiasAnalyzer:
             conn.close()
 
     def get_bias_features(self, bias_result: DailyBiasResult, venue_code: str,
-                          wakuban: int, kishu_code: str) -> Dict[str, float]:
+                          wakuban: int, kishu_code: str) -> dict[str, float]:
         """Get bias features for prediction."""
         features = {
             'bias_waku': 0.0,

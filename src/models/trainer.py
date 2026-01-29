@@ -11,19 +11,18 @@ Contains training and saving functions for the XGBoost ensemble model:
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-import joblib
 from sklearn.isotonic import IsotonicRegression
-from sklearn.metrics import roc_auc_score, brier_score_loss
+from sklearn.metrics import brier_score_loss, roc_auc_score
 
 logger = logging.getLogger(__name__)
 
 
-def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
+def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     """Train ensemble model (regression + classification + calibration).
 
     Uses a 3-way time-ordered split:
@@ -234,7 +233,7 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> Tuple[Dict, Dict]:
     }
 
 
-def save_model(models: Dict, results: Dict, output_dir: str) -> str:
+def save_model(models: dict, results: dict, output_dir: str) -> str:
     """Save trained models to disk.
 
     Creates a timestamped model file and updates a 'latest' symlink.

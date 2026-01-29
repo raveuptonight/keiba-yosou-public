@@ -5,41 +5,48 @@ Contains the main feature construction logic that transforms raw data
 into ML-ready feature vectors.
 """
 
+
 import numpy as np
-from typing import Dict, List, Optional, Any, Set
 
 from .utils import (
-    safe_int, safe_float, encode_sex, calc_speed_index,
-    determine_style, determine_class, get_distance_category,
-    get_interval_category, calc_days_since_last,
-    calc_style_pace_compatibility, stable_hash
+    calc_days_since_last,
+    calc_speed_index,
+    calc_style_pace_compatibility,
+    determine_class,
+    determine_style,
+    encode_sex,
+    get_distance_category,
+    get_interval_category,
+    safe_float,
+    safe_int,
+    stable_hash,
 )
 
 
 def build_features(
-    entry: Dict,
-    races: List[Dict],
-    past_stats: Dict[str, Dict],
-    jockey_cache: Dict[str, Dict],
-    trainer_cache: Dict[str, Dict],
-    jockey_horse_stats: Dict[str, Dict] = None,
-    distance_stats: Dict[str, Dict] = None,
-    baba_stats: Dict[str, Dict] = None,
-    training_stats: Dict[str, Dict] = None,
-    interval_stats: Dict[str, Dict] = None,
-    pace_predictions: Dict[str, Dict] = None,
-    entries_by_race: Dict[str, List[Dict]] = None,
-    pedigree_info: Dict[str, Dict] = None,
-    venue_stats: Dict[str, Dict] = None,
-    zenso_info: Dict[str, Dict] = None,
-    jockey_recent: Dict[str, Dict] = None,
-    sire_stats_turf: Dict[str, Dict] = None,
-    sire_stats_dirt: Dict[str, Dict] = None,
-    sire_maiden_stats: Dict[str, Dict] = None,
-    jockey_maiden_stats: Dict[str, Dict] = None,
+    entry: dict,
+    races: list[dict],
+    past_stats: dict[str, dict],
+    jockey_cache: dict[str, dict],
+    trainer_cache: dict[str, dict],
+    jockey_horse_stats: dict[str, dict] = None,
+    distance_stats: dict[str, dict] = None,
+    baba_stats: dict[str, dict] = None,
+    training_stats: dict[str, dict] = None,
+    interval_stats: dict[str, dict] = None,
+    pace_predictions: dict[str, dict] = None,
+    entries_by_race: dict[str, list[dict]] = None,
+    pedigree_info: dict[str, dict] = None,
+    venue_stats: dict[str, dict] = None,
+    zenso_info: dict[str, dict] = None,
+    jockey_recent: dict[str, dict] = None,
+    sire_stats_turf: dict[str, dict] = None,
+    sire_stats_dirt: dict[str, dict] = None,
+    sire_maiden_stats: dict[str, dict] = None,
+    jockey_maiden_stats: dict[str, dict] = None,
     year: int = None,
-    small_track_venues: Set[str] = None
-) -> Optional[Dict]:
+    small_track_venues: set[str] = None
+) -> dict | None:
     """Build feature vector for a single horse entry.
 
     Constructs 100+ features from various data sources including:

@@ -8,7 +8,7 @@ Handles feature extraction for future races and ensemble model predictions.
 import logging
 import os
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any
 
 import numpy as np
 
@@ -167,10 +167,10 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
 
 def compute_ml_predictions(
     race_id: str,
-    horses: List[Dict],
-    bias_date: Optional[str] = None,
+    horses: list[dict],
+    bias_date: str | None = None,
     is_final: bool = False
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     Compute ML predictions for a race.
 
@@ -186,19 +186,20 @@ def compute_ml_predictions(
     logger.info(f"Computing ML predictions: race_id={race_id}, horses={len(horses)}")
 
     try:
-        from src.models.feature_extractor import FastFeatureExtractor
+        import joblib
+        import pandas as pd
+
         from src.db.connection import get_db
+        from src.models.feature_extractor import FastFeatureExtractor
         from src.services.prediction.bias_adjustment import (
-            load_bias_for_date,
             apply_bias_to_scores,
+            load_bias_for_date,
         )
         from src.services.prediction.track_adjustment import (
+            apply_track_condition_adjustment,
             get_current_track_condition,
             get_horse_baba_performance,
-            apply_track_condition_adjustment,
         )
-        import pandas as pd
-        import joblib
 
         # Load model
         if not ML_MODEL_PATH.exists():
@@ -225,7 +226,7 @@ def compute_ml_predictions(
             xgb_model = models_dict.get('xgboost')
             lgb_model = models_dict.get('lightgbm')
         else:
-            logger.error(f"Invalid model format: ensemble_model required")
+            logger.error("Invalid model format: ensemble_model required")
             return {}
 
         # Get classification models and calibrators (new format only)

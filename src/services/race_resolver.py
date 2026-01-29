@@ -5,10 +5,11 @@
 日付指定（2025-12-28）やレース名検索（有馬記念）にも対応
 """
 
-import re
 import logging
-from datetime import date, timedelta
-from typing import Optional, Tuple, List, Dict, Any
+import re
+from datetime import date
+from typing import Any
+
 import requests
 
 from src.config import API_BASE_URL_DEFAULT
@@ -40,7 +41,7 @@ for official, aliases in VENUE_ALIASES.items():
 
 class MultipleRacesFoundException(Exception):
     """複数のレースが見つかった場合の例外"""
-    def __init__(self, message: str, races: List[Dict[str, Any]]):
+    def __init__(self, message: str, races: list[dict[str, Any]]):
         super().__init__(message)
         self.races = races
 
@@ -58,7 +59,7 @@ class RaceResolver:
         self.api_base_url = api_base_url
         logger.debug(f"RaceResolver初期化: api_base_url={api_base_url}")
 
-    def parse_race_spec(self, race_spec: str) -> Optional[Tuple[str, int]]:
+    def parse_race_spec(self, race_spec: str) -> tuple[str, int] | None:
         """
         レース指定文字列をパース
 
@@ -96,8 +97,8 @@ class RaceResolver:
     def resolve_to_race_id(
         self,
         race_spec: str,
-        target_date: Optional[date] = None
-    ) -> Optional[str]:
+        target_date: date | None = None
+    ) -> str | None:
         """
         レース指定文字列をレースIDに解決
 
@@ -137,7 +138,7 @@ class RaceResolver:
         venue: str,
         race_number: int,
         target_date: date
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         APIからレース一覧を取得して該当レースを検索
 
@@ -190,7 +191,7 @@ class RaceResolver:
             return None
 
 
-def parse_date_input(date_input: str) -> Optional[date]:
+def parse_date_input(date_input: str) -> date | None:
     """
     日付文字列をパース
 
@@ -248,7 +249,7 @@ def parse_date_input(date_input: str) -> Optional[date]:
     return None
 
 
-def extract_year_from_input(race_input: str) -> Tuple[Optional[int], str]:
+def extract_year_from_input(race_input: str) -> tuple[int | None, str]:
     """
     入力から年度を抽出
 
@@ -284,8 +285,8 @@ def extract_year_from_input(race_input: str) -> Tuple[Optional[int], str]:
 def search_races_by_name(
     race_name: str,
     api_base_url: str = API_BASE_URL_DEFAULT,
-    specific_year: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    specific_year: int | None = None
+) -> list[dict[str, Any]]:
     """
     レース名で検索（データベースから直接・高速）
 
@@ -345,7 +346,7 @@ def search_races_by_name(
         return []
 
 
-def _get_races_from_api(api_base_url: str, target_date: date) -> List[Dict[str, Any]]:
+def _get_races_from_api(api_base_url: str, target_date: date) -> list[dict[str, Any]]:
     """
     APIから指定日のレース一覧を取得
 

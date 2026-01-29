@@ -4,18 +4,17 @@ Database Connection Module
 Manages connections to PostgreSQL (local, Neon, or mock).
 """
 
-import os
 import logging
-from typing import Optional
+import os
 
 import psycopg2
+from dotenv import load_dotenv
 from psycopg2 import pool
 from psycopg2.extensions import connection as Psycopg2Connection
-from dotenv import load_dotenv
 
 from src.config import (
-    DB_CONNECTION_POOL_MIN,
     DB_CONNECTION_POOL_MAX,
+    DB_CONNECTION_POOL_MIN,
 )
 from src.exceptions import (
     DatabaseConnectionError,
@@ -82,7 +81,7 @@ class DatabaseConnection:
             MissingEnvironmentVariableError: If required environment variables are not set
         """
         self.db_mode = os.getenv("DB_MODE", "local")
-        self._connection_pool: Optional[pool.SimpleConnectionPool] = None
+        self._connection_pool: pool.SimpleConnectionPool | None = None
 
         logger.info(f"DatabaseConnection instance created: mode={self.db_mode}")
 
@@ -235,7 +234,7 @@ class DatabaseConnection:
 
 
 # Global instance (used like a singleton)
-_db_instance: Optional[DatabaseConnection] = None
+_db_instance: DatabaseConnection | None = None
 
 
 def get_db() -> DatabaseConnection:

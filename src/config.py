@@ -6,6 +6,7 @@ Centralized management of magic numbers and hardcoded values.
 
 import os
 from typing import Final
+
 from dotenv import load_dotenv
 
 # Load .env file

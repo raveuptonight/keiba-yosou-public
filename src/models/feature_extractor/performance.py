@@ -9,12 +9,11 @@ Contains batch query methods for:
 """
 
 import logging
-from typing import Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_surface_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_surface_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch turf/dirt performance stats (data leak prevention version).
 
     Args:
@@ -161,7 +160,7 @@ def get_surface_stats_batch(conn, kettonums: List[str], entries: List[Dict] = No
         return {}
 
 
-def get_turn_rates_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
+def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     """Batch fetch left/right turn performance stats.
 
     Right-handed courses: Sapporo(01), Hakodate(02), Fukushima(03),
@@ -235,7 +234,7 @@ def get_turn_rates_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
         return {}
 
 
-def get_baba_stats_batch(conn, kettonums: List[str], races: List[Dict], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_baba_stats_batch(conn, kettonums: list[str], races: list[dict], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch track condition (baba) performance stats (data leak prevention version).
 
     Track conditions:
@@ -358,7 +357,7 @@ def get_baba_stats_batch(conn, kettonums: List[str], races: List[Dict], entries:
     return result
 
 
-def get_interval_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_interval_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch rest interval performance stats (data leak prevention version).
 
     Interval categories:

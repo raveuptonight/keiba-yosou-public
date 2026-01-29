@@ -20,7 +20,7 @@ import pandas as pd
 
 from src.db.connection import get_db
 from src.models.feature_extractor import FastFeatureExtractor
-from src.models.trainer import train_model, save_model
+from src.models.trainer import save_model, train_model
 
 logging.basicConfig(
     level=logging.INFO,

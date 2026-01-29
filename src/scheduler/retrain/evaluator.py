@@ -6,7 +6,6 @@ Functions for comparing and evaluating ensemble models.
 
 import logging
 from pathlib import Path
-from typing import Dict
 
 import joblib
 import numpy as np
@@ -23,7 +22,7 @@ def compare_models(
     current_model_path: Path,
     new_model_path: str,
     test_year: int = 2022
-) -> Dict:
+) -> dict:
     """
     Compare old and new models using comprehensive evaluation.
 
@@ -46,10 +45,9 @@ def compare_models(
     Returns:
         Comparison result dictionary
     """
-    from sklearn.metrics import roc_auc_score
 
     logger.info(f"Model comparison (test year: {test_year})")
-    logger.info(f"* Backtesting with data outside training set")
+    logger.info("* Backtesting with data outside training set")
 
     # Load models
     try:
@@ -138,11 +136,11 @@ def compare_models(
 
 def evaluate_model(
     df: pd.DataFrame,
-    model_data: Dict,
+    model_data: dict,
     features: list,
-    payouts: Dict,
+    payouts: dict,
     model_name: str
-) -> Dict:
+) -> dict:
     """
     Run comprehensive model evaluation.
 
@@ -303,7 +301,7 @@ def get_ensemble_proba(
     return raw_prob
 
 
-def get_payouts_for_year(conn, year: int) -> Dict:
+def get_payouts_for_year(conn, year: int) -> dict:
     """
     Get payout data for a year.
 
@@ -369,7 +367,7 @@ def get_payouts_for_year(conn, year: int) -> Dict:
         return {}
 
 
-def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: Dict) -> Dict:
+def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: dict) -> dict:
     """
     Simulate returns (bet 100 yen on top prediction per race).
 
@@ -428,7 +426,7 @@ def simulate_returns(df: pd.DataFrame, predictions: np.ndarray, payouts: Dict) -
     }
 
 
-def calculate_composite_score(eval_result: Dict) -> float:
+def calculate_composite_score(eval_result: dict) -> float:
     """
     Calculate composite score.
 

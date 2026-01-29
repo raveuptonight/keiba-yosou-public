@@ -6,12 +6,11 @@ Functions for retrieving race, horse, jockey, and training data from the databas
 
 import logging
 from datetime import date
-from typing import Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
 
-def get_race_entries(conn, race_code: str, data_kubun: str, cache: Dict = None) -> List[Dict]:
+def get_race_entries(conn, race_code: str, data_kubun: str, cache: dict = None) -> list[dict]:
     """
     Get list of race entries.
 
@@ -67,7 +66,7 @@ def get_race_entries(conn, race_code: str, data_kubun: str, cache: Dict = None) 
         return []
 
 
-def get_race_info(conn, race_code: str, data_kubun: str) -> Dict:
+def get_race_info(conn, race_code: str, data_kubun: str) -> dict:
     """
     Get basic race information.
 
@@ -113,9 +112,9 @@ def get_past_races(
     conn,
     kettonum: str,
     current_race_code: str,
-    cache: Dict,
+    cache: dict,
     limit: int = 10
-) -> List[Dict]:
+) -> list[dict]:
     """
     Get past race results for a horse.
 
@@ -176,7 +175,7 @@ def get_past_races(
         return []
 
 
-def get_jockey_stats(conn, jockey_code: str, cache: Dict) -> Dict:
+def get_jockey_stats(conn, jockey_code: str, cache: dict) -> dict:
     """
     Get jockey statistics.
 
@@ -231,7 +230,7 @@ def get_jockey_stats(conn, jockey_code: str, cache: Dict) -> Dict:
         return {'win_rate': 0.08, 'place_rate': 0.25}
 
 
-def get_trainer_stats(conn, trainer_code: str, cache: Dict) -> Dict:
+def get_trainer_stats(conn, trainer_code: str, cache: dict) -> dict:
     """
     Get trainer statistics.
 
@@ -285,7 +284,7 @@ def get_trainer_stats(conn, trainer_code: str, cache: Dict) -> Dict:
         return {'win_rate': 0.08, 'place_rate': 0.25}
 
 
-def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: Dict) -> Dict:
+def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: dict) -> dict:
     """
     Get jockey-horse combination statistics.
 
@@ -330,7 +329,7 @@ def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: Dict) -
         return {'runs': 0, 'wins': 0}
 
 
-def get_training_data(conn, kettonum: str, race_code: str, cache: Dict) -> Dict:
+def get_training_data(conn, kettonum: str, race_code: str, cache: dict) -> dict:
     """
     Get training data for a horse.
 
@@ -388,8 +387,8 @@ def get_distance_stats(
     race_code: str,
     distance: int,
     track_code: str,
-    cache: Dict
-) -> Dict:
+    cache: dict
+) -> dict:
     """
     Get distance-specific statistics (from shussobetsu_kyori table).
 
@@ -481,8 +480,8 @@ def get_baba_stats(
     race_code: str,
     track_code: str,
     baba_code: str,
-    cache: Dict
-) -> Dict:
+    cache: dict
+) -> dict:
     """
     Get track condition statistics (from shussobetsu_baba table).
 
@@ -552,7 +551,7 @@ def get_baba_stats(
         return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
 
 
-def get_detailed_training(conn, kettonum: str, race_code: str, cache: Dict) -> Dict:
+def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> dict:
     """
     Get detailed training data (from hanro_chokyo table).
 
@@ -613,7 +612,7 @@ def get_detailed_training(conn, kettonum: str, race_code: str, cache: Dict) -> D
         return {'time_3f': 38.0, 'lap_1f': 12.5, 'days_before': 7}
 
 
-def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: Dict) -> Dict:
+def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> dict:
     """
     Get statistics by race interval category.
 

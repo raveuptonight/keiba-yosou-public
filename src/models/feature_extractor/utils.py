@@ -6,7 +6,6 @@ Contains safe type conversion, encoding, and calculation helpers.
 
 import hashlib
 from datetime import date as dt_date
-from typing import Optional
 
 
 def safe_int(val, default: int = 0) -> int:
@@ -58,7 +57,7 @@ def encode_sex(sex_code: str) -> int:
     return mapping.get(sex_code, 0)
 
 
-def calc_speed_index(avg_time: Optional[float]) -> float:
+def calc_speed_index(avg_time: float | None) -> float:
     """Calculate speed index from average finishing time.
 
     Converts raw time (in 1/10 seconds format) to a normalized speed index

@@ -5,58 +5,54 @@
 """
 
 import logging
-from typing import Optional, List, Dict, Any
 from datetime import date, timedelta
+from typing import Any
+
 from asyncpg import Connection
 
+from src.config import ML_TRAINING_YEARS_BACK
 from src.db.table_names import (
-    TABLE_UMA,
-    TABLE_UMA_RACE,
+    COL_BAMEI,
+    COL_BATAIJU,
+    COL_BIRTH_DATE,
+    COL_CHOKYOSI_NAME,
+    COL_CHOKYOSICODE,
+    COL_DATA_KUBUN,
+    COL_DIRT_BABA_CD,
+    COL_HANSYOKU_NUM,
+    COL_JYOCD,
+    COL_KAISAI_MONTHDAY,
+    COL_KAISAI_YEAR,
+    COL_KAKUTEI_CHAKUJUN,
+    COL_KEIROCODE,
+    COL_KETTONUM,
+    COL_KINRYO,
+    COL_KISYU_NAME,
+    COL_KISYUCODE,
+    COL_KYORI,
+    COL_RACE_ID,
+    COL_RACE_NAME,
+    COL_SEX,
+    COL_SHIBA_BABA_CD,
+    COL_TIME,
+    COL_TOZAI_CODE,
+    DATA_KUBUN_KAKUTEI,
+    TABLE_CHOKYOSI,
+    TABLE_HANRO_CHOKYO,
+    TABLE_HANSYOKU,
+    TABLE_KISYU,
     TABLE_RACE,
     TABLE_SANKU,
-    TABLE_HANSYOKU,
-    TABLE_HANRO_CHOKYO,
-    TABLE_WOOD_CHOKYO,
     TABLE_SHUTUBA_KYORI,
-    TABLE_KISYU,
-    TABLE_CHOKYOSI,
-    COL_KETTONUM,
-    COL_RACE_ID,
-    COL_BAMEI,
-    COL_SEX,
-    COL_KEIROCODE,
-    COL_BIRTH_DATE,
-    COL_KAISAI_YEAR,
-    COL_KAISAI_MONTHDAY,
-    COL_KAKUTEI_CHAKUJUN,
-    COL_TIME,
-    COL_BATAIJU,
-    COL_KISYUCODE,
-    COL_KISYU_NAME,
-    COL_CHOKYOSICODE,
-    COL_CHOKYOSI_NAME,
-    COL_TOZAI_CODE,
-    COL_DATA_KUBUN,
-    COL_SANDAI_KETTO,
-    COL_HANSYOKU_NUM,
-    COL_HANSYOKUBA_NAME,
-    COL_CHOKYO_DATE,
-    COL_TIME_4F,
-    COL_TIME_3F,
-    COL_JYOCD,
-    COL_KYORI,
-    COL_RACE_NAME,
-    COL_SHIBA_BABA_CD,
-    COL_DIRT_BABA_CD,
-    COL_KINRYO,
-    DATA_KUBUN_KAKUTEI,
+    TABLE_UMA,
+    TABLE_UMA_RACE,
+    TABLE_WOOD_CHOKYO,
 )
-from src.config import ML_TRAINING_YEARS_BACK
 
 logger = logging.getLogger(__name__)
 
 
-async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, Any]]:
+async def get_horse_info(conn: Connection, kettonum: str) -> dict[str, Any] | None:
     """
     馬の基本情報を取得
 
@@ -115,9 +111,9 @@ async def get_horse_info(conn: Connection, kettonum: str) -> Optional[Dict[str, 
 
 async def get_horses_recent_races(
     conn: Connection,
-    kettonums: List[str],
+    kettonums: list[str],
     limit: int = 10
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """
     複数の馬の過去成績を一括取得（直近N走）
 
@@ -188,7 +184,7 @@ async def get_horses_recent_races(
         rows = await conn.fetch(sql, kettonums, DATA_KUBUN_KAKUTEI, cutoff_year, limit)
 
         # kettonum ごとにグループ化
-        result: Dict[str, List[Dict[str, Any]]] = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
             if kettonum not in result:
@@ -205,7 +201,7 @@ async def get_horse_recent_races(
     conn: Connection,
     kettonum: str,
     limit: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     単一馬の過去成績を取得（直近N走）
 
@@ -223,8 +219,8 @@ async def get_horse_recent_races(
 
 async def get_horses_pedigree(
     conn: Connection,
-    kettonums: List[str]
-) -> Dict[str, Dict[str, Any]]:
+    kettonums: list[str]
+) -> dict[str, dict[str, Any]]:
     """
     複数の馬の血統情報を一括取得
 
@@ -270,7 +266,7 @@ async def get_horses_pedigree(
         rows = await conn.fetch(sql, kettonums)
 
         # kettonum ごとに辞書化
-        result: Dict[str, Dict[str, Any]] = {}
+        result: dict[str, dict[str, Any]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
             result[kettonum] = dict(row)
@@ -283,9 +279,9 @@ async def get_horses_pedigree(
 
 async def get_horses_training(
     conn: Connection,
-    kettonums: List[str],
+    kettonums: list[str],
     days_back: int = 30
-) -> Dict[str, List[Dict[str, Any]]]:
+) -> dict[str, list[dict[str, Any]]]:
     """
     複数の馬の調教情報を一括取得（直近N日分）
 
@@ -355,7 +351,7 @@ async def get_horses_training(
         rows = await conn.fetch(sql, kettonums, cutoff_date)
 
         # kettonum ごとにグループ化
-        result: Dict[str, List[Dict[str, Any]]] = {}
+        result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             kettonum = row['ketto_toroku_bango']
             if kettonum not in result:
@@ -371,8 +367,8 @@ async def get_horses_training(
 async def get_horses_statistics(
     conn: Connection,
     race_id: str,
-    kettonums: List[str]
-) -> Dict[str, Dict[str, Any]]:
+    kettonums: list[str]
+) -> dict[str, dict[str, Any]]:
     """
     複数の馬の着度数統計を一括取得
 
@@ -402,7 +398,7 @@ async def get_horses_statistics(
         rows = await conn.fetch(sql, race_id, kettonums)
 
         # kettonum ごとに辞書化
-        result: Dict[str, Dict[str, Any]] = {}
+        result: dict[str, dict[str, Any]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
             result[kettonum] = dict(row)
@@ -418,7 +414,7 @@ async def get_horse_detail(
     conn: Connection,
     kettonum: str,
     history_limit: int = 10
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     馬の詳細情報を取得（基本情報+過去成績+血統）
 
@@ -485,7 +481,7 @@ async def search_horses_by_name(
     conn: Connection,
     name: str,
     limit: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     馬名で馬を検索
 
@@ -550,7 +546,7 @@ async def get_training_before_race(
     kettonum: str,
     race_date: str,
     days_before: int = 14
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     レース前の直近調教データを取得
 

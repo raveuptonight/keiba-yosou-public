@@ -4,18 +4,13 @@ Weekly Model Retrain Module
 Components for weekly model retraining, evaluation, and deployment.
 """
 
-from src.scheduler.retrain.trainer import (
-    train_new_model,
-    calc_bin_stats,
-    save_calibration_to_db,
-)
 from src.scheduler.retrain.evaluator import (
+    calculate_composite_score,
     compare_models,
     evaluate_model,
     get_ensemble_proba,
     get_payouts_for_year,
     simulate_returns,
-    calculate_composite_score,
 )
 from src.scheduler.retrain.manager import (
     backup_current_model,
@@ -23,6 +18,11 @@ from src.scheduler.retrain.manager import (
 )
 from src.scheduler.retrain.notifier import (
     send_retrain_notification,
+)
+from src.scheduler.retrain.trainer import (
+    calc_bin_stats,
+    save_calibration_to_db,
+    train_new_model,
 )
 
 __all__ = [

@@ -4,16 +4,16 @@ Horse Racing Prediction Discord Bot
 Handles prediction completion notifications and race result reports.
 """
 
-import os
 import logging
-from typing import Optional
-import discord
-from discord.ext import commands
+import os
+
 from dotenv import load_dotenv
 
+import discord
+from discord.ext import commands
 from src.exceptions import (
-    MissingEnvironmentVariableError,
     BotError,
+    MissingEnvironmentVariableError,
 )
 
 # Load .env file

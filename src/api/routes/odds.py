@@ -4,21 +4,21 @@
 
 import logging
 from datetime import datetime
-from typing import Union
-from fastapi import APIRouter, Query, Path, status
 
-from src.api.schemas.odds import OddsResponse, SingleOdds, CombinationOdds
-from src.api.exceptions import RaceNotFoundException, DatabaseErrorException
+from fastapi import APIRouter, Path, Query, status
+
+from src.api.exceptions import DatabaseErrorException, RaceNotFoundException
+from src.api.schemas.odds import CombinationOdds, OddsResponse, SingleOdds
 from src.db.async_connection import get_connection
-from src.db.queries.race_queries import check_race_exists
 from src.db.queries.odds_queries import (
-    get_odds_win_place,
-    get_odds_quinella,
     get_odds_exacta,
-    get_odds_wide,
-    get_odds_trio,
+    get_odds_quinella,
     get_odds_trifecta,
+    get_odds_trio,
+    get_odds_wide,
+    get_odds_win_place,
 )
+from src.db.queries.race_queries import check_race_exists
 
 logger = logging.getLogger(__name__)
 

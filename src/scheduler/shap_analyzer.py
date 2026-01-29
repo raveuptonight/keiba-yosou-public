@@ -7,14 +7,13 @@ SHAP分析モジュール
 - 週次分析レポート生成
 """
 
-import logging
 import json
-from datetime import datetime, date, timedelta
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+import logging
+from datetime import date, datetime, timedelta
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
 
 try:
     import shap
@@ -72,7 +71,7 @@ class ShapAnalyzer:
             logger.error(f"モデル読み込み失敗: {e}")
             raise
 
-    def get_recent_race_dates(self, days_back: int = 7) -> List[date]:
+    def get_recent_race_dates(self, days_back: int = 7) -> list[date]:
         """直近のレース日（予想データがある日）を取得"""
         db = get_db()
         conn = db.get_connection()
@@ -92,7 +91,7 @@ class ShapAnalyzer:
         finally:
             conn.close()
 
-    def get_predictions_from_db(self, target_date: date) -> List[Dict]:
+    def get_predictions_from_db(self, target_date: date) -> list[dict]:
         """DBから予想データを取得（レースごとに最新の予想のみ）"""
         db = get_db()
         conn = db.get_connection()
@@ -134,7 +133,7 @@ class ShapAnalyzer:
         finally:
             conn.close()
 
-    def get_race_results(self, target_date: date) -> Dict[str, Dict]:
+    def get_race_results(self, target_date: date) -> dict[str, dict]:
         """レース結果を取得"""
         db = get_db()
         conn = db.get_connection()
@@ -174,7 +173,7 @@ class ShapAnalyzer:
         finally:
             conn.close()
 
-    def extract_features_for_race(self, race_code: str) -> Optional[pd.DataFrame]:
+    def extract_features_for_race(self, race_code: str) -> pd.DataFrame | None:
         """レースの特徴量を抽出"""
         db = get_db()
         conn = db.get_connection()
@@ -284,7 +283,7 @@ class ShapAnalyzer:
             logger.error(f"SHAP値計算エラー: {e}")
             return None
 
-    def analyze_race(self, race_code: str, prediction: Dict) -> Optional[Dict]:
+    def analyze_race(self, race_code: str, prediction: dict) -> dict | None:
         """1レースを分析（EV推奨・軸馬形式）"""
         # 特徴量抽出
         df = self.extract_features_for_race(race_code)
@@ -366,7 +365,7 @@ class ShapAnalyzer:
             'has_ev_rec': len(ev_recommended) > 0,
         }
 
-    def analyze_dates(self, target_dates: List[date]) -> Dict:
+    def analyze_dates(self, target_dates: list[date]) -> dict:
         """複数日のレースを分析（EV推奨・軸馬形式）"""
         all_analyses = []
 
@@ -459,11 +458,11 @@ class ShapAnalyzer:
             'analyses': all_analyses,
         }
 
-    def analyze_weekend(self, saturday: date, sunday: date) -> Dict:
+    def analyze_weekend(self, saturday: date, sunday: date) -> dict:
         """週末のレースを分析（後方互換性のためのラッパー）"""
         return self.analyze_dates([saturday, sunday])
 
-    def calculate_feature_adjustments(self, analysis: Dict, threshold: float = 0.1) -> Dict[str, float]:
+    def calculate_feature_adjustments(self, analysis: dict, threshold: float = 0.1) -> dict[str, float]:
         """
         SHAP分析結果から特徴量調整係数を計算
 
@@ -502,7 +501,7 @@ class ShapAnalyzer:
 
         return adjustments
 
-    def save_adjustments_to_db(self, adjustments: Dict[str, float], analysis_date: date = None) -> bool:
+    def save_adjustments_to_db(self, adjustments: dict[str, float], analysis_date: date = None) -> bool:
         """特徴量調整係数をDBに保存"""
         if not adjustments:
             return False
@@ -551,7 +550,7 @@ class ShapAnalyzer:
                 conn.close()
 
     @staticmethod
-    def load_adjustments_from_db() -> Dict[str, float]:
+    def load_adjustments_from_db() -> dict[str, float]:
         """最新の特徴量調整係数をDBから読み込み"""
         db = get_db()
         conn = db.get_connection()
@@ -586,7 +585,7 @@ class ShapAnalyzer:
             if conn:
                 conn.close()
 
-    def _aggregate_contributions(self, analyses: List[Dict]) -> Dict[str, float]:
+    def _aggregate_contributions(self, analyses: list[dict]) -> dict[str, float]:
         """特徴量寄与度を集計"""
         if not analyses:
             return {}
@@ -601,7 +600,7 @@ class ShapAnalyzer:
         # 平均を計算
         return {fname: np.mean(values) for fname, values in aggregated.items()}
 
-    def generate_report(self, analysis: Dict) -> str:
+    def generate_report(self, analysis: dict) -> str:
         """分析レポートを生成（EV推奨・軸馬形式）"""
         if analysis.get('status') != 'success':
             return "分析データがありません"
@@ -655,6 +654,7 @@ class ShapAnalyzer:
     def send_discord_notification(self, report: str):
         """Discord通知を送信"""
         import os
+
         import requests
 
         bot_token = os.getenv('DISCORD_BOT_TOKEN')
@@ -683,7 +683,7 @@ class ShapAnalyzer:
         except Exception as e:
             logger.error(f"Discord通知エラー: {e}")
 
-    def save_analysis_to_db(self, analysis: Dict) -> bool:
+    def save_analysis_to_db(self, analysis: dict) -> bool:
         """分析結果をDBに保存"""
         if analysis.get('status') != 'success':
             return False

@@ -4,9 +4,9 @@
 確率ベース・ランキング形式・順位分布・信頼度スコアを出力
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class PositionDistribution(BaseModel):
@@ -36,9 +36,9 @@ class HorseRankingEntry(BaseModel):
         ..., ge=1, le=18, description="馬番（1-18）"
     )
     horse_name: str = Field(..., description="馬名")
-    horse_sex: Optional[str] = Field(None, description="性別（牡/牝/セ）")
-    horse_age: Optional[int] = Field(None, description="馬齢")
-    jockey_name: Optional[str] = Field(None, description="騎手名")
+    horse_sex: str | None = Field(None, description="性別（牡/牝/セ）")
+    horse_age: int | None = Field(None, description="馬齢")
+    jockey_name: str | None = Field(None, description="騎手名")
     win_probability: float = Field(
         ..., ge=0.0, le=1.0, description="単勝率（1着確率）"
     )
@@ -83,16 +83,16 @@ class DarkHorseEntry(BaseModel):
 class PredictionResult(BaseModel):
     """予想結果本体（確率ベース・ランキング形式）"""
 
-    ranked_horses: List[HorseRankingEntry] = Field(
+    ranked_horses: list[HorseRankingEntry] = Field(
         ..., description="全馬ランキング（勝率順・単勝向け）"
     )
-    quinella_ranking: Optional[List[QuinellaRankingEntry]] = Field(
+    quinella_ranking: list[QuinellaRankingEntry] | None = Field(
         None, description="連対率順Top5（馬連・ワイド向け）"
     )
-    place_ranking: Optional[List[PlaceRankingEntry]] = Field(
+    place_ranking: list[PlaceRankingEntry] | None = Field(
         None, description="複勝率順Top5（複勝向け）"
     )
-    dark_horses: Optional[List[DarkHorseEntry]] = Field(
+    dark_horses: list[DarkHorseEntry] | None = Field(
         None, description="穴馬候補（複勝率高い＆勝率低い）"
     )
     prediction_confidence: float = Field(
@@ -112,7 +112,7 @@ class PredictionRequest(BaseModel):
     is_final: bool = Field(
         False, description="最終予想フラグ（馬体重後）"
     )
-    bias_date: Optional[str] = Field(
+    bias_date: str | None = Field(
         None, description="バイアス適用日（YYYY-MM-DD形式）"
     )
 
@@ -175,6 +175,6 @@ class PredictionHistoryResponse(BaseModel):
     race_id: str = Field(
         ..., description="レースID"
     )
-    predictions: List[PredictionHistoryItem] = Field(
+    predictions: list[PredictionHistoryItem] = Field(
         ..., description="予想履歴一覧"
     )

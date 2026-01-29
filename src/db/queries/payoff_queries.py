@@ -5,14 +5,15 @@
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from asyncpg import Connection
 
 from src.db.table_names import (
-    TABLE_HARAIMODOSI,
-    COL_RACE_ID,
     COL_DATA_KUBUN,
+    COL_RACE_ID,
     DATA_KUBUN_KAKUTEI,
+    TABLE_HARAIMODOSI,
 )
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def get_race_payoffs(
     conn: Connection,
     race_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     レースの払戻金（配当）を全券種取得
 
@@ -178,7 +179,7 @@ async def get_race_payoffs(
 async def get_race_results(
     conn: Connection,
     race_id: str
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     レースの結果（着順付き出走馬一覧）を取得
 
@@ -200,13 +201,13 @@ async def get_race_results(
         ]
     """
     from src.db.table_names import (
-        TABLE_UMA_RACE,
-        TABLE_UMA,
-        COL_UMABAN,
-        COL_KETTONUM,
         COL_BAMEI,
         COL_KAKUTEI_CHAKUJUN,
+        COL_KETTONUM,
         COL_TIME,
+        COL_UMABAN,
+        TABLE_UMA,
+        TABLE_UMA_RACE,
     )
 
     sql = f"""
@@ -257,7 +258,7 @@ async def get_race_results(
 async def get_race_lap_times(
     conn: Connection,
     race_id: str
-) -> List[str]:
+) -> list[str]:
     """
     レースのラップタイム（200m毎）を取得
 

@@ -5,14 +5,15 @@ REST API for horse racing prediction system.
 Goal: Achieve 200% return rate.
 """
 
-import os
 import logging
+import os
 from contextlib import asynccontextmanager
+
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from dotenv import load_dotenv
 
-from src.db.async_connection import init_db_pool, close_db_pool, get_connection
+from src.db.async_connection import close_db_pool, get_connection, init_db_pool
 from src.db.code_master import initialize_code_cache
 from src.logging_config import setup_logging
 
@@ -97,7 +98,7 @@ app.add_middleware(
 
 
 # Register routers
-from src.api.routes import health, races, horses, odds, predictions, jockeys, debug
+from src.api.routes import debug, health, horses, jockeys, odds, predictions, races
 
 app.include_router(health.router, tags=["health"])
 app.include_router(debug.router, prefix="/api", tags=["debug"])

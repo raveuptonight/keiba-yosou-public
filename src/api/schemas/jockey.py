@@ -2,8 +2,8 @@
 騎手・調教師関連のPydanticスキーマ
 """
 
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
 
 
 class JockeyBasicInfo(BaseModel):
@@ -13,8 +13,8 @@ class JockeyBasicInfo(BaseModel):
     name: str = Field(..., description="騎手名")
     name_short: str = Field(..., description="騎手名（略称）")
     affiliation: str = Field(..., description="所属（美浦/栗東）")
-    birth_date: Optional[str] = Field(None, description="生年月日")
-    license_date: Optional[str] = Field(None, description="免許交付日")
+    birth_date: str | None = Field(None, description="生年月日")
+    license_date: str | None = Field(None, description="免許交付日")
 
 
 class OverallStats(BaseModel):
@@ -75,10 +75,10 @@ class JockeyStats(BaseModel):
     basic_info: JockeyBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
     surface_stats: SurfaceStats = Field(..., description="馬場別成績")
-    distance_stats: List[DistanceCategoryStats] = Field(
+    distance_stats: list[DistanceCategoryStats] = Field(
         ..., description="距離別成績"
     )
-    venue_stats: List[VenueStats] = Field(
+    venue_stats: list[VenueStats] = Field(
         ..., description="競馬場別成績（上位5件）"
     )
 
@@ -90,8 +90,8 @@ class TrainerBasicInfo(BaseModel):
     name: str = Field(..., description="調教師名")
     name_short: str = Field(..., description="調教師名（略称）")
     affiliation: str = Field(..., description="所属（美浦/栗東）")
-    birth_date: Optional[str] = Field(None, description="生年月日")
-    license_date: Optional[str] = Field(None, description="免許交付日")
+    birth_date: str | None = Field(None, description="生年月日")
+    license_date: str | None = Field(None, description="免許交付日")
 
 
 class TrainerStats(BaseModel):
@@ -100,13 +100,13 @@ class TrainerStats(BaseModel):
     basic_info: TrainerBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
     surface_stats: SurfaceStats = Field(..., description="馬場別成績")
-    distance_stats: List[DistanceCategoryStats] = Field(
+    distance_stats: list[DistanceCategoryStats] = Field(
         ..., description="距離別成績"
     )
-    venue_stats: List[VenueStats] = Field(
+    venue_stats: list[VenueStats] = Field(
         ..., description="競馬場別成績（上位5件）"
     )
-    top_jockeys: List[TopJockey] = Field(
+    top_jockeys: list[TopJockey] = Field(
         ..., description="主戦騎手（上位5名）"
     )
 

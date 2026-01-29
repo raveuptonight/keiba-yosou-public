@@ -18,8 +18,7 @@ Usage:
 
 import logging
 import sys
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 try:
     from pythonjsonlogger import jsonlogger
@@ -110,8 +109,8 @@ def get_json_formatter() -> logging.Formatter:
 
 
 def setup_logging(
-    level: Optional[str] = None,
-    format_type: Optional[str] = None,
+    level: str | None = None,
+    format_type: str | None = None,
 ) -> None:
     """
     Configure structured logging for the application.

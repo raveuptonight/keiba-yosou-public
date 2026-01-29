@@ -6,16 +6,16 @@ JRA-VANのコードマスタテーブルから各種コードの名称を取得�
 """
 
 import logging
-from typing import Dict, Optional
+
 from asyncpg import Connection
 
 logger = logging.getLogger(__name__)
 
 # グローバルキャッシュ（起動時に一度だけロード）
-_CODE_CACHE: Dict[str, Dict[str, str]] = {}
+_CODE_CACHE: dict[str, dict[str, str]] = {}
 
 
-async def load_code_master(conn: Connection, table_name: str) -> Dict[str, str]:
+async def load_code_master(conn: Connection, table_name: str) -> dict[str, str]:
     """
     コードマスタテーブルから code -> meisho のマッピングを取得
 
@@ -159,9 +159,9 @@ def get_moshoku_name(code: str) -> str:
 
 
 def generate_race_condition_name(
-    kyoso_joken_code: Optional[str],
-    kyoso_shubetsu_code: Optional[str],
-    grade_code: Optional[str]
+    kyoso_joken_code: str | None,
+    kyoso_shubetsu_code: str | None,
+    grade_code: str | None
 ) -> str:
     """
     レース条件から条件戦の名称を生成

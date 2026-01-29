@@ -10,14 +10,13 @@ Executes weekly at Tuesday 23:00 to:
 
 import json
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Dict
 
-from src.scheduler.retrain.trainer import train_new_model
 from src.scheduler.retrain.evaluator import compare_models
-from src.scheduler.retrain.manager import backup_current_model, deploy_new_model
+from src.scheduler.retrain.manager import deploy_new_model
 from src.scheduler.retrain.notifier import send_retrain_notification
+from src.scheduler.retrain.trainer import train_new_model
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +57,7 @@ class WeeklyRetrain:
         force_deploy: bool = False,
         notify: bool = True,
         years: int = 3
-    ) -> Dict:
+    ) -> dict:
         """
         Run weekly retraining job.
 

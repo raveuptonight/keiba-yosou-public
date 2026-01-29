@@ -9,14 +9,11 @@ Contains all batch query methods for retrieving horse racing data:
 """
 
 import logging
-from typing import Dict, List, Tuple, Any
-
-from .utils import safe_int
 
 logger = logging.getLogger(__name__)
 
 
-def get_races(conn, year: int, max_races: int) -> List[Dict]:
+def get_races(conn, year: int, max_races: int) -> list[dict]:
     """Get race list for a given year.
 
     Args:
@@ -45,7 +42,7 @@ def get_races(conn, year: int, max_races: int) -> List[Dict]:
     return [dict(zip(cols, row)) for row in rows]
 
 
-def get_all_entries(conn, race_codes: List[str]) -> List[Dict]:
+def get_all_entries(conn, race_codes: list[str]) -> list[dict]:
     """Batch fetch horse entry data for multiple races.
 
     Args:
@@ -80,7 +77,7 @@ def get_all_entries(conn, race_codes: List[str]) -> List[Dict]:
     return [dict(zip(cols, row)) for row in rows]
 
 
-def get_past_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_past_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch past performance stats (data leak prevention version).
 
     Retrieves last 10 races for each horse, excluding the current race to prevent data leakage.
@@ -243,7 +240,7 @@ def get_past_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None)
     return result
 
 
-def get_jockey_horse_combo_batch(conn, pairs: List[Tuple[str, str]]) -> Dict[str, Dict]:
+def get_jockey_horse_combo_batch(conn, pairs: list[tuple[str, str]]) -> dict[str, dict]:
     """Batch fetch jockey-horse combination performance.
 
     Args:
@@ -300,7 +297,7 @@ def get_jockey_horse_combo_batch(conn, pairs: List[Tuple[str, str]]) -> Dict[str
         return {}
 
 
-def get_training_stats_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
+def get_training_stats_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     """Batch fetch training data (hanro_chokyo + woodchip_chokyo).
 
     Args:
@@ -362,7 +359,7 @@ def get_training_stats_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
         return {}
 
 
-def cache_jockey_trainer_stats(conn, year: int) -> Tuple[Dict, Dict]:
+def cache_jockey_trainer_stats(conn, year: int) -> tuple[dict, dict]:
     """Cache jockey and trainer statistics.
 
     Aggregates performance stats from the previous year.

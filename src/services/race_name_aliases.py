@@ -5,10 +5,9 @@
 正式名称へのマッピングを提供
 """
 
-from typing import Dict, List
 
 # レース名エイリアス（通称 → 正式名称の一部）
-RACE_NAME_ALIASES: Dict[str, List[str]] = {
+RACE_NAME_ALIASES: dict[str, list[str]] = {
     # G1レース
     "日本ダービー": ["東京優駿"],
     "ダービー": ["東京優駿", "ダービー"],
@@ -79,7 +78,7 @@ RACE_NAME_ALIASES: Dict[str, List[str]] = {
 }
 
 
-def expand_race_name_query(query: str) -> List[str]:
+def expand_race_name_query(query: str) -> list[str]:
     """
     レース名クエリをエイリアスで展開
 

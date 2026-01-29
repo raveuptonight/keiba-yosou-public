@@ -5,9 +5,8 @@ Functions for training ensemble models (XGBoost + LightGBM + CatBoost).
 """
 
 import logging
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Dict
 
 import joblib
 import numpy as np
@@ -26,7 +25,7 @@ def calc_bin_stats(
     actual: np.ndarray,
     calibrated: np.ndarray,
     n_bins: int = 20
-) -> Dict:
+) -> dict:
     """
     Calculate calibration bin statistics.
 
@@ -76,7 +75,7 @@ def calc_bin_stats(
     }
 
 
-def save_calibration_to_db(calibration_data: Dict, model_version: str) -> bool:
+def save_calibration_to_db(calibration_data: dict, model_version: str) -> bool:
     """
     Save calibration statistics to database.
 
@@ -116,7 +115,7 @@ def save_calibration_to_db(calibration_data: Dict, model_version: str) -> bool:
         return False
 
 
-def train_new_model(model_dir: Path, years: int = 3) -> Dict:
+def train_new_model(model_dir: Path, years: int = 3) -> dict:
     """
     Train new ensemble model (regression + classification + calibration).
 
@@ -127,9 +126,9 @@ def train_new_model(model_dir: Path, years: int = 3) -> Dict:
     Returns:
         Training result dictionary
     """
-    import xgboost as xgb
-    import lightgbm as lgb
     import catboost as cb
+    import lightgbm as lgb
+    import xgboost as xgb
 
     logger.info(f"Starting ensemble model training (past {years} years)")
 
@@ -375,7 +374,7 @@ def train_new_model(model_dir: Path, years: int = 3) -> Dict:
 
         # ===== 6. Final evaluation (test data) =====
         logger.info("Running final evaluation (test data)...")
-        from sklearn.metrics import roc_auc_score, brier_score_loss
+        from sklearn.metrics import brier_score_loss, roc_auc_score
 
         # Predict on test data (3-model ensemble)
         xgb_pred_test = xgb_reg.predict(X_test)

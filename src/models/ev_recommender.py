@@ -6,7 +6,6 @@ Recommends horses with EV > threshold as betting candidates.
 """
 
 import logging
-from typing import Dict, List, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 
 import psycopg2.extras
@@ -47,9 +46,9 @@ class EVRecommender:
     def get_recommendations(
         self,
         race_code: str,
-        ranked_horses: List[Dict],
+        ranked_horses: list[dict],
         use_realtime_odds: bool = True,
-    ) -> Dict:
+    ) -> dict:
         """
         Get expected value based betting recommendations.
 
@@ -183,7 +182,7 @@ class EVRecommender:
 
     def _get_realtime_tansho_odds(
         self, conn, race_code: str
-    ) -> Tuple[Dict[str, float], Optional[str]]:
+    ) -> tuple[dict[str, float], str | None]:
         """Get latest win odds from time-series data."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -247,7 +246,7 @@ class EVRecommender:
 
     def _get_realtime_fukusho_odds(
         self, conn, race_code: str
-    ) -> Tuple[Dict[str, float], Optional[str]]:
+    ) -> tuple[dict[str, float], str | None]:
         """Get latest place odds from time-series data (using minimum odds)."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -309,7 +308,7 @@ class EVRecommender:
             logger.error(f"Time-series place odds retrieval error: {e}")
             return {}, None
 
-    def _get_final_tansho_odds(self, conn, race_code: str) -> Dict[str, float]:
+    def _get_final_tansho_odds(self, conn, race_code: str) -> dict[str, float]:
         """Get final win odds."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
@@ -337,7 +336,7 @@ class EVRecommender:
             logger.error(f"Final win odds retrieval error: {e}")
             return {}
 
-    def _get_final_fukusho_odds(self, conn, race_code: str) -> Dict[str, float]:
+    def _get_final_fukusho_odds(self, conn, race_code: str) -> dict[str, float]:
         """Get final place odds (using minimum odds)."""
         try:
             cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)

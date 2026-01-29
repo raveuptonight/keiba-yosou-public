@@ -4,6 +4,7 @@
 
 import logging
 from datetime import datetime
+
 from fastapi import APIRouter, status
 
 from src.api.schemas.common import HealthCheckResponse

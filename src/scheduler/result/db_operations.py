@@ -8,7 +8,6 @@ and saving analysis results.
 import json
 import logging
 from datetime import date, timedelta
-from typing import Dict, List, Optional
 
 from src.db.connection import get_db
 
@@ -21,7 +20,7 @@ KEIBAJO_NAMES = {
 }
 
 
-def get_race_results(target_date: date) -> List[Dict]:
+def get_race_results(target_date: date) -> list[dict]:
     """
     Get race results for a specific date.
 
@@ -95,7 +94,7 @@ def get_race_results(target_date: date) -> List[Dict]:
         conn.close()
 
 
-def get_payouts(target_date: date) -> Dict[str, Dict]:
+def get_payouts(target_date: date) -> dict[str, dict]:
     """
     Get payout data for a specific date.
 
@@ -164,7 +163,7 @@ def get_payouts(target_date: date) -> Dict[str, Dict]:
         conn.close()
 
 
-def load_predictions_from_db(target_date: date) -> Optional[Dict]:
+def load_predictions_from_db(target_date: date) -> dict | None:
     """
     Load prediction results from database.
 
@@ -248,7 +247,7 @@ def load_predictions_from_db(target_date: date) -> Optional[Dict]:
         conn.close()
 
 
-def save_analysis_to_db(analysis: Dict) -> bool:
+def save_analysis_to_db(analysis: dict) -> bool:
     """
     Save analysis results to database.
 
@@ -339,7 +338,7 @@ def save_analysis_to_db(analysis: Dict) -> bool:
             conn.close()
 
 
-def update_accuracy_tracking(stats: Dict) -> bool:
+def update_accuracy_tracking(stats: dict) -> bool:
     """
     Update cumulative accuracy tracking.
 
@@ -421,7 +420,7 @@ def update_accuracy_tracking(stats: Dict) -> bool:
             conn.close()
 
 
-def get_cumulative_stats() -> Optional[Dict]:
+def get_cumulative_stats() -> dict | None:
     """
     Get cumulative statistics.
 

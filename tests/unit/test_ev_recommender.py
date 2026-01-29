@@ -160,7 +160,7 @@ class TestEVRecommendationLogic:
         # Should use place_probability (0.60), not win_probability (0.30)
         place_ev = horse["place_probability"] * fukusho_odds  # 0.90
 
-        assert place_ev == 0.90
+        assert abs(place_ev - 0.90) < 0.01  # Allow for floating point precision
 
 
 class TestEdgeCases:

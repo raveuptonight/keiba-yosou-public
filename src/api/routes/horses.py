@@ -4,30 +4,42 @@
 
 import logging
 from datetime import date
-from fastapi import APIRouter, Query, Path, status
 
-from typing import Optional, List
-from src.api.schemas.horse import HorseDetail, HorseSearchResult, Trainer, Pedigree, RecentRace, TrainingData, TrainingRecord
-from src.api.exceptions import HorseNotFoundException, DatabaseErrorException
+from fastapi import APIRouter, Path, Query, status
+
+from src.api.exceptions import DatabaseErrorException, HorseNotFoundException
+from src.api.schemas.horse import (
+    HorseDetail,
+    HorseSearchResult,
+    Pedigree,
+    RecentRace,
+    Trainer,
+    TrainingData,
+    TrainingRecord,
+)
 from src.db.async_connection import get_connection
-from src.db.queries.horse_queries import get_horse_detail, search_horses_by_name, get_training_before_race, get_horses_training
+from src.db.queries.horse_queries import (
+    get_horse_detail,
+    get_horses_training,
+    get_training_before_race,
+    search_horses_by_name,
+)
 from src.db.table_names import (
-    COL_KETTONUM,
     COL_BAMEI,
-    COL_SEX,
-    COL_KEIROCODE,
     COL_BIRTH_DATE,
-    COL_CHOKYOSICODE,
     COL_CHOKYOSI_NAME,
+    COL_CHOKYOSICODE,
+    COL_JYOCD,
+    COL_KAISAI_MONTHDAY,
+    COL_KAISAI_YEAR,
+    COL_KAKUTEI_CHAKUJUN,
+    COL_KEIROCODE,
+    COL_KISYU_NAME,
+    COL_KYORI,
     COL_RACE_ID,
     COL_RACE_NAME,
-    COL_KAISAI_YEAR,
-    COL_KAISAI_MONTHDAY,
-    COL_JYOCD,
-    COL_KYORI,
-    COL_KAKUTEI_CHAKUJUN,
+    COL_SEX,
     COL_TIME,
-    COL_KISYU_NAME,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,7 +49,7 @@ router = APIRouter()
 
 @router.get(
     "/horses/search",
-    response_model=List[HorseSearchResult],
+    response_model=list[HorseSearchResult],
     status_code=status.HTTP_200_OK,
     summary="馬名検索",
     description="馬名で馬を検索します（部分一致）。"
@@ -54,7 +66,7 @@ async def search_horses(
         le=50,
         description="取得件数上限（デフォルト: 10）"
     )
-) -> List[HorseSearchResult]:
+) -> list[HorseSearchResult]:
     """
     馬名で馬を検索
 
@@ -309,7 +321,7 @@ async def get_horse(
 
 @router.get(
     "/horses/{kettonum}/training",
-    response_model=List[TrainingData],
+    response_model=list[TrainingData],
     status_code=status.HTTP_200_OK,
     summary="馬の調教データ取得",
     description="指定した馬の調教データ（坂路・ウッドチップ）を取得します。"
@@ -327,7 +339,7 @@ async def get_horse_training(
         le=90,
         description="何日前まで取得するか（7〜90日）"
     )
-) -> List[TrainingData]:
+) -> list[TrainingData]:
     """
     馬の調教データを取得
 

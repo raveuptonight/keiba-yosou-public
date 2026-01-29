@@ -4,12 +4,10 @@
 PostgreSQLのpredictionsスキーマに対する操作を提供する。
 """
 
-import json
-from typing import Optional, Dict, Any, List
-from datetime import datetime, date
+from datetime import date
+from typing import Any
 
-import psycopg2
-from psycopg2.extras import RealDictCursor, Json
+from psycopg2.extras import Json, RealDictCursor
 
 from src.db.connection import get_db
 
@@ -27,8 +25,8 @@ class PredictionResultsDB:
         race_name: str,
         race_date: date,
         venue: str,
-        analysis_result: Dict[str, Any],
-        prediction_result: Dict[str, Any],
+        analysis_result: dict[str, Any],
+        prediction_result: dict[str, Any],
         total_investment: int,
         expected_return: int,
         expected_roi: float,
@@ -99,12 +97,12 @@ class PredictionResultsDB:
     def save_result(
         self,
         prediction_id: int,
-        actual_result: Dict[str, Any],
+        actual_result: dict[str, Any],
         total_return: int,
         profit: int,
         actual_roi: float,
         prediction_accuracy: float,
-        reflection_result: Dict[str, Any],
+        reflection_result: dict[str, Any],
     ) -> int:
         """
         レース結果を保存
@@ -153,7 +151,7 @@ class PredictionResultsDB:
         finally:
             conn.close()
 
-    def get_prediction_by_race_id(self, race_id: str) -> Optional[Dict[str, Any]]:
+    def get_prediction_by_race_id(self, race_id: str) -> dict[str, Any] | None:
         """
         レースIDから予想を取得
 
@@ -177,7 +175,7 @@ class PredictionResultsDB:
         finally:
             conn.close()
 
-    def get_recent_predictions(self, limit: int = 10) -> List[Dict[str, Any]]:
+    def get_recent_predictions(self, limit: int = 10) -> list[dict[str, Any]]:
         """
         最近の予想一覧を取得
 
@@ -201,7 +199,7 @@ class PredictionResultsDB:
         finally:
             conn.close()
 
-    def get_stats(self, period: str = "all") -> Optional[Dict[str, Any]]:
+    def get_stats(self, period: str = "all") -> dict[str, Any] | None:
         """
         統計情報を取得
 
@@ -230,8 +228,8 @@ class PredictionResultsDB:
     def update_stats(
         self,
         period: str,
-        start_date: Optional[date],
-        end_date: Optional[date],
+        start_date: date | None,
+        end_date: date | None,
     ) -> None:
         """
         統計情報を更新
@@ -308,7 +306,7 @@ class PredictionResultsDB:
 
 
 # グローバルインスタンス
-_results_db: Optional[PredictionResultsDB] = None
+_results_db: PredictionResultsDB | None = None
 
 
 def get_results_db() -> PredictionResultsDB:

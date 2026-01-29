@@ -3,30 +3,27 @@
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from asyncpg import Connection
 
-from src.db.table_names import (
-    TABLE_KISYU,
-    TABLE_CHOKYOSI,
-    TABLE_UMA_RACE,
-    TABLE_RACE,
-    COL_KISYUCODE,
-    COL_CHOKYOSICODE,
-    COL_KISYU_NAME,
-    COL_CHOKYOSI_NAME,
-    COL_DATA_KUBUN,
-    COL_RACE_ID,
-    COL_KAKUTEI_CHAKUJUN,
-    COL_JYOCD,
-    COL_TRACK_CD,
-    COL_KYORI,
-    COL_SHIBA_BABA_CD,
-    COL_DIRT_BABA_CD,
-    COL_KAISAI_YEAR,
-    DATA_KUBUN_KAKUTEI,
-)
 from src.config import ML_TRAINING_YEARS_BACK
+from src.db.table_names import (
+    COL_CHOKYOSICODE,
+    COL_DATA_KUBUN,
+    COL_JYOCD,
+    COL_KAISAI_YEAR,
+    COL_KAKUTEI_CHAKUJUN,
+    COL_KISYUCODE,
+    COL_KYORI,
+    COL_RACE_ID,
+    COL_TRACK_CD,
+    DATA_KUBUN_KAKUTEI,
+    TABLE_CHOKYOSI,
+    TABLE_KISYU,
+    TABLE_RACE,
+    TABLE_UMA_RACE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +32,7 @@ async def search_jockeys_by_name(
     conn: Connection,
     name: str,
     limit: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     騎手名で検索
 
@@ -75,7 +72,7 @@ async def get_jockey_stats(
     conn: Connection,
     kishu_code: str,
     years_back: int = ML_TRAINING_YEARS_BACK
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     騎手の詳細成績を取得
 
@@ -190,7 +187,7 @@ async def search_trainers_by_name(
     conn: Connection,
     name: str,
     limit: int = 10
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     調教師名で検索
 
@@ -229,7 +226,7 @@ async def get_trainer_stats(
     conn: Connection,
     chokyoshi_code: str,
     years_back: int = ML_TRAINING_YEARS_BACK
-) -> Optional[Dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     調教師の詳細成績を取得
 

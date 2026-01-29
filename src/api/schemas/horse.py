@@ -2,9 +2,9 @@
 馬情報関連のPydanticスキーマ
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, List
 from datetime import date
+
+from pydantic import BaseModel, Field
 
 
 class Trainer(BaseModel):
@@ -33,8 +33,8 @@ class TrainingData(BaseModel):
 
     training_type: str = Field(..., description="調教種別（坂路/ウッド）")
     training_date: str = Field(..., description="調教日（YYYYMMDD）")
-    time_4f: Optional[str] = Field(None, description="4ハロンタイム")
-    time_3f: Optional[str] = Field(None, description="3ハロンタイム")
+    time_4f: str | None = Field(None, description="4ハロンタイム")
+    time_3f: str | None = Field(None, description="3ハロンタイム")
 
 
 class RecentRace(BaseModel):
@@ -56,24 +56,24 @@ class RecentRace(BaseModel):
     time: str = Field(
         ..., description="タイム（MM:SS.S形式）"
     )
-    time_diff: Optional[str] = Field(
+    time_diff: str | None = Field(
         None, description="勝ち馬とのタイム差（秒）"
     )
-    winner_name: Optional[str] = Field(
+    winner_name: str | None = Field(
         None, description="勝ち馬名（1着馬）"
     )
     jockey: str = Field(..., description="騎手名")
     weight: float = Field(..., description="装着重量（kg）")
-    horse_weight: Optional[int] = Field(
+    horse_weight: int | None = Field(
         None, description="馬体重（kg）"
     )
-    odds: Optional[float] = Field(
+    odds: float | None = Field(
         None, ge=0.1, description="単勝オッズ"
     )
     prize_money: int = Field(
         ..., ge=0, description="獲得賞金（円）"
     )
-    training: Optional[TrainingData] = Field(
+    training: TrainingData | None = Field(
         None, description="レース前直近調教データ"
     )
 
@@ -85,8 +85,8 @@ class HorseSearchResult(BaseModel):
         ..., min_length=10, max_length=10, description="血統登録番号"
     )
     name: str = Field(..., description="馬名")
-    sex: Optional[str] = Field(None, description="性別コード")
-    birth_date: Optional[date] = Field(None, description="生年月日")
+    sex: str | None = Field(None, description="性別コード")
+    birth_date: date | None = Field(None, description="生年月日")
     runs: int = Field(0, ge=0, description="出走数")
     wins: int = Field(0, ge=0, description="勝利数")
     prize: int = Field(0, ge=0, description="獲得賞金（円）")
@@ -97,8 +97,8 @@ class TrainingRecord(BaseModel):
 
     training_type: str = Field(..., description="調教種別（hanro/wood）")
     chokyo_nengappi: str = Field(..., description="調教日（YYYYMMDD）")
-    time_gokei_4furlong: Optional[str] = Field(None, description="4ハロンタイム")
-    time_gokei_3furlong: Optional[str] = Field(None, description="3ハロンタイム")
+    time_gokei_4furlong: str | None = Field(None, description="4ハロンタイム")
+    time_gokei_3furlong: str | None = Field(None, description="3ハロンタイム")
 
 
 class HorseDetail(BaseModel):
@@ -132,15 +132,15 @@ class HorseDetail(BaseModel):
     prize_money: int = Field(
         ..., ge=0, description="通算獲得賞金（円）"
     )
-    running_style: Optional[str] = Field(
+    running_style: str | None = Field(
         None, description="脚質（先行/差し/追い込み）"
     )
     pedigree: Pedigree = Field(
         ..., description="血統情報"
     )
-    recent_races: List[RecentRace] = Field(
+    recent_races: list[RecentRace] = Field(
         ..., description="最近のレース成績"
     )
-    training: List[TrainingRecord] = Field(
+    training: list[TrainingRecord] = Field(
         default_factory=list, description="直近の調教データ"
     )

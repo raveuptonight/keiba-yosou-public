@@ -9,13 +9,12 @@
 
 import argparse
 import logging
-import json
-from datetime import datetime, date, timedelta
-from pathlib import Path
-from typing import Dict, List, Any, Optional
+from datetime import date, datetime, timedelta
+from typing import Any
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
 
 from src.db.connection import get_db
 from src.models.feature_extractor import FastFeatureExtractor
@@ -135,7 +134,7 @@ class RacePredictor:
 
         return X_adjusted
 
-    def get_upcoming_races(self, target_date: date = None) -> List[Dict]:
+    def get_upcoming_races(self, target_date: date = None) -> list[dict]:
         """指定日の出馬表を取得"""
         if target_date is None:
             target_date = date.today() + timedelta(days=1)
@@ -185,7 +184,7 @@ class RacePredictor:
         finally:
             conn.close()
 
-    def get_race_entries(self, race_code: str) -> List[Dict]:
+    def get_race_entries(self, race_code: str) -> list[dict]:
         """レースの出走馬情報を取得"""
         db = get_db()
         conn = db.get_connection()
@@ -221,7 +220,7 @@ class RacePredictor:
         finally:
             conn.close()
 
-    def predict_race(self, race_code: str) -> List[Dict]:
+    def predict_race(self, race_code: str) -> list[dict]:
         """レースの予想を実行"""
         db = get_db()
         conn = db.get_connection()
@@ -421,7 +420,7 @@ class RacePredictor:
         finally:
             conn.close()
 
-    def run_predictions(self, target_date: date = None) -> Dict[str, Any]:
+    def run_predictions(self, target_date: date = None) -> dict[str, Any]:
         """指定日の全レース予想を実行"""
         if target_date is None:
             target_date = date.today() + timedelta(days=1)
@@ -486,7 +485,7 @@ class RacePredictor:
         return results
 
 
-def print_predictions(results: Dict):
+def print_predictions(results: dict):
     """予想結果を表示"""
     print("\n" + "=" * 60)
     print(f"【{results['date']} レース予想】")

@@ -15,17 +15,17 @@ Modules:
 
 from .base import FastFeatureExtractor
 from .utils import (
-    safe_int,
-    safe_float,
-    encode_sex,
+    calc_days_since_last,
     calc_speed_index,
-    determine_style,
+    calc_style_pace_compatibility,
     determine_class,
+    determine_style,
+    encode_sex,
     get_distance_category,
     get_interval_category,
-    calc_days_since_last,
-    calc_style_pace_compatibility,
-    stable_hash
+    safe_float,
+    safe_int,
+    stable_hash,
 )
 
 __all__ = [

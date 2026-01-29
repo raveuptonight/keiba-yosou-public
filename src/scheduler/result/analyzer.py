@@ -6,12 +6,11 @@ and calculating accuracy metrics.
 """
 
 import logging
-from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def compare_results(predictions: Dict, results: List[Dict], payouts: Dict = None) -> Dict:
+def compare_results(predictions: dict, results: list[dict], payouts: dict = None) -> dict:
     """
     Compare predictions with actual results (EV recommendation and axis horse format).
 
@@ -400,7 +399,7 @@ def compare_results(predictions: Dict, results: List[Dict], payouts: Dict = None
     return comparison
 
 
-def calculate_accuracy(comparison: Dict) -> Dict:
+def calculate_accuracy(comparison: dict) -> dict:
     """
     Calculate accuracy metrics (detailed version).
 
@@ -420,7 +419,7 @@ def calculate_accuracy(comparison: Dict) -> Dict:
     mrr = stats['mrr_sum'] / n if n > 0 else 0
 
     # Calculate rates by category
-    def calc_rates(data: Dict) -> Dict:
+    def calc_rates(data: dict) -> dict:
         result = {}
         for key, vals in data.items():
             races = vals['races']

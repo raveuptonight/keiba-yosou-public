@@ -8,20 +8,20 @@ Converts ML scores to user-friendly prediction responses.
 import logging
 import uuid
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Any
 
 from src.api.schemas.prediction import (
-    PredictionResponse,
-    PredictionResult,
     HorseRankingEntry,
     PositionDistribution,
+    PredictionResponse,
+    PredictionResult,
 )
 from src.db.table_names import (
+    COL_JYOCD,
+    COL_KAISAI_MONTHDAY,
+    COL_KAISAI_YEAR,
     COL_RACE_ID,
     COL_RACE_NAME,
-    COL_JYOCD,
-    COL_KAISAI_YEAR,
-    COL_KAISAI_MONTHDAY,
 )
 from src.services.prediction.track_adjustment import VENUE_CODE_MAP
 
@@ -91,9 +91,9 @@ def generate_mock_prediction(race_id: str, is_final: bool) -> PredictionResponse
 
 
 def generate_ml_only_prediction(
-    race_data: Dict[str, Any],
-    ml_scores: Dict[str, Any]
-) -> Dict[str, Any]:
+    race_data: dict[str, Any],
+    ml_scores: dict[str, Any]
+) -> dict[str, Any]:
     """
     Generate probability-based ranking prediction from ML scores.
 
@@ -153,11 +153,11 @@ def generate_ml_only_prediction(
 
     def calc_position_distribution(
         win_prob: float,
-        quinella_prob: Optional[float],
-        place_prob: Optional[float],
+        quinella_prob: float | None,
+        place_prob: float | None,
         rank: int,
         n: int
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Estimate position distribution from win/quinella/place probabilities.
 
@@ -293,8 +293,8 @@ def generate_ml_only_prediction(
 
 
 def convert_to_prediction_response(
-    race_data: Dict[str, Any],
-    ml_result: Dict[str, Any],
+    race_data: dict[str, Any],
+    ml_result: dict[str, Any],
     is_final: bool
 ) -> PredictionResponse:
     """

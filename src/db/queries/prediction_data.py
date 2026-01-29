@@ -6,21 +6,22 @@ API_DESIGN.mdの「データ集約クエリ」セクションに基づいて実�
 """
 
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from asyncpg import Connection
 
-from src.db.queries.race_queries import (
-    get_race_info,
-    get_race_entries,
-)
 from src.db.queries.horse_queries import (
-    get_horses_recent_races,
     get_horses_pedigree,
-    get_horses_training,
+    get_horses_recent_races,
     get_horses_statistics,
+    get_horses_training,
 )
 from src.db.queries.odds_queries import (
     get_race_odds,
+)
+from src.db.queries.race_queries import (
+    get_race_entries,
+    get_race_info,
 )
 from src.db.table_names import COL_KETTONUM, COL_RACE_NAME
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 async def get_race_prediction_data(
     conn: Connection,
     race_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     予想生成に必要な全データを集約
 
@@ -121,8 +122,8 @@ async def get_race_prediction_data(
 
 async def get_multiple_races_prediction_data(
     conn: Connection,
-    race_ids: List[str]
-) -> Dict[str, Dict[str, Any]]:
+    race_ids: list[str]
+) -> dict[str, dict[str, Any]]:
     """
     複数レースの予想データを一括取得
 
@@ -152,7 +153,7 @@ async def get_multiple_races_prediction_data(
 async def get_race_prediction_data_slim(
     conn: Connection,
     race_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     予想データの軽量版を取得（過去成績を5走に制限）
 
@@ -216,7 +217,7 @@ async def get_race_prediction_data_slim(
     }
 
 
-async def validate_prediction_data(data: Dict[str, Any]) -> Dict[str, Any]:
+async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
     """
     予想データの整合性をチェック
 
@@ -238,7 +239,7 @@ async def validate_prediction_data(data: Dict[str, Any]) -> Dict[str, Any]:
         "statistics": []
     }
 
-    from src.db.table_names import COL_KETTONUM, COL_BAMEI
+    from src.db.table_names import COL_BAMEI, COL_KETTONUM
 
     # 出走馬がいるかチェック
     if not data.get("horses"):
@@ -288,7 +289,7 @@ async def validate_prediction_data(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def get_prediction_data_summary(data: Dict[str, Any]) -> Dict[str, Any]:
+async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
     """
     予想データのサマリー情報を生成
 
@@ -311,10 +312,10 @@ async def get_prediction_data_summary(data: Dict[str, Any]) -> Dict[str, Any]:
         }
     """
     from src.db.table_names import (
-        COL_RACE_NAME,
         COL_JYOCD,
-        COL_KYORI,
         COL_KETTONUM,
+        COL_KYORI,
+        COL_RACE_NAME,
     )
 
     race_info = data.get("race", {})

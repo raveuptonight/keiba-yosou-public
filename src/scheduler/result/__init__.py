@@ -5,18 +5,18 @@ Modular components for collecting race results, analyzing prediction accuracy,
 and sending notifications.
 """
 
+from src.scheduler.result.analyzer import (
+    calculate_accuracy,
+    compare_results,
+)
 from src.scheduler.result.db_operations import (
-    get_race_results,
+    get_cumulative_stats,
     get_payouts,
+    get_race_results,
+    get_recent_race_dates,
     load_predictions_from_db,
     save_analysis_to_db,
     update_accuracy_tracking,
-    get_cumulative_stats,
-    get_recent_race_dates,
-)
-from src.scheduler.result.analyzer import (
-    compare_results,
-    calculate_accuracy,
 )
 from src.scheduler.result.notifier import (
     send_discord_notification,

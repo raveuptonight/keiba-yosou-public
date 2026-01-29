@@ -3,7 +3,9 @@
 """
 
 import logging
+
 from fastapi import APIRouter
+
 from src.db.async_connection import get_connection
 
 logger = logging.getLogger(__name__)

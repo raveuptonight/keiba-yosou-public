@@ -4,9 +4,9 @@ Database Migration Runner
 Executes SQL migration files in order to set up required tables.
 """
 
+import logging
 import os
 import sys
-import logging
 from pathlib import Path
 
 import psycopg2
@@ -69,7 +69,7 @@ def run_migration(conn, migration_file: Path):
     """Execute a single migration file."""
     logger.info(f"Running migration: {migration_file.name}")
 
-    with open(migration_file, 'r', encoding='utf-8') as f:
+    with open(migration_file, encoding='utf-8') as f:
         sql = f.read()
 
     cursor = conn.cursor()

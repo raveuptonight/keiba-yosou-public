@@ -7,14 +7,13 @@ Functions for sending prediction result notifications to Discord.
 import logging
 import os
 from datetime import date
-from typing import Dict, Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
 
 
-def send_discord_notification(analysis: Dict):
+def send_discord_notification(analysis: dict):
     """
     Send Discord notification (EV recommendation and axis horse format).
 
@@ -99,16 +98,16 @@ def send_discord_notification(analysis: Dict):
 def send_weekend_notification(
     saturday: date,
     sunday: date,
-    stats: Dict,
-    ranking_stats: Dict = None,
-    return_rates: Dict = None,
-    popularity_stats: Dict = None,
-    confidence_stats: Dict = None,
-    by_track: Dict = None,
-    daily_data: Dict = None,
-    cumulative: Optional[Dict] = None,
-    ev_stats: Dict = None,
-    axis_stats: Dict = None,
+    stats: dict,
+    ranking_stats: dict = None,
+    return_rates: dict = None,
+    popularity_stats: dict = None,
+    confidence_stats: dict = None,
+    by_track: dict = None,
+    daily_data: dict = None,
+    cumulative: dict | None = None,
+    ev_stats: dict = None,
+    axis_stats: dict = None,
 ):
     """
     Send weekend total Discord notification (EV recommendation and axis horse format).
@@ -138,7 +137,7 @@ def send_weekend_notification(
     axis_stats = axis_stats or {}
 
     lines = [
-        f"📊 **週末予想結果レポート**",
+        "📊 **週末予想結果レポート**",
         f"期間: {saturday} - {sunday}",
         f"分析レース数: {stats.get('analyzed_races', 0)}R",
         "",

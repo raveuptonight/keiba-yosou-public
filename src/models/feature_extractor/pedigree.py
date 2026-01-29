@@ -8,12 +8,11 @@ Contains batch query methods for:
 """
 
 import logging
-from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
 
-def get_pedigree_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
+def get_pedigree_batch(conn, kettonums: list[str]) -> dict[str, dict]:
     """Batch fetch pedigree information (sire and broodmare sire IDs).
 
     Args:
@@ -53,7 +52,7 @@ def get_pedigree_batch(conn, kettonums: List[str]) -> Dict[str, Dict]:
         return {}
 
 
-def get_sire_stats_batch(conn, sire_ids: List[str], year: int, is_turf: bool = True) -> Dict[str, Dict]:
+def get_sire_stats_batch(conn, sire_ids: list[str], year: int, is_turf: bool = True) -> dict[str, dict]:
     """Batch fetch sire offspring performance statistics.
 
     Retrieves aggregated performance of sire's offspring from the last 3 years.
@@ -116,7 +115,7 @@ def get_sire_stats_batch(conn, sire_ids: List[str], year: int, is_turf: bool = T
         return {}
 
 
-def get_sire_maiden_stats_batch(conn, sire_ids: List[str], year: int) -> Dict[str, Dict]:
+def get_sire_maiden_stats_batch(conn, sire_ids: list[str], year: int) -> dict[str, dict]:
     """Batch fetch sire performance in maiden and newcomer races.
 
     Retrieves aggregated performance of sire's offspring in maiden/newcomer races

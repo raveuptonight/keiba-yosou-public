@@ -13,7 +13,6 @@ Usage:
 """
 
 from functools import lru_cache
-from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,10 +60,10 @@ class Settings(BaseSettings):
     discord_notification_channel_id: int = Field(
         default=0, description="Notification channel ID"
     )
-    discord_command_channel_id: Optional[int] = Field(
+    discord_command_channel_id: int | None = Field(
         default=None, description="Command channel ID"
     )
-    discord_guild_id: Optional[int] = Field(
+    discord_guild_id: int | None = Field(
         default=None, description="Guild ID for faster slash command sync"
     )
 

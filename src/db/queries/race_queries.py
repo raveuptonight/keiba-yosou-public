@@ -5,54 +5,53 @@
 """
 
 import logging
-from typing import Optional, List, Dict, Any
-from datetime import date, datetime
+from datetime import date
+from typing import Any
+
 from asyncpg import Connection
 
 from src.db.table_names import (
-    TABLE_RACE,
-    TABLE_UMA_RACE,
-    TABLE_UMA,
-    TABLE_SANKU,
-    TABLE_HANSYOKU,
-    TABLE_KISYU,
-    TABLE_CHOKYOSI,
-    TABLE_ODDS_TANSHO,
-    COL_RACE_ID,
-    COL_KETTONUM,
-    COL_UMABAN,
-    COL_KAISAI_YEAR,
-    COL_KAISAI_MONTHDAY,
-    COL_JYOCD,
-    COL_DATA_KUBUN,
-    COL_RACE_NAME,
-    COL_GRADE_CD,
-    COL_TRACK_CD,
-    COL_KYORI,
-    COL_RACE_NUM,
-    COL_TENKO_CD,
-    COL_SHIBA_BABA_CD,
-    COL_DIRT_BABA_CD,
-    COL_HASSO_JIKOKU,
     COL_BAMEI,
-    COL_SEX,
-    COL_KINRYO,
-    COL_BATAIJU,
-    COL_WAKUBAN,
     COL_BAREI,
-    COL_TOZAI_CODE,
-    COL_KISYUCODE,
-    COL_CHOKYOSICODE,
-    COL_KISYU_NAME,
+    COL_BATAIJU,
     COL_CHOKYOSI_NAME,
-    COL_KYOSO_SHUBETSU_CD,
+    COL_CHOKYOSICODE,
+    COL_DATA_KUBUN,
+    COL_DIRT_BABA_CD,
+    COL_GRADE_CD,
+    COL_HASSO_JIKOKU,
+    COL_JYOCD,
+    COL_KAISAI_MONTHDAY,
+    COL_KAISAI_YEAR,
+    COL_KETTONUM,
+    COL_KINRYO,
+    COL_KISYU_NAME,
+    COL_KISYUCODE,
+    COL_KYORI,
     COL_KYOSO_JOKEN_2SAI,
     COL_KYOSO_JOKEN_3SAI,
     COL_KYOSO_JOKEN_4SAI,
     COL_KYOSO_JOKEN_5SAI_IJO,
+    COL_KYOSO_SHUBETSU_CD,
+    COL_RACE_ID,
+    COL_RACE_NAME,
+    COL_RACE_NUM,
+    COL_SEX,
+    COL_SHIBA_BABA_CD,
+    COL_TENKO_CD,
+    COL_TOZAI_CODE,
+    COL_TRACK_CD,
+    COL_UMABAN,
+    COL_WAKUBAN,
     DATA_KUBUN_KAKUTEI,
+    TABLE_CHOKYOSI,
+    TABLE_HANSYOKU,
+    TABLE_KISYU,
+    TABLE_RACE,
+    TABLE_SANKU,
+    TABLE_UMA,
+    TABLE_UMA_RACE,
 )
-from src.config import ML_TRAINING_YEARS_BACK
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +72,7 @@ def get_kyoso_joken_code_expr() -> str:
     ) as kyoso_joken_code"""
 
 
-async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, Any]]:
+async def get_race_info(conn: Connection, race_id: str) -> dict[str, Any] | None:
     """
     レース基本情報を取得
 
@@ -121,7 +120,7 @@ async def get_race_info(conn: Connection, race_id: str) -> Optional[Dict[str, An
         raise
 
 
-async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any]]:
+async def get_race_entries(conn: Connection, race_id: str) -> list[dict[str, Any]]:
     """
     レースの出走馬一覧を取得（血統・前走情報含む）
 
@@ -189,9 +188,9 @@ async def get_race_entries(conn: Connection, race_id: str) -> List[Dict[str, Any
 async def get_races_by_date(
     conn: Connection,
     target_date: date,
-    venue_code: Optional[str] = None,
-    grade_filter: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    venue_code: str | None = None,
+    grade_filter: str | None = None
+) -> list[dict[str, Any]]:
     """
     指定日のレース一覧を取得
 
@@ -267,9 +266,9 @@ async def get_races_by_date(
 
 async def get_races_today(
     conn: Connection,
-    venue_code: Optional[str] = None,
-    grade_filter: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    venue_code: str | None = None,
+    grade_filter: str | None = None
+) -> list[dict[str, Any]]:
     """
     今日のレース一覧を取得
 
@@ -315,8 +314,8 @@ async def get_race_entry_count(conn: Connection, race_id: str) -> int:
 async def get_upcoming_races(
     conn: Connection,
     days_ahead: int = 7,
-    grade_filter: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    grade_filter: str | None = None
+) -> list[dict[str, Any]]:
     """
     今後N日間のレース一覧を取得
 
@@ -376,7 +375,7 @@ async def get_upcoming_races(
         raise
 
 
-async def get_race_detail(conn: Connection, race_id: str) -> Optional[Dict[str, Any]]:
+async def get_race_detail(conn: Connection, race_id: str) -> dict[str, Any] | None:
     """
     レース詳細情報を取得（レース情報+出走馬一覧）
 
@@ -433,9 +432,9 @@ async def check_race_exists(conn: Connection, race_id: str) -> bool:
 
 async def get_horse_head_to_head(
     conn: Connection,
-    kettonums: List[str],
+    kettonums: list[str],
     limit: int = 20
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     複数の馬の過去の対戦成績を取得
 
@@ -494,7 +493,7 @@ async def get_horse_head_to_head(
         rows = await conn.fetch(sql, kettonums, DATA_KUBUN_KAKUTEI, limit * len(kettonums))
 
         # レースごとにグループ化
-        races_dict: Dict[str, Dict[str, Any]] = {}
+        races_dict: dict[str, dict[str, Any]] = {}
         for row in rows:
             race_id = row[COL_RACE_ID]
 
@@ -533,7 +532,7 @@ async def search_races_by_name_db(
     days_before: int = 30,
     days_after: int = 30,
     limit: int = 20
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """
     レース名で検索（データベースから直接、エイリアス対応）
 

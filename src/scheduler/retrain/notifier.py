@@ -6,12 +6,11 @@ Functions for sending retrain result notifications to Discord.
 
 import logging
 import os
-from typing import Dict
 
 logger = logging.getLogger(__name__)
 
 
-def send_retrain_notification(result: Dict) -> None:
+def send_retrain_notification(result: dict) -> None:
     """
     Send retrain result notification to Discord.
 
@@ -57,12 +56,12 @@ def send_retrain_notification(result: Dict) -> None:
                 f"学習サンプル数: {training.get('samples', 0):,}",
                 "",
                 "📊 **評価指標:**",
-                f"```",
+                "```",
                 f"単勝AUC:     {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
                 f"複勝AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
                 f"Brier(単勝): {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
                 f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
-                f"```",
+                "```",
                 "",
                 "✅ 新モデルをデプロイしました"
             ]
@@ -73,12 +72,12 @@ def send_retrain_notification(result: Dict) -> None:
                 f"学習サンプル数: {training.get('samples', 0):,}",
                 "",
                 "📊 **評価指標:**",
-                f"```",
+                "```",
                 f"単勝AUC:     {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
                 f"複勝AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
                 f"Brier(単勝): {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
                 f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
-                f"```",
+                "```",
                 "",
                 "⚠️ 改善なし、現行モデルを維持"
             ]

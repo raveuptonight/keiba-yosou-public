@@ -2,9 +2,10 @@
 共通スキーマ（エラーレスポンス等）
 """
 
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
 
 
 class PrizeMoneyResponse(BaseModel):
@@ -22,7 +23,7 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(..., description="エラーコード")
     message: str = Field(..., description="エラーメッセージ")
-    details: Optional[Dict[str, Any]] = Field(
+    details: dict[str, Any] | None = Field(
         None, description="詳細情報"
     )
 
@@ -38,9 +39,9 @@ class HealthCheckResponse(BaseModel):
 
     status: str = Field(..., description="ステータス (ok/ng)")
     timestamp: datetime = Field(..., description="チェック実行日時")
-    database: Optional[str] = Field(
+    database: str | None = Field(
         None, description="DB接続状態 (connected/disconnected)"
     )
-    claude_api: Optional[str] = Field(
+    claude_api: str | None = Field(
         None, description="Claude API状態 (available/unavailable)"
     )

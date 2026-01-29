@@ -7,22 +7,21 @@ Collects race results and compares with predictions.
 """
 
 import logging
-from datetime import datetime, date, timedelta
-from typing import Dict, Optional
+from datetime import date, datetime, timedelta
 
+from src.scheduler.result.analyzer import (
+    calculate_accuracy,
+    compare_results,
+)
 from src.scheduler.result.db_operations import (
-    get_race_results,
+    KEIBAJO_NAMES,
+    get_cumulative_stats,
     get_payouts,
+    get_race_results,
+    get_recent_race_dates,
     load_predictions_from_db,
     save_analysis_to_db,
     update_accuracy_tracking,
-    get_cumulative_stats,
-    get_recent_race_dates,
-    KEIBAJO_NAMES,
-)
-from src.scheduler.result.analyzer import (
-    compare_results,
-    calculate_accuracy,
 )
 from src.scheduler.result.notifier import (
     send_discord_notification,
@@ -54,15 +53,15 @@ class ResultCollector:
         """Load prediction results from DB."""
         return load_predictions_from_db(target_date)
 
-    def compare_results(self, predictions: Dict, results, payouts=None):
+    def compare_results(self, predictions: dict, results, payouts=None):
         """Compare predictions with results (EV recommendation and axis horse format)."""
         return compare_results(predictions, results, payouts)
 
-    def calculate_accuracy(self, comparison: Dict):
+    def calculate_accuracy(self, comparison: dict):
         """Calculate accuracy metrics (detailed version)."""
         return calculate_accuracy(comparison)
 
-    def collect_and_analyze(self, target_date: date) -> Dict:
+    def collect_and_analyze(self, target_date: date) -> dict:
         """Execute result collection and analysis."""
         logger.info(f"Starting result collection: {target_date}")
 
@@ -94,19 +93,19 @@ class ResultCollector:
             'accuracy': accuracy
         }
 
-    def save_analysis_to_db(self, analysis: Dict) -> bool:
+    def save_analysis_to_db(self, analysis: dict) -> bool:
         """Save analysis results to DB."""
         return save_analysis_to_db(analysis)
 
-    def update_accuracy_tracking(self, stats: Dict) -> bool:
+    def update_accuracy_tracking(self, stats: dict) -> bool:
         """Update cumulative accuracy tracking."""
         return update_accuracy_tracking(stats)
 
-    def get_cumulative_stats(self) -> Optional[Dict]:
+    def get_cumulative_stats(self) -> dict | None:
         """Get cumulative statistics."""
         return get_cumulative_stats()
 
-    def send_discord_notification(self, analysis: Dict):
+    def send_discord_notification(self, analysis: dict):
         """Send Discord notification (EV recommendation and axis horse format)."""
         send_discord_notification(analysis)
 
@@ -114,16 +113,16 @@ class ResultCollector:
         self,
         saturday: date,
         sunday: date,
-        stats: Dict,
-        ranking_stats: Dict = None,
-        return_rates: Dict = None,
-        popularity_stats: Dict = None,
-        confidence_stats: Dict = None,
-        by_track: Dict = None,
-        daily_data: Dict = None,
-        cumulative: Optional[Dict] = None,
-        ev_stats: Dict = None,
-        axis_stats: Dict = None,
+        stats: dict,
+        ranking_stats: dict = None,
+        return_rates: dict = None,
+        popularity_stats: dict = None,
+        confidence_stats: dict = None,
+        by_track: dict = None,
+        daily_data: dict = None,
+        cumulative: dict | None = None,
+        ev_stats: dict = None,
+        axis_stats: dict = None,
     ):
         """Send weekend total Discord notification (EV recommendation and axis horse format)."""
         send_weekend_notification(
@@ -327,7 +326,7 @@ def collect_weekend_results():
             if ev.get('ev_rec_count', 0) > 0:
                 print(f"  EV rec: {ev['ev_rec_count']} horses → Win {ev.get('ev_rec_tansho_hit', 0)} hits, Place {ev.get('ev_rec_fukusho_hit', 0)} hits (ROI {ev.get('ev_tansho_roi', 0):.0f}%)")
             else:
-                print(f"  EV rec: None")
+                print("  EV rec: None")
             print(f"  Axis: Place {ax.get('axis_fukusho_hit', 0)}/{ax.get('axis_races', 0)} hits ({ax.get('axis_fukusho_rate', 0):.0f}%)")
         else:
             print(f"\n{target_date}: {analysis['status']}")
@@ -441,7 +440,7 @@ def collect_weekend_results():
         # Get cumulative stats
         cumulative = collector.get_cumulative_stats()
 
-        print(f"\n=== Weekend Total ===")
+        print("\n=== Weekend Total ===")
         print(f"Analyzed races: {n}R")
         print("\n【Win/Place Recommendation】(EV >= 1.5)")
         if weekend_ev:
@@ -466,7 +465,7 @@ def collect_weekend_results():
 
         # Execute SHAP analysis (optional)
         try:
-            from src.scheduler.shap_analyzer import ShapAnalyzer, SHAP_AVAILABLE
+            from src.scheduler.shap_analyzer import SHAP_AVAILABLE, ShapAnalyzer
             if SHAP_AVAILABLE:
                 print("\n=== SHAP Feature Analysis ===")
                 shap_analyzer = ShapAnalyzer()

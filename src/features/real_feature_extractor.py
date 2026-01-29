@@ -13,52 +13,52 @@ Enhanced features (v2):
 """
 
 import logging
-from typing import Dict, List, Any
+from typing import Any
 
 from src.features.enhanced_features import EnhancedFeatureExtractor
-from src.features.extractors.db_queries import (
-    get_race_entries,
-    get_race_info,
-    get_past_races,
-    get_jockey_stats,
-    get_trainer_stats,
-    get_jockey_horse_combo,
-    get_training_data,
-    get_distance_stats,
-    get_baba_stats,
-    get_detailed_training,
-    get_interval_stats,
-)
 from src.features.extractors.calculators import (
-    safe_int,
-    safe_float,
-    encode_sex,
+    calc_avg_time_diff,
+    calc_class_change,
+    calc_corner_avg,
+    calc_course_fit,
+    calc_days_since_last,
+    calc_distance_change,
+    calc_distance_fit,
+    calc_last3f_avg,
+    calc_last3f_rank_avg,
+    calc_pace_prediction,
+    calc_place_rate,
     calc_speed_index_avg,
     calc_speed_index_max,
     calc_speed_index_recent,
-    calc_last3f_avg,
-    calc_last3f_rank_avg,
-    determine_running_style,
-    calc_corner_avg,
-    calc_win_rate,
-    calc_place_rate,
-    count_wins,
-    calc_days_since_last,
-    get_interval_category,
-    calc_course_fit,
-    calc_distance_fit,
-    determine_class_rank,
-    calc_waku_bias,
-    is_jockey_changed,
-    calc_distance_change,
-    calc_surface_rate,
-    calc_class_change,
-    calc_avg_time_diff,
-    get_best_finish,
-    calc_turn_rate,
-    calc_pace_prediction,
     calc_style_pace_compatibility,
+    calc_surface_rate,
+    calc_turn_rate,
+    calc_waku_bias,
+    calc_win_rate,
+    count_wins,
+    determine_class_rank,
+    determine_running_style,
+    encode_sex,
+    get_best_finish,
     get_default_enhanced_features,
+    get_interval_category,
+    is_jockey_changed,
+    safe_float,
+    safe_int,
+)
+from src.features.extractors.db_queries import (
+    get_baba_stats,
+    get_detailed_training,
+    get_distance_stats,
+    get_interval_stats,
+    get_jockey_horse_combo,
+    get_jockey_stats,
+    get_past_races,
+    get_race_entries,
+    get_race_info,
+    get_trainer_stats,
+    get_training_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +82,7 @@ class RealFeatureExtractor:
         self,
         race_code: str,
         data_kubun: str = "7"
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Extract features for all horses in a race.
 
@@ -127,12 +127,12 @@ class RealFeatureExtractor:
 
     def _extract_horse_features(
         self,
-        entry: Dict,
-        race_info: Dict,
-        all_entries: List[Dict],
-        pace_info: Dict = None,
-        running_styles: Dict[str, int] = None
-    ) -> Dict[str, Any]:
+        entry: dict,
+        race_info: dict,
+        all_entries: list[dict],
+        pace_info: dict = None,
+        running_styles: dict[str, int] = None
+    ) -> dict[str, Any]:
         """Extract features for a single horse."""
         features = {}
         kettonum = entry.get('ketto_toroku_bango', '')
@@ -354,10 +354,10 @@ class RealFeatureExtractor:
 
     def inject_bias_features(
         self,
-        features_list: List[Dict[str, Any]],
+        features_list: list[dict[str, Any]],
         bias_result: 'DailyBiasResult',
         venue_code: str
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Inject bias features into feature dictionaries.
 
@@ -369,7 +369,6 @@ class RealFeatureExtractor:
         Returns:
             Feature list with bias features added
         """
-        from src.features.daily_bias import DailyBiasResult, VenueBias
 
         if bias_result is None:
             # Set default values if no bias data
@@ -421,10 +420,10 @@ class RealFeatureExtractor:
 
     def inject_jockey_bias(
         self,
-        features: Dict[str, Any],
+        features: dict[str, Any],
         bias_result: 'DailyBiasResult',
         kishu_code: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Inject jockey bias for individual horse.
 

@@ -3,28 +3,29 @@
 """
 
 import logging
-from fastapi import APIRouter, Query, Path, status
 
+from fastapi import APIRouter, Path, Query, status
+
+from src.api.exceptions import DatabaseErrorException
 from src.api.schemas.jockey import (
-    JockeyStats,
+    DistanceCategoryStats,
     JockeyBasicInfo,
     JockeySearchResult,
-    TrainerStats,
-    TrainerBasicInfo,
-    TrainerSearchResult,
+    JockeyStats,
     OverallStats,
     SurfaceStats,
-    DistanceCategoryStats,
-    VenueStats,
     TopJockey,
+    TrainerBasicInfo,
+    TrainerSearchResult,
+    TrainerStats,
+    VenueStats,
 )
-from src.api.exceptions import DatabaseErrorException
 from src.db.async_connection import get_connection
 from src.db.queries.jockey_queries import (
-    search_jockeys_by_name,
     get_jockey_stats,
-    search_trainers_by_name,
     get_trainer_stats,
+    search_jockeys_by_name,
+    search_trainers_by_name,
 )
 
 logger = logging.getLogger(__name__)

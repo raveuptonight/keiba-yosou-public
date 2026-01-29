@@ -9,20 +9,19 @@ import logging
 import os
 import uuid
 from datetime import date as date_type
-from typing import Optional, List
 
 import asyncpg
 
 from src.api.schemas.prediction import (
-    PredictionResponse,
-    PredictionResult,
     HorseRankingEntry,
     PositionDistribution,
     PredictionHistoryItem,
+    PredictionResponse,
+    PredictionResult,
 )
 from src.db.table_names import (
-    COL_RACE_NAME,
     COL_JYOCD,
+    COL_RACE_NAME,
 )
 from src.exceptions import DatabaseQueryError
 from src.services.prediction.track_adjustment import VENUE_CODE_MAP
@@ -114,7 +113,7 @@ async def save_prediction(prediction_data: PredictionResponse) -> str:
         raise DatabaseQueryError(f"Error while saving prediction result: {e}") from e
 
 
-async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionResponse]:
+async def get_prediction_by_id(prediction_id: str) -> PredictionResponse | None:
     """
     Get saved prediction by ID.
 
@@ -266,8 +265,8 @@ async def get_prediction_by_id(prediction_id: str) -> Optional[PredictionRespons
 
 async def get_predictions_by_race(
     race_id: str,
-    is_final: Optional[bool] = None
-) -> List[PredictionHistoryItem]:
+    is_final: bool | None = None
+) -> list[PredictionHistoryItem]:
     """
     Get prediction history for a race.
 

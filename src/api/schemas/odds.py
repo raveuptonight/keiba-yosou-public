@@ -2,9 +2,9 @@
 オッズ関連のPydanticスキーマ
 """
 
-from pydantic import BaseModel, Field
-from typing import List, Union
 from datetime import datetime
+
+from pydantic import BaseModel, Field
 
 
 class SingleOdds(BaseModel):
@@ -19,7 +19,7 @@ class SingleOdds(BaseModel):
 class CombinationOdds(BaseModel):
     """複数馬番組み合わせオッズ（馬連・3連複等）"""
 
-    numbers: List[int] = Field(
+    numbers: list[int] = Field(
         ..., min_items=2, description="馬番リスト"
     )
     odds: float = Field(..., ge=0.1, description="オッズ")
@@ -37,6 +37,6 @@ class OddsResponse(BaseModel):
     updated_at: datetime = Field(
         ..., description="オッズ更新日時"
     )
-    odds: List[Union[SingleOdds, CombinationOdds]] = Field(
+    odds: list[SingleOdds | CombinationOdds] = Field(
         ..., description="オッズリスト"
     )

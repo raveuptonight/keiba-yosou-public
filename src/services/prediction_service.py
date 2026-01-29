@@ -7,26 +7,24 @@ Uses ML ensemble models (XGBoost + LightGBM + CatBoost) for probability-based ra
 
 import logging
 import os
-from typing import Optional, List
 
 from src.api.schemas.prediction import (
     PredictionResponse,
-    PredictionHistoryItem,
 )
 from src.exceptions import (
-    PredictionError,
     MissingDataError,
+    PredictionError,
 )
 from src.services.prediction.ml_engine import compute_ml_predictions
-from src.services.prediction.result_generator import (
-    generate_mock_prediction,
-    generate_ml_only_prediction,
-    convert_to_prediction_response,
-)
 from src.services.prediction.persistence import (
-    save_prediction,
     get_prediction_by_id,
     get_predictions_by_race,
+    save_prediction,
+)
+from src.services.prediction.result_generator import (
+    convert_to_prediction_response,
+    generate_ml_only_prediction,
+    generate_mock_prediction,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +38,7 @@ def _is_mock_mode() -> bool:
 async def generate_prediction(
     race_id: str,
     is_final: bool = False,
-    bias_date: Optional[str] = None
+    bias_date: str | None = None
 ) -> PredictionResponse:
     """
     Main prediction generation function (ML model only, no LLM).
@@ -67,8 +65,8 @@ async def generate_prediction(
         # Lazy imports (not needed in mock mode)
         from src.db.async_connection import get_connection
         from src.db.queries import (
-            get_race_prediction_data,
             check_race_exists,
+            get_race_prediction_data,
         )
 
         # 1. Fetch data
@@ -165,7 +163,7 @@ if __name__ == "__main__":
             print(f"Prediction ID: {prediction.prediction_id}")
             print(f"Race: {prediction.race_name}")
             print(f"Prediction confidence: {prediction.prediction_result.prediction_confidence:.2%}")
-            print(f"\nFull ranking:")
+            print("\nFull ranking:")
             for h in prediction.prediction_result.ranked_horses:
                 print(f"  Rank {h.rank}: #{h.horse_number} {h.horse_name} "
                       f"(Win: {h.win_probability:.1%}, Place: {h.place_probability:.1%})")

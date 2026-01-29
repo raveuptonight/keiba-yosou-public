@@ -4,25 +4,25 @@ PostgreSQL非同期接続管理モジュール (asyncpg)
 FastAPI用の非同期接続プール管理
 """
 
-import asyncpg
 import logging
-from typing import Optional
 from contextlib import asynccontextmanager
+
+import asyncpg
 
 from src.config import (
     DB_HOST,
-    DB_PORT,
     DB_NAME,
-    DB_USER,
     DB_PASSWORD,
-    DB_POOL_MIN_SIZE,
     DB_POOL_MAX_SIZE,
+    DB_POOL_MIN_SIZE,
+    DB_PORT,
+    DB_USER,
 )
 
 logger = logging.getLogger(__name__)
 
 # グローバル接続プール
-_pool: Optional[asyncpg.Pool] = None
+_pool: asyncpg.Pool | None = None
 
 
 async def init_db_pool() -> None:
@@ -187,7 +187,7 @@ async def execute_query(sql: str, *args) -> list[dict]:
         raise
 
 
-async def execute_one(sql: str, *args) -> Optional[dict]:
+async def execute_one(sql: str, *args) -> dict | None:
     """
     単一行を返すSELECTクエリ実行
 

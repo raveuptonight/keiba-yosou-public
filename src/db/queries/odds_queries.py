@@ -5,21 +5,22 @@
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Any
+
 from asyncpg import Connection
 
 from src.db.table_names import (
-    TABLE_ODDS_TANSHO,
-    TABLE_ODDS_FUKUSHO,
-    TABLE_ODDS_WAKUREN,
-    TABLE_ODDS_UMAREN,
-    TABLE_ODDS_WIDE,
-    TABLE_ODDS_UMATAN,
-    TABLE_ODDS_SANRENPUKU,
-    TABLE_ODDS_SANRENTAN,
+    COL_DATA_KUBUN,
     COL_RACE_ID,
     COL_UMABAN,
-    COL_DATA_KUBUN,
+    TABLE_ODDS_FUKUSHO,
+    TABLE_ODDS_SANRENPUKU,
+    TABLE_ODDS_SANRENTAN,
+    TABLE_ODDS_TANSHO,
+    TABLE_ODDS_UMAREN,
+    TABLE_ODDS_UMATAN,
+    TABLE_ODDS_WAKUREN,
+    TABLE_ODDS_WIDE,
 )
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ DATA_KUBUN_SAISYU_ODDS = "3"  # 最終オッズ
 async def get_odds_win_place(
     conn: Connection,
     race_id: str
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """
     単勝・複勝オッズを取得
 
@@ -106,8 +107,8 @@ async def get_odds_win_place(
 async def get_odds_quinella(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     馬連オッズを取得
 
@@ -157,8 +158,8 @@ async def get_odds_quinella(
 async def get_odds_exacta(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     馬単オッズを取得
 
@@ -208,8 +209,8 @@ async def get_odds_exacta(
 async def get_odds_wide(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     ワイドオッズを取得
 
@@ -261,8 +262,8 @@ async def get_odds_wide(
 async def get_odds_trio(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     3連複オッズを取得
 
@@ -315,8 +316,8 @@ async def get_odds_trio(
 async def get_odds_trifecta(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     3連単オッズを取得
 
@@ -369,8 +370,8 @@ async def get_odds_trifecta(
 async def get_odds_bracket_quinella(
     conn: Connection,
     race_id: str,
-    limit: Optional[int] = None
-) -> List[Dict[str, Any]]:
+    limit: int | None = None
+) -> list[dict[str, Any]]:
     """
     枠連オッズを取得
 
@@ -420,8 +421,8 @@ async def get_odds_bracket_quinella(
 async def get_race_odds(
     conn: Connection,
     race_id: str,
-    ticket_types: Optional[List[str]] = None
-) -> Dict[str, Any]:
+    ticket_types: list[str] | None = None
+) -> dict[str, Any]:
     """
     レースの全オッズ情報を取得
 

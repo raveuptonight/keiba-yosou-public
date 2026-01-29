@@ -5,10 +5,9 @@ Pure functions for calculating various horse racing features and statistics.
 """
 
 from datetime import date
-from typing import Dict, List, Any
+from typing import Any
 
 import numpy as np
-
 
 # ===== Type conversion helpers =====
 
@@ -66,7 +65,7 @@ def encode_sex(sex_code: str) -> int:
 
 # ===== Speed index calculations =====
 
-def calc_speed_index_avg(past_races: List[Dict], n: int = 5) -> float:
+def calc_speed_index_avg(past_races: list[dict], n: int = 5) -> float:
     """
     Calculate average speed index (simplified version based on time).
 
@@ -96,7 +95,7 @@ def calc_speed_index_avg(past_races: List[Dict], n: int = 5) -> float:
     return np.mean(times) if times else 80.0
 
 
-def calc_speed_index_max(past_races: List[Dict], n: int = 5) -> float:
+def calc_speed_index_max(past_races: list[dict], n: int = 5) -> float:
     """
     Calculate maximum speed index.
 
@@ -124,7 +123,7 @@ def calc_speed_index_max(past_races: List[Dict], n: int = 5) -> float:
     return max(times) if times else 85.0
 
 
-def calc_speed_index_recent(past_races: List[Dict]) -> float:
+def calc_speed_index_recent(past_races: list[dict]) -> float:
     """
     Calculate most recent race speed index.
 
@@ -141,7 +140,7 @@ def calc_speed_index_recent(past_races: List[Dict]) -> float:
 
 # ===== Last 3F calculations =====
 
-def calc_last3f_avg(past_races: List[Dict], n: int = 5) -> float:
+def calc_last3f_avg(past_races: list[dict], n: int = 5) -> float:
     """
     Calculate average last 3 furlong time.
 
@@ -164,7 +163,7 @@ def calc_last3f_avg(past_races: List[Dict], n: int = 5) -> float:
     return np.mean(times) if times else 35.0
 
 
-def calc_last3f_rank_avg(past_races: List[Dict], n: int = 5) -> float:
+def calc_last3f_rank_avg(past_races: list[dict], n: int = 5) -> float:
     """
     Calculate average last 3F rank (simplified).
 
@@ -181,7 +180,7 @@ def calc_last3f_rank_avg(past_races: List[Dict], n: int = 5) -> float:
 
 # ===== Running style and position =====
 
-def determine_running_style(past_races: List[Dict]) -> int:
+def determine_running_style(past_races: list[dict]) -> int:
     """
     Determine running style from past races.
 
@@ -214,7 +213,7 @@ def determine_running_style(past_races: List[Dict]) -> int:
         return 4  # Deep closer
 
 
-def calc_corner_avg(past_races: List[Dict], corner_col: str) -> float:
+def calc_corner_avg(past_races: list[dict], corner_col: str) -> float:
     """
     Calculate average corner position.
 
@@ -239,7 +238,7 @@ def calc_corner_avg(past_races: List[Dict], corner_col: str) -> float:
 
 # ===== Win/place rate calculations =====
 
-def calc_win_rate(past_races: List[Dict]) -> float:
+def calc_win_rate(past_races: list[dict]) -> float:
     """
     Calculate win rate.
 
@@ -256,7 +255,7 @@ def calc_win_rate(past_races: List[Dict]) -> float:
     return wins / len(past_races)
 
 
-def calc_place_rate(past_races: List[Dict]) -> float:
+def calc_place_rate(past_races: list[dict]) -> float:
     """
     Calculate place rate (top 3 finish).
 
@@ -273,7 +272,7 @@ def calc_place_rate(past_races: List[Dict]) -> float:
     return places / len(past_races)
 
 
-def count_wins(past_races: List[Dict]) -> int:
+def count_wins(past_races: list[dict]) -> int:
     """
     Count number of wins.
 
@@ -288,7 +287,7 @@ def count_wins(past_races: List[Dict]) -> int:
 
 # ===== Days and intervals =====
 
-def calc_days_since_last(past_races: List[Dict], race_info: Dict) -> int:
+def calc_days_since_last(past_races: list[dict], race_info: dict) -> int:
     """
     Calculate days since last race.
 
@@ -342,7 +341,7 @@ def get_interval_category(days: int) -> str:
 
 # ===== Course and distance fit =====
 
-def calc_course_fit(past_races: List[Dict], keibajo_code: str) -> float:
+def calc_course_fit(past_races: list[dict], keibajo_code: str) -> float:
     """
     Calculate course fit (place rate at same venue).
 
@@ -364,7 +363,7 @@ def calc_course_fit(past_races: List[Dict], keibajo_code: str) -> float:
     return places / len(same_course)
 
 
-def calc_distance_fit(past_races: List[Dict], target_distance: int) -> float:
+def calc_distance_fit(past_races: list[dict], target_distance: int) -> float:
     """
     Calculate distance fit (place rate at similar distances).
 
@@ -382,7 +381,7 @@ def calc_distance_fit(past_races: List[Dict], target_distance: int) -> float:
     return 0.5
 
 
-def determine_class_rank(race_info: Dict) -> int:
+def determine_class_rank(race_info: dict) -> int:
     """
     Determine class rank from race info.
 
@@ -406,7 +405,7 @@ def determine_class_rank(race_info: Dict) -> int:
     return mapping.get(grade, 3)
 
 
-def calc_waku_bias(wakuban: int, race_info: Dict) -> float:
+def calc_waku_bias(wakuban: int, race_info: dict) -> float:
     """
     Calculate post position bias (simplified).
 
@@ -423,7 +422,7 @@ def calc_waku_bias(wakuban: int, race_info: Dict) -> float:
 
 # ===== Other calculations =====
 
-def is_jockey_changed(past_races: List[Dict], current_jockey: str) -> bool:
+def is_jockey_changed(past_races: list[dict], current_jockey: str) -> bool:
     """
     Check if jockey changed from last race.
 
@@ -440,7 +439,7 @@ def is_jockey_changed(past_races: List[Dict], current_jockey: str) -> bool:
     return last_jockey != current_jockey
 
 
-def calc_distance_change(past_races: List[Dict], race_info: Dict) -> int:
+def calc_distance_change(past_races: list[dict], race_info: dict) -> int:
     """
     Calculate distance change from last race.
 
@@ -459,7 +458,7 @@ def calc_distance_change(past_races: List[Dict], race_info: Dict) -> int:
     return 0
 
 
-def calc_surface_rate(past_races: List[Dict], is_turf: bool) -> float:
+def calc_surface_rate(past_races: list[dict], is_turf: bool) -> float:
     """
     Calculate place rate by surface type.
 
@@ -479,7 +478,7 @@ def calc_surface_rate(past_races: List[Dict], is_turf: bool) -> float:
     return places / len(past_races) if past_races else 0.25
 
 
-def calc_class_change(past_races: List[Dict], race_info: Dict) -> int:
+def calc_class_change(past_races: list[dict], race_info: dict) -> int:
     """
     Calculate class change from last race.
 
@@ -494,7 +493,7 @@ def calc_class_change(past_races: List[Dict], race_info: Dict) -> int:
     return 0
 
 
-def calc_avg_time_diff(past_races: List[Dict]) -> float:
+def calc_avg_time_diff(past_races: list[dict]) -> float:
     """
     Calculate average time difference from winner.
 
@@ -518,7 +517,7 @@ def calc_avg_time_diff(past_races: List[Dict]) -> float:
     return np.mean(diffs) if diffs else 1.0
 
 
-def get_best_finish(past_races: List[Dict]) -> int:
+def get_best_finish(past_races: list[dict]) -> int:
     """
     Get best finishing position.
 
@@ -536,7 +535,7 @@ def get_best_finish(past_races: List[Dict]) -> int:
     return min(valid_finishes) if valid_finishes else 10
 
 
-def calc_turn_rate(past_races: List[Dict], is_right: bool) -> float:
+def calc_turn_rate(past_races: list[dict], is_right: bool) -> float:
     """
     Calculate place rate by turn direction.
 
@@ -568,12 +567,12 @@ def calc_turn_rate(past_races: List[Dict], is_right: bool) -> float:
 # ===== Pace calculations =====
 
 def calc_pace_prediction(
-    entries: List[Dict],
-    race_info: Dict,
+    entries: list[dict],
+    race_info: dict,
     get_past_races_func,
     conn,
-    cache: Dict
-) -> Dict:
+    cache: dict
+) -> dict:
     """
     Calculate pace prediction.
 
@@ -658,7 +657,7 @@ def calc_style_pace_compatibility(running_style: int, pace_type: int) -> float:
 
 # ===== Default features =====
 
-def get_default_enhanced_features() -> Dict[str, Any]:
+def get_default_enhanced_features() -> dict[str, Any]:
     """
     Get default values for enhanced features.
 

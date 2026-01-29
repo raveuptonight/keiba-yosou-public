@@ -6,7 +6,7 @@ Functions for adjusting predictions based on current track conditions
 """
 
 import logging
-from typing import Optional, Dict, List, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ WEATHER_CODE_MAP = {
 }
 
 
-def get_current_track_condition(conn, race_id: str) -> Optional[Dict]:
+def get_current_track_condition(conn, race_id: str) -> dict | None:
     """
     Get current track condition and weather for a race.
 
@@ -109,7 +109,7 @@ def get_current_track_condition(conn, race_id: str) -> Optional[Dict]:
         cur.close()
 
 
-def get_horse_baba_performance(conn, kettonums: List[str], track_type: str, condition: int) -> Dict[str, Dict]:
+def get_horse_baba_performance(conn, kettonums: list[str], track_type: str, condition: int) -> dict[str, dict]:
     """
     Get each horse's performance record on specific track conditions.
 
@@ -186,11 +186,11 @@ def get_horse_baba_performance(conn, kettonums: List[str], track_type: str, cond
 
 
 def apply_track_condition_adjustment(
-    ml_scores: Dict[str, Any],
-    horses: List[Dict],
-    track_condition: Dict,
-    baba_performance: Dict[str, Dict]
-) -> Dict[str, Any]:
+    ml_scores: dict[str, Any],
+    horses: list[dict],
+    track_condition: dict,
+    baba_performance: dict[str, dict]
+) -> dict[str, Any]:
     """
     Adjust scores based on track condition.
 

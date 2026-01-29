@@ -2,8 +2,8 @@
 統計情報関連のPydanticスキーマ
 """
 
-from datetime import date, datetime
-from typing import Optional, List
+from datetime import date
+
 from pydantic import BaseModel, Field
 
 
@@ -46,10 +46,10 @@ class JockeyStatsResponse(BaseModel):
     jockey_name: str = Field(..., description="騎手名")
     year: int = Field(..., description="集計年")
     stats: StatsBase = Field(..., description="統計情報")
-    by_venue: List[VenueStats] = Field(
+    by_venue: list[VenueStats] = Field(
         ..., description="競馬場別統計"
     )
-    by_distance: List[DistanceStats] = Field(
+    by_distance: list[DistanceStats] = Field(
         ..., description="距離別統計"
     )
 
@@ -61,10 +61,10 @@ class TrainerStatsResponse(BaseModel):
     trainer_name: str = Field(..., description="調教師名")
     year: int = Field(..., description="集計年")
     stats: StatsBase = Field(..., description="統計情報")
-    by_venue: List[VenueStats] = Field(
+    by_venue: list[VenueStats] = Field(
         ..., description="競馬場別統計"
     )
-    by_distance: List[DistanceStats] = Field(
+    by_distance: list[DistanceStats] = Field(
         ..., description="距離別統計"
     )
 

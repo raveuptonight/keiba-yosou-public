@@ -3,60 +3,60 @@
 """
 
 import logging
-from datetime import date, datetime
-from typing import Optional
-from fastapi import APIRouter, Query, Path, status
+from datetime import date
 
+from fastapi import APIRouter, Path, Query, status
+
+from src.api.exceptions import DatabaseErrorException, RaceNotFoundException
+from src.api.schemas.common import PrizeMoneyResponse
 from src.api.schemas.race import (
-    RaceListResponse,
-    RaceDetail,
-    RaceBase,
-    RaceEntry,
-    RaceResult,
-    RacePayoffs,
-    PayoffInfo,
     HeadToHeadRace,
     HorseInMatchup,
+    PayoffInfo,
+    RaceBase,
+    RaceDetail,
+    RaceEntry,
+    RaceListResponse,
+    RacePayoffs,
+    RaceResult,
 )
-from src.api.schemas.common import PrizeMoneyResponse
-from src.api.exceptions import RaceNotFoundException, DatabaseErrorException
 from src.db.async_connection import get_connection
+from src.db.queries.payoff_queries import get_race_lap_times, get_race_payoffs, get_race_results
 from src.db.queries.race_queries import (
-    get_races_today,
-    get_races_by_date,
-    get_upcoming_races,
+    get_horse_head_to_head,
     get_race_detail,
     get_race_entry_count,
-    get_horse_head_to_head,
+    get_races_by_date,
+    get_races_today,
+    get_upcoming_races,
     search_races_by_name_db,
 )
-from src.db.queries.payoff_queries import get_race_results, get_race_payoffs, get_race_lap_times
 from src.db.table_names import (
+    COL_BAMEI,
+    COL_BAREI,
+    COL_BATAIJU,
+    COL_CHOKYOSI_NAME,
+    COL_CHOKYOSICODE,
+    COL_DIRT_BABA_CD,
+    COL_GRADE_CD,
+    COL_HASSO_JIKOKU,
+    COL_JYOCD,
+    COL_KAISAI_MONTHDAY,
+    COL_KAISAI_YEAR,
+    COL_KETTONUM,
+    COL_KINRYO,
+    COL_KISYU_NAME,
+    COL_KISYUCODE,
+    COL_KYORI,
+    COL_KYOSO_SHUBETSU_CD,
     COL_RACE_ID,
     COL_RACE_NAME,
-    COL_GRADE_CD,
-    COL_JYOCD,
-    COL_TRACK_CD,
-    COL_KYORI,
     COL_RACE_NUM,
-    COL_HASSO_JIKOKU,
-    COL_TENKO_CD,
-    COL_SHIBA_BABA_CD,
-    COL_DIRT_BABA_CD,
-    COL_KAISAI_YEAR,
-    COL_KAISAI_MONTHDAY,
-    COL_KETTONUM,
-    COL_BAMEI,
-    COL_UMABAN,
-    COL_KINRYO,
-    COL_BATAIJU,
     COL_SEX,
-    COL_BAREI,
-    COL_KISYUCODE,
-    COL_KISYU_NAME,
-    COL_CHOKYOSICODE,
-    COL_CHOKYOSI_NAME,
-    COL_KYOSO_SHUBETSU_CD,
+    COL_SHIBA_BABA_CD,
+    COL_TENKO_CD,
+    COL_TRACK_CD,
+    COL_UMABAN,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ def _get_venue_name(venue_code: str) -> str:
     return venue_map.get(venue_code, "不明")
 
 
-def _get_grade_display(grade_code: str) -> Optional[str]:
+def _get_grade_display(grade_code: str) -> str | None:
     """グレードコードから表示名を取得"""
     if not grade_code:
         return None
@@ -137,11 +137,11 @@ def _format_track_code(track_code: str) -> str:
     description="本日開催のレース一覧を取得します。グレードや競馬場でフィルタ可能。"
 )
 async def get_today_races(
-    grade: Optional[str] = Query(
+    grade: str | None = Query(
         None,
         description="グレードフィルタ（A=G1, B=G2, C=G3）"
     ),
-    venue: Optional[str] = Query(
+    venue: str | None = Query(
         None,
         description="競馬場コード（01=札幌, 02=函館, etc.）"
     )
@@ -217,7 +217,7 @@ async def get_upcoming_races_list(
         le=30,
         description="何日先まで取得するか（1-30日）"
     ),
-    grade: Optional[str] = Query(
+    grade: str | None = Query(
         None,
         description="グレードフィルタ（A=G1, B=G2, C=G3）"
     )
@@ -284,11 +284,11 @@ async def get_races_for_date(
         ...,
         description="対象日（YYYY-MM-DD形式）"
     ),
-    venue: Optional[str] = Query(
+    venue: str | None = Query(
         None,
         description="競馬場コード（01=札幌, 02=函館, etc.）"
     ),
-    grade: Optional[str] = Query(
+    grade: str | None = Query(
         None,
         description="グレードフィルタ（A=G1, B=G2, C=G3）"
     )

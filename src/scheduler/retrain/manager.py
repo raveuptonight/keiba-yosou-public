@@ -8,7 +8,6 @@ import logging
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 def backup_current_model(
     current_model_path: Path,
     backup_dir: Path
-) -> Optional[str]:
+) -> str | None:
     """
     Backup current model.
 

@@ -25,8 +25,8 @@ Cache Key Conventions:
 
 import json
 import logging
-from typing import Any, Optional
 from functools import wraps
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def _get_redis_client():
         return None
 
 
-def cache_get(key: str) -> Optional[Any]:
+def cache_get(key: str) -> Any | None:
     """
     Get value from cache.
 

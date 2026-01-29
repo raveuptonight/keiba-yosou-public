@@ -6,15 +6,15 @@ Bias includes venue-specific waku (post position) bias and jockey performance bi
 """
 
 import logging
-from typing import Optional, Dict, List, Any
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Cache for bias data by date
-_bias_cache: Dict[str, Dict] = {}
+_bias_cache: dict[str, dict] = {}
 
 
-def load_bias_for_date(target_date: str) -> Optional[Dict]:
+def load_bias_for_date(target_date: str) -> dict | None:
     """
     Load bias data for a specific date from DB.
 
@@ -25,6 +25,7 @@ def load_bias_for_date(target_date: str) -> Optional[Dict]:
         Bias data dictionary, or None if not found
     """
     from datetime import datetime
+
     from src.features.daily_bias import DailyBiasAnalyzer
 
     if target_date in _bias_cache:
@@ -51,11 +52,11 @@ def load_bias_for_date(target_date: str) -> Optional[Dict]:
 
 
 def apply_bias_to_scores(
-    ml_scores: Dict[str, Any],
+    ml_scores: dict[str, Any],
     race_id: str,
-    horses: List[Dict],
-    bias_data: Dict
-) -> Dict[str, Any]:
+    horses: list[dict],
+    bias_data: dict
+) -> dict[str, Any]:
     """
     Apply bias adjustment to ML scores.
 

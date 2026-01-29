@@ -9,9 +9,8 @@ Contains batch query methods for:
 """
 
 import logging
-from typing import Dict, List
 
-from .utils import safe_int, grade_to_rank
+from .utils import grade_to_rank, safe_int
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +18,7 @@ logger = logging.getLogger(__name__)
 SMALL_TRACK_VENUES = {'01', '02', '03', '06', '10'}
 
 
-def get_venue_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_venue_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch venue-specific performance stats (data leak prevention version).
 
     Args:
@@ -119,7 +118,7 @@ def get_venue_stats_batch(conn, kettonums: List[str], entries: List[Dict] = None
     return result
 
 
-def get_zenso_batch(conn, kettonums: List[str], race_codes: List[str], entries: List[Dict] = None) -> Dict[str, Dict]:
+def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: list[dict] = None) -> dict[str, dict]:
     """Batch fetch previous race (zenso) information (data leak prevention version).
 
     Retrieves detailed information about the last 5 races for each horse.
@@ -377,7 +376,7 @@ def get_zenso_batch(conn, kettonums: List[str], race_codes: List[str], entries: 
         return {}
 
 
-def get_jockey_recent_batch(conn, jockey_codes: List[str], year: int) -> Dict[str, Dict]:
+def get_jockey_recent_batch(conn, jockey_codes: list[str], year: int) -> dict[str, dict]:
     """Batch fetch jockey recent performance (current year).
 
     Args:
@@ -430,7 +429,7 @@ def get_jockey_recent_batch(conn, jockey_codes: List[str], year: int) -> Dict[st
         return {}
 
 
-def get_jockey_maiden_stats_batch(conn, jockey_codes: List[str], year: int) -> Dict[str, Dict]:
+def get_jockey_maiden_stats_batch(conn, jockey_codes: list[str], year: int) -> dict[str, dict]:
     """Batch fetch jockey performance in maiden and newcomer races.
 
     Retrieves jockey performance in maiden/newcomer races from the last 3 years.

@@ -5,17 +5,18 @@ Automatically executes final predictions 30 minutes before race (after horse wei
 and notifies via Discord.
 """
 
-import os
 import logging
-from datetime import datetime, date, time, timedelta, timezone
+import os
+from datetime import date, datetime, time, timedelta, timezone
 
 # Japan Standard Time
 JST = timezone(timedelta(hours=9))
-from typing import List, Dict, Any, Optional
-import requests
-from discord.ext import tasks, commands
-import discord
+from typing import Any
 
+import requests
+
+import discord
+from discord.ext import commands, tasks
 from src.config import (
     API_BASE_URL_DEFAULT,
     DISCORD_REQUEST_TIMEOUT,
@@ -37,7 +38,7 @@ class PredictionScheduler(commands.Cog):
     and notifies via Discord.
     """
 
-    def __init__(self, bot: commands.Bot, notification_channel_id: Optional[int] = None):
+    def __init__(self, bot: commands.Bot, notification_channel_id: int | None = None):
         """
         Args:
             bot: Discord bot instance
@@ -68,6 +69,7 @@ class PredictionScheduler(commands.Cog):
         try:
             # Get data for selected date
             from datetime import datetime
+
             from src.scheduler.result_collector import ResultCollector
 
             target_date = datetime.strptime(selected_date, "%Y-%m-%d").date()
@@ -169,7 +171,7 @@ class PredictionScheduler(commands.Cog):
         logger.info("Automatic prediction scheduler stopped")
         self.hourly_check_task.cancel()
 
-    def get_notification_channel(self) -> Optional[discord.TextChannel]:
+    def get_notification_channel(self) -> discord.TextChannel | None:
         """Get notification channel."""
         if not self.notification_channel_id:
             logger.warning("Notification channel ID is not set")
@@ -248,7 +250,7 @@ class PredictionScheduler(commands.Cog):
 
     async def _fetch_races_for_date(
         self, target_date: date, strict_date_match: bool = True
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch race list for specified date.
 
@@ -300,7 +302,7 @@ class PredictionScheduler(commands.Cog):
             logger.error(f"Race list fetch error: {e}")
             return []
 
-    async def _execute_prediction(self, race_id: str, is_final: bool = False, send_notification: bool = True) -> Optional[Dict]:
+    async def _execute_prediction(self, race_id: str, is_final: bool = False, send_notification: bool = True) -> dict | None:
         """
         Execute prediction.
 

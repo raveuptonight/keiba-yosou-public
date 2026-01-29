@@ -4,10 +4,9 @@
 JRA-VANデータから各馬の特徴量を抽出
 """
 
+
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Optional
-from datetime import datetime, timedelta
 
 
 class FeatureExtractor:
@@ -20,7 +19,7 @@ class FeatureExtractor:
         """
         self.db_connection = db_connection
 
-    def extract_features(self, race_id: str, horse_number: int) -> Dict:
+    def extract_features(self, race_id: str, horse_number: int) -> dict:
         """
         各馬の特徴量を抽出
 

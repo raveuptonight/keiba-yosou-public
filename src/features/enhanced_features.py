@@ -11,8 +11,9 @@ Additional features:
 """
 
 import logging
-from typing import Dict, List, Optional, Any, Tuple
 from datetime import date
+from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ class EnhancedFeatureExtractor:
     # 1. Pedigree features
     # ========================================
 
-    def get_pedigree_info(self, kettonum: str) -> Dict[str, Any]:
+    def get_pedigree_info(self, kettonum: str) -> dict[str, Any]:
         """Get pedigree info (sire ID, broodmare sire ID)."""
         if not kettonum:
             return {'sire_id': '', 'broodmare_sire_id': ''}
@@ -94,7 +95,7 @@ class EnhancedFeatureExtractor:
         baba_code: str = None,
         venue_code: str = None,
         is_turf: bool = True
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """
         Get sire offspring statistics.
 
@@ -185,8 +186,8 @@ class EnhancedFeatureExtractor:
     def extract_pedigree_features(
         self,
         kettonum: str,
-        race_info: Dict
-    ) -> Dict[str, Any]:
+        race_info: dict
+    ) -> dict[str, Any]:
         """Extract pedigree-related features."""
         features = {}
 
@@ -238,7 +239,7 @@ class EnhancedFeatureExtractor:
         kettonum: str,
         current_race_code: str,
         limit: int = 5
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Get detailed past race info (including distance and class)."""
         if not kettonum:
             return []
@@ -333,9 +334,9 @@ class EnhancedFeatureExtractor:
         self,
         kettonum: str,
         current_race_code: str,
-        race_info: Dict,
+        race_info: dict,
         current_ninki: int = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract last race info features."""
         features = {}
         past_races = self.get_past_races_detailed(kettonum, current_race_code, limit=5)
@@ -440,7 +441,7 @@ class EnhancedFeatureExtractor:
         kettonum: str,
         venue_code: str,
         is_turf: bool = True
-    ) -> Dict[str, float]:
+    ) -> dict[str, float]:
         """Get venue-specific statistics (from shussobetsu_keibajo table)."""
         if not kettonum or not venue_code:
             return {'win_rate': 0.0, 'place_rate': 0.0, 'runs': 0}
@@ -497,9 +498,9 @@ class EnhancedFeatureExtractor:
     def extract_venue_features(
         self,
         kettonum: str,
-        race_info: Dict,
-        past_races: List[Dict] = None
-    ) -> Dict[str, Any]:
+        race_info: dict,
+        past_races: list[dict] = None
+    ) -> dict[str, Any]:
         """Extract venue-related features."""
         features = {}
 
@@ -563,10 +564,10 @@ class EnhancedFeatureExtractor:
 
     def extract_pace_features_enhanced(
         self,
-        entry: Dict,
-        all_entries: List[Dict],
-        running_styles: Dict[str, int]
-    ) -> Dict[str, Any]:
+        entry: dict,
+        all_entries: list[dict],
+        running_styles: dict[str, int]
+    ) -> dict[str, Any]:
         """Extract enhanced pace features."""
         features = {}
 
@@ -612,7 +613,7 @@ class EnhancedFeatureExtractor:
     # 5. Trend features (jockey form, etc.)
     # ========================================
 
-    def get_jockey_recent_form(self, kishu_code: str, days: int = 14) -> Dict[str, float]:
+    def get_jockey_recent_form(self, kishu_code: str, days: int = 14) -> dict[str, float]:
         """Get jockey's recent form/performance."""
         if not kishu_code:
             return {'win_rate': 0.08, 'place_rate': 0.25, 'runs': 0}
@@ -658,8 +659,8 @@ class EnhancedFeatureExtractor:
     def extract_trend_features(
         self,
         kishu_code: str,
-        past_races: List[Dict]
-    ) -> Dict[str, Any]:
+        past_races: list[dict]
+    ) -> dict[str, Any]:
         """Extract trend features."""
         features = {}
 
@@ -677,9 +678,9 @@ class EnhancedFeatureExtractor:
 
     def extract_seasonal_features(
         self,
-        race_info: Dict,
+        race_info: dict,
         horse_age: int
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract season/timing features."""
         features = {}
 
@@ -721,12 +722,12 @@ class EnhancedFeatureExtractor:
 
     def extract_all_enhanced_features(
         self,
-        entry: Dict,
-        race_info: Dict,
-        all_entries: List[Dict],
-        running_styles: Dict[str, int],
+        entry: dict,
+        race_info: dict,
+        all_entries: list[dict],
+        running_styles: dict[str, int],
         current_ninki: int = None
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Extract all enhanced features."""
         features = {}
         kettonum = entry.get('ketto_toroku_bango', '')

@@ -3,19 +3,18 @@
 """
 
 import logging
-from typing import Optional
-from fastapi import APIRouter, Query, Path, status
 
+from fastapi import APIRouter, Path, Query, status
+
+from src.api.exceptions import (
+    DatabaseErrorException,
+    PredictionNotFoundException,
+    RaceNotFoundException,
+)
 from src.api.schemas.prediction import (
+    PredictionHistoryResponse,
     PredictionRequest,
     PredictionResponse,
-    PredictionHistoryResponse,
-    PredictionHistoryItem,
-)
-from src.api.exceptions import (
-    RaceNotFoundException,
-    PredictionNotFoundException,
-    DatabaseErrorException,
 )
 from src.services import prediction_service
 
@@ -131,7 +130,7 @@ async def get_race_predictions(
         max_length=16,
         description="レースID（16桁）"
     ),
-    is_final: Optional[bool] = Query(
+    is_final: bool | None = Query(
         None,
         description="最終予想のみ取得（true/false）"
     )
