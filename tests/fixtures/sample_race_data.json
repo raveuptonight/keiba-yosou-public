@@ -1,0 +1,62 @@
+{
+  "race_id": "2025012506010911",
+  "race_name": "アメリカジョッキークラブカップ",
+  "race_number": 11,
+  "track_code": "06",
+  "track_name": "中山",
+  "distance": 2200,
+  "surface": "turf",
+  "grade": "G2",
+  "horses": [
+    {
+      "horse_number": 1,
+      "horse_name": "テスト馬1",
+      "horse_id": "2019100001",
+      "jockey_name": "テスト騎手1",
+      "jockey_code": "00001",
+      "trainer_name": "テスト調教師1",
+      "weight": 57.0,
+      "odds": 3.5
+    },
+    {
+      "horse_number": 2,
+      "horse_name": "テスト馬2",
+      "horse_id": "2019100002",
+      "jockey_name": "テスト騎手2",
+      "jockey_code": "00002",
+      "trainer_name": "テスト調教師2",
+      "weight": 55.0,
+      "odds": 5.0
+    },
+    {
+      "horse_number": 3,
+      "horse_name": "テスト馬3",
+      "horse_id": "2019100003",
+      "jockey_name": "テスト騎手3",
+      "jockey_code": "00003",
+      "trainer_name": "テスト調教師3",
+      "weight": 54.0,
+      "odds": 8.0
+    },
+    {
+      "horse_number": 4,
+      "horse_name": "テスト馬4",
+      "horse_id": "2019100004",
+      "jockey_name": "テスト騎手4",
+      "jockey_code": "00004",
+      "trainer_name": "テスト調教師4",
+      "weight": 56.0,
+      "odds": 12.0
+    },
+    {
+      "horse_number": 5,
+      "horse_name": "テスト馬5",
+      "horse_id": "2019100005",
+      "jockey_name": "テスト騎手5",
+      "jockey_code": "00005",
+      "trainer_name": "テスト調教師5",
+      "weight": 54.0,
+      "odds": 25.0
+    }
+  ]
+}

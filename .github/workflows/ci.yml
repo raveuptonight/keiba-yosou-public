@@ -1,0 +1,109 @@
+# =============================================================================
+# GitHub Actions CI Pipeline
+# =============================================================================
+# Runs on:
+#   - Push to main/develop branches
+#   - Pull requests to main branch
+#
+# Jobs:
+#   - lint: Code quality checks (ruff, black, mypy)
+#   - test: Unit and integration tests with coverage
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ===========================================================================
+  # Lint Job - Code Quality Checks
+  # ===========================================================================
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install lint dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff black mypy
+
+      - name: Run ruff (linter)
+        run: ruff check src/
+
+      - name: Run black (formatter check)
+        run: black --check src/
+
+      - name: Run mypy (type checker)
+        run: mypy src/ --ignore-missing-imports
+
+  # ===========================================================================
+  # Test Job - Unit and Integration Tests
+  # ===========================================================================
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: lint  # Only run tests if lint passes
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true  # Fetch Git LFS files (model files)
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio httpx
+
+      - name: Run tests with coverage
+        env:
+          DB_MODE: mock
+          PYTHONDONTWRITEBYTECODE: 1
+        run: |
+          pytest tests/ -v --cov=src --cov-report=xml --cov-report=term-missing
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+  # ===========================================================================
+  # Security Scan (optional, uncomment to enable)
+  # ===========================================================================
+  # security:
+  #   name: Security Scan
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Run Bandit security scanner
+  #       uses: jpetrucciani/bandit-check@main
+  #       with:
+  #         path: 'src/'

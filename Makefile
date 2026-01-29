@@ -12,7 +12,7 @@
 #   make health   - Check API health
 # =============================================================================
 
-.PHONY: setup build up down restart logs health train test clean help
+.PHONY: setup build up down restart logs health train test clean help lint format typecheck docs docs-serve
 
 # Default target
 .DEFAULT_GOAL := help
@@ -176,7 +176,12 @@ collect-results:
 ## Run tests
 test:
 	@echo "Running tests..."
-	@python -m pytest tests/ -v
+	@DB_MODE=mock python -m pytest tests/ -v
+
+## Run tests with coverage
+test-cov:
+	@echo "Running tests with coverage..."
+	@DB_MODE=mock python -m pytest tests/ -v --cov=src --cov-report=html --cov-report=term-missing
 
 ## Run linter
 lint:
@@ -188,11 +193,54 @@ format:
 	@echo "Formatting code..."
 	@black src/
 
+## Type check
+typecheck:
+	@echo "Running type checker..."
+	@mypy src/ --ignore-missing-imports
+
+## Run all checks (lint + typecheck + test)
+check: lint typecheck test
+	@echo "All checks passed!"
+
 ## Run syntax check on all Python files
 syntax-check:
 	@echo "Checking Python syntax..."
 	@find src -name "*.py" -exec python -m py_compile {} \;
 	@echo "All syntax checks passed."
+
+# =============================================================================
+# Documentation Commands
+# =============================================================================
+
+## Build documentation
+docs:
+	@echo "Building documentation..."
+	@mkdocs build
+
+## Serve documentation locally
+docs-serve:
+	@echo "Serving documentation at http://localhost:8000..."
+	@mkdocs serve
+
+## Deploy documentation to GitHub Pages
+docs-deploy:
+	@echo "Deploying documentation..."
+	@mkdocs gh-deploy
+
+# =============================================================================
+# Streamlit Commands
+# =============================================================================
+
+## Start Streamlit dashboard (local)
+streamlit:
+	@echo "Starting Streamlit dashboard..."
+	@streamlit run streamlit/app.py --server.port 8501
+
+## Start Streamlit dashboard (Docker)
+streamlit-docker:
+	@echo "Starting Streamlit in Docker..."
+	@docker compose up -d streamlit
+	@echo "Streamlit running at http://localhost:8501"
 
 # =============================================================================
 # Cleanup Commands
@@ -249,9 +297,21 @@ help:
 	@echo ""
 	@echo "Development:"
 	@echo "  make test           Run tests"
-	@echo "  make lint           Run linter"
-	@echo "  make format         Format code"
+	@echo "  make test-cov       Run tests with coverage"
+	@echo "  make lint           Run linter (ruff)"
+	@echo "  make format         Format code (black)"
+	@echo "  make typecheck      Type check (mypy)"
+	@echo "  make check          Run all checks"
 	@echo "  make syntax-check   Check Python syntax"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs           Build documentation"
+	@echo "  make docs-serve     Serve docs locally"
+	@echo "  make docs-deploy    Deploy to GitHub Pages"
+	@echo ""
+	@echo "Dashboard:"
+	@echo "  make streamlit      Start Streamlit (local)"
+	@echo "  make streamlit-docker  Start Streamlit (Docker)"
 	@echo ""
 	@echo "Cleanup:"
 	@echo "  make clean          Remove containers and volumes"

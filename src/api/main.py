@@ -14,16 +14,39 @@ from dotenv import load_dotenv
 
 from src.db.async_connection import init_db_pool, close_db_pool, get_connection
 from src.db.code_master import initialize_code_cache
+from src.logging_config import setup_logging
 
 # Load .env file
 load_dotenv()
 
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Setup structured logging
+setup_logging()
 logger = logging.getLogger(__name__)
+
+# Initialize Sentry if configured
+try:
+    from src.settings import settings
+
+    if settings.has_sentry_dsn:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.sentry_environment,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+            ],
+        )
+        logger.info("Sentry initialized for error tracking")
+except ImportError:
+    # sentry-sdk not installed, skip initialization
+    pass
+except Exception as e:
+    logger.warning(f"Failed to initialize Sentry: {e}")
 
 
 @asynccontextmanager

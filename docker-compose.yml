@@ -1,4 +1,20 @@
 services:
+  # Redis キャッシュ
+  redis:
+    image: redis:7-alpine
+    container_name: keiba-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
   # スケジューラ（定期実行管理）
   scheduler:
     image: mcuadros/ofelia:latest
@@ -31,12 +47,19 @@ services:
       - DB_USER=postgres
       - DB_PASSWORD=${DB_PASSWORD}
       - NVIDIA_VISIBLE_DEVICES=all
+      - REDIS_ENABLED=${REDIS_ENABLED:-false}
+      - REDIS_URL=redis://redis:6379
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
     volumes:
       - ./src:/app/src:ro        # ソースコード（読み取り専用）
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -133,3 +156,37 @@ services:
       ofelia.job-exec.weekly-retrain.schedule: "0 0 23 * * 2"
       ofelia.job-exec.weekly-retrain.command: "python -m src.scheduler.weekly_retrain_model"
     restart: unless-stopped
+
+  # Streamlit ダッシュボード
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: keiba-streamlit
+    command: streamlit run streamlit/app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - TZ=Asia/Tokyo
+      - PYTHONDONTWRITEBYTECODE=1
+      - DB_MODE=${DB_MODE:-mock}
+      - DB_HOST=host.docker.internal
+      - DB_PORT=5432
+      - DB_NAME=keiba_db
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - API_BASE_URL=http://api:8000
+    volumes:
+      - ./src:/app/src:ro
+      - ./streamlit:/app/streamlit:ro
+      - ./backtest_results:/app/backtest_results:ro
+      - ./models:/app/models:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  redis_data:

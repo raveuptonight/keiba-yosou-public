@@ -1,0 +1,85 @@
+# =============================================================================
+# MkDocs Configuration for keiba-yosou Documentation
+# =============================================================================
+# Build docs: mkdocs build
+# Serve locally: mkdocs serve
+# Deploy to GitHub Pages: mkdocs gh-deploy
+# =============================================================================
+
+site_name: keiba-yosou Documentation
+site_description: Horse racing prediction system using JRA-VAN data with ML ensemble
+site_author: raveuptonight
+site_url: https://raveuptonight.github.io/keiba-yosou/
+
+repo_name: raveuptonight/keiba-yosou
+repo_url: https://github.com/raveuptonight/keiba-yosou
+
+# Theme configuration
+theme:
+  name: material
+  language: ja
+  palette:
+    - scheme: default
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: light blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+# Navigation
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started.md
+    - Installation: installation.md
+    - Configuration: configuration.md
+  - User Guide:
+    - Overview: usage/overview.md
+    - API Reference: usage/api-reference.md
+    - Discord Bot: usage/discord-bot.md
+  - Architecture:
+    - System Design: architecture/system-design.md
+    - ML Pipeline: architecture/ml-pipeline.md
+    - Data Flow: architecture/data-flow.md
+  - Development:
+    - Contributing: development/contributing.md
+    - Testing: development/testing.md
+    - CI/CD: development/cicd.md
+
+# Extensions
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+# Plugins
+plugins:
+  - search
+
+# Extra configuration
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/raveuptonight/keiba-yosou

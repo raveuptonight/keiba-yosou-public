@@ -1,0 +1,72 @@
+{
+  "prediction_id": "test-prediction-001",
+  "race_id": "2025012506010911",
+  "race_name": "アメリカジョッキークラブカップ",
+  "race_number": 11,
+  "track_name": "中山",
+  "prediction_result": {
+    "ranked_horses": [
+      {
+        "rank": 1,
+        "horse_number": 1,
+        "horse_name": "テスト馬1",
+        "win_probability": 0.30,
+        "place_probability": 0.60,
+        "ml_score": 0.85,
+        "position_distribution": {
+          "1": 0.30,
+          "2": 0.20,
+          "3": 0.10
+        }
+      },
+      {
+        "rank": 2,
+        "horse_number": 2,
+        "horse_name": "テスト馬2",
+        "win_probability": 0.20,
+        "place_probability": 0.50,
+        "ml_score": 0.70,
+        "position_distribution": {
+          "1": 0.20,
+          "2": 0.18,
+          "3": 0.12
+        }
+      },
+      {
+        "rank": 3,
+        "horse_number": 3,
+        "horse_name": "テスト馬3",
+        "win_probability": 0.15,
+        "place_probability": 0.40,
+        "ml_score": 0.55,
+        "position_distribution": {
+          "1": 0.15,
+          "2": 0.15,
+          "3": 0.10
+        }
+      }
+    ],
+    "prediction_confidence": 0.75,
+    "axis_horse": {
+      "horse_number": 1,
+      "horse_name": "テスト馬1",
+      "place_probability": 0.60
+    }
+  },
+  "ev_recommendations": {
+    "win_recommendations": [
+      {
+        "horse_number": 2,
+        "horse_name": "テスト馬2",
+        "win_probability": 0.35,
+        "odds": 5.0,
+        "expected_value": 1.75
+      }
+    ],
+    "place_recommendations": [],
+    "odds_source": "realtime",
+    "odds_time": "2025-01-25 15:00"
+  },
+  "is_final": false,
+  "created_at": "2025-01-25T15:30:00+09:00"
+}
