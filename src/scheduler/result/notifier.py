@@ -40,8 +40,8 @@ def send_discord_notification(analysis: Dict):
 
     # Basic message (EV recommendation and axis horse focused)
     lines = [
-        f"📊 **{date_str} Prediction Result Report**",
-        f"Analyzed races: {n}R",
+        f"📊 **{date_str} 予想結果レポート**",
+        f"分析レース数: {n}R",
         "",
     ]
 
@@ -49,30 +49,30 @@ def send_discord_notification(analysis: Dict):
     ev_rec_races = ev_stats.get('ev_rec_races', 0)
     ev_rec_count = ev_stats.get('ev_rec_count', 0)
     if ev_rec_count > 0:
-        lines.append("**【Win/Place Recommendation】** (EV >= 1.5)")
-        lines.append(f"  Recommended races: {ev_rec_races}R / Horses: {ev_rec_count}")
-        lines.append(f"  Win: {ev_stats.get('ev_rec_tansho_hit', 0)} hits ({ev_stats.get('ev_tansho_rate', 0):.1f}%)")
-        lines.append(f"  Place: {ev_stats.get('ev_rec_fukusho_hit', 0)} hits ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)")
-        lines.append(f"  Win ROI: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**")
-        lines.append(f"  Place ROI: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**")
+        lines.append("**【単複推奨】** (EV >= 1.5)")
+        lines.append(f"  推奨レース: {ev_rec_races}R / 推奨頭数: {ev_rec_count}")
+        lines.append(f"  単勝: {ev_stats.get('ev_rec_tansho_hit', 0)}的中 ({ev_stats.get('ev_tansho_rate', 0):.1f}%)")
+        lines.append(f"  複勝: {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)")
+        lines.append(f"  単勝回収: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**")
+        lines.append(f"  複勝回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**")
     else:
-        lines.append("**【Win/Place Recommendation】**")
-        lines.append("  No EV recommendations")
+        lines.append("**【単複推奨】**")
+        lines.append("  EV推奨なし")
 
     # Axis horse stats
     lines.append("")
     axis_races = axis_stats.get('axis_races', 0)
     if axis_races > 0:
-        lines.append("**【Axis Horse Stats】** (Highest place probability)")
-        lines.append(f"  Races: {axis_races}R")
-        lines.append(f"  Win: {axis_stats.get('axis_tansho_hit', 0)} hits ({axis_stats.get('axis_tansho_rate', 0):.1f}%)")
-        lines.append(f"  Place: {axis_stats.get('axis_fukusho_hit', 0)} hits (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)")
-        lines.append(f"  Place ROI: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%")
+        lines.append("**【軸馬成績】** (複勝率最高馬)")
+        lines.append(f"  レース数: {axis_races}R")
+        lines.append(f"  単勝: {axis_stats.get('axis_tansho_hit', 0)}的中 ({axis_stats.get('axis_tansho_rate', 0):.1f}%)")
+        lines.append(f"  複勝: {axis_stats.get('axis_fukusho_hit', 0)}的中 (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)")
+        lines.append(f"  複勝回収: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%")
 
     # Turf/Dirt (axis horse place rate)
     if by_track:
         lines.append("")
-        lines.append("**【Turf/Dirt】** (Axis horse place rate)")
+        lines.append("**【芝・ダート別】** (軸馬複勝率)")
         for track in ['芝', 'ダ']:
             if track in by_track:
                 t = by_track[track]
@@ -138,39 +138,39 @@ def send_weekend_notification(
     axis_stats = axis_stats or {}
 
     lines = [
-        f"📊 **Weekend Prediction Result Report**",
-        f"Period: {saturday} - {sunday}",
-        f"Analyzed races: {stats.get('analyzed_races', 0)}R",
+        f"📊 **週末予想結果レポート**",
+        f"期間: {saturday} - {sunday}",
+        f"分析レース数: {stats.get('analyzed_races', 0)}R",
         "",
     ]
 
     # EV recommendation stats
     ev_rec_count = ev_stats.get('ev_rec_count', 0)
     if ev_rec_count > 0:
-        lines.append("**【Win/Place Recommendation】** (EV >= 1.5)")
-        lines.append(f"  Recommended races: {ev_stats.get('ev_rec_races', 0)}R / Horses: {ev_rec_count}")
-        lines.append(f"  Win: {ev_stats.get('ev_rec_tansho_hit', 0)} hits ({ev_stats.get('ev_tansho_rate', 0):.1f}%)")
-        lines.append(f"  Place: {ev_stats.get('ev_rec_fukusho_hit', 0)} hits ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)")
-        lines.append(f"  Win ROI: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**")
-        lines.append(f"  Place ROI: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**")
+        lines.append("**【単複推奨】** (EV >= 1.5)")
+        lines.append(f"  推奨レース: {ev_stats.get('ev_rec_races', 0)}R / 推奨頭数: {ev_rec_count}")
+        lines.append(f"  単勝: {ev_stats.get('ev_rec_tansho_hit', 0)}的中 ({ev_stats.get('ev_tansho_rate', 0):.1f}%)")
+        lines.append(f"  複勝: {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)")
+        lines.append(f"  単勝回収: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**")
+        lines.append(f"  複勝回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**")
     else:
-        lines.append("**【Win/Place Recommendation】**")
-        lines.append("  No EV recommendations")
+        lines.append("**【単複推奨】**")
+        lines.append("  EV推奨なし")
 
     # Axis horse stats
     lines.append("")
     axis_races = axis_stats.get('axis_races', 0)
     if axis_races > 0:
-        lines.append("**【Axis Horse Stats】** (Highest place probability)")
-        lines.append(f"  Races: {axis_races}R")
-        lines.append(f"  Win: {axis_stats.get('axis_tansho_hit', 0)} hits ({axis_stats.get('axis_tansho_rate', 0):.1f}%)")
-        lines.append(f"  Place: {axis_stats.get('axis_fukusho_hit', 0)} hits (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)")
-        lines.append(f"  Place ROI: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%")
+        lines.append("**【軸馬成績】** (複勝率最高馬)")
+        lines.append(f"  レース数: {axis_races}R")
+        lines.append(f"  単勝: {axis_stats.get('axis_tansho_hit', 0)}的中 ({axis_stats.get('axis_tansho_rate', 0):.1f}%)")
+        lines.append(f"  複勝: {axis_stats.get('axis_fukusho_hit', 0)}的中 (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)")
+        lines.append(f"  複勝回収: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%")
 
     # Turf/Dirt
     if by_track:
         lines.append("")
-        lines.append("**【Turf/Dirt】** (Axis horse place rate)")
+        lines.append("**【芝・ダート別】** (軸馬複勝率)")
         for track in ['芝', 'ダ']:
             if track in by_track:
                 t = by_track[track]
@@ -179,7 +179,7 @@ def send_weekend_notification(
     # Add guide if date select menu is available
     if daily_data:
         lines.append("")
-        lines.append("▼ Select a date to view details")
+        lines.append("▼ 日付を選択して詳細を表示")
 
     message = "\n".join(lines)
 
@@ -202,7 +202,7 @@ def send_weekend_notification(
             options.append({
                 "label": f"{date_str} ({n}R)",
                 "value": date_str,
-                "description": f"Axis place rate: {axis_rate:.0f}%"
+                "description": f"軸馬複勝率: {axis_rate:.0f}%"
             })
 
         if options:
@@ -213,7 +213,7 @@ def send_weekend_notification(
                         {
                             "type": 3,  # Select Menu
                             "custom_id": "weekend_result_select",
-                            "placeholder": "Select a date to view details...",
+                            "placeholder": "日付を選択して詳細を表示...",
                             "options": options
                         }
                     ]

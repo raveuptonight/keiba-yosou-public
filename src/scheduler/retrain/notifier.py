@@ -52,35 +52,35 @@ def send_retrain_notification(result: Dict) -> None:
 
         if result.get('deployed'):
             lines = [
-                "🔄 **Weekly Model Retrain Complete**",
+                "🔄 **週次モデル再学習完了**",
                 "",
-                f"Training samples: {training.get('samples', 0):,}",
+                f"学習サンプル数: {training.get('samples', 0):,}",
                 "",
-                "📊 **Evaluation Metrics:**",
+                "📊 **評価指標:**",
                 f"```",
-                f"Win AUC:       {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
-                f"Place AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
-                f"Brier (win):   {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
-                f"Top-3 coverage: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
+                f"単勝AUC:     {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
+                f"複勝AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
+                f"Brier(単勝): {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
+                f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
                 f"```",
                 "",
-                "✅ New model deployed"
+                "✅ 新モデルをデプロイしました"
             ]
         else:
             lines = [
-                "🔄 **Weekly Model Retrain Complete**",
+                "🔄 **週次モデル再学習完了**",
                 "",
-                f"Training samples: {training.get('samples', 0):,}",
+                f"学習サンプル数: {training.get('samples', 0):,}",
                 "",
-                "📊 **Evaluation Metrics:**",
+                "📊 **評価指標:**",
                 f"```",
-                f"Win AUC:       {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
-                f"Place AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
-                f"Brier (win):   {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
-                f"Top-3 coverage: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
+                f"単勝AUC:     {win_auc:.4f} {get_icon(win_auc, 0.70, 0.80)}",
+                f"複勝AUC:     {place_auc:.4f} {get_icon(place_auc, 0.65, 0.75)}",
+                f"Brier(単勝): {win_brier:.4f} {get_icon(win_brier, 0.07, 0.05, True)}",
+                f"Top-3カバー: {top3_coverage*100:.1f}% {get_icon(top3_coverage, 0.55, 0.65)}",
                 f"```",
                 "",
-                "⚠️ No improvement, keeping current model"
+                "⚠️ 改善なし、現行モデルを維持"
             ]
 
         payload = {"content": "\n".join(lines)}

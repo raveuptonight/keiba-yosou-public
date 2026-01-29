@@ -75,17 +75,17 @@ class PredictionScheduler(commands.Cog):
             analysis = collector.collect_and_analyze(target_date)
 
             if analysis['status'] != 'success':
-                await interaction.followup.send(f"❌ No data found for {selected_date}", ephemeral=True)
+                await interaction.followup.send(f"❌ {selected_date}のデータが見つかりません", ephemeral=True)
                 return
 
             acc = analysis['accuracy']
 
             # Create detail message
             lines = [
-                f"📊 **{selected_date} Prediction Accuracy Report**",
-                f"Analyzed races: {acc['analyzed_races']}R",
+                f"📊 **{selected_date} 予想精度レポート**",
+                f"分析レース数: {acc['analyzed_races']}R",
                 "",
-                "**[Results by Ranking]**",
+                "**【順位別成績】**",
             ]
 
             # By ranking
@@ -93,45 +93,45 @@ class PredictionScheduler(commands.Cog):
                 if rank in acc.get('ranking_stats', {}):
                     r = acc['ranking_stats'][rank]
                     lines.append(
-                        f"  Rank {rank}: 1st:{r['1着']}x 2nd:{r['2着']}x 3rd:{r['3着']}x "
-                        f"(Place rate:{r['複勝率']:.1f}%)"
+                        f"  {rank}位予想: 1着:{r['1着']}回 2着:{r['2着']}回 3着:{r['3着']}回 "
+                        f"(複勝率:{r['複勝率']:.1f}%)"
                     )
 
             # By popularity
             if acc.get('popularity_stats'):
                 lines.append("")
-                lines.append("**[Results by Popularity]** (Rank 1 predicted)")
+                lines.append("**【人気別成績】** (1位予想馬)")
                 for pop_cat in ['1-3番人気', '4-6番人気', '7-9番人気', '10番人気以下']:
                     if pop_cat in acc['popularity_stats']:
                         p = acc['popularity_stats'][pop_cat]
-                        lines.append(f"  {pop_cat}: {p['対象']}R -> Place:{p['複勝圏']}x ({p['複勝率']:.0f}%)")
+                        lines.append(f"  {pop_cat}: {p['対象']}R → 複勝圏:{p['複勝圏']}回 ({p['複勝率']:.0f}%)")
 
             # By confidence
             if acc.get('confidence_stats'):
                 lines.append("")
-                lines.append("**[Results by Confidence]**")
+                lines.append("**【信頼度別成績】**")
                 for conf_cat in ['高(80%以上)', '中(60-80%)', '低(60%未満)']:
                     if conf_cat in acc['confidence_stats']:
                         c = acc['confidence_stats'][conf_cat]
-                        lines.append(f"  {conf_cat}: {c['対象']}R -> Place:{c['複勝圏']}x ({c['複勝率']:.0f}%)")
+                        lines.append(f"  {conf_cat}: {c['対象']}R → 複勝圏:{c['複勝圏']}回 ({c['複勝率']:.0f}%)")
 
             # By track type
             if acc.get('by_track'):
                 lines.append("")
-                lines.append("**[By Track Type]**")
+                lines.append("**【コース別成績】**")
                 for track in ['芝', 'ダ']:
                     if track in acc['by_track']:
                         t = acc['by_track'][track]
-                        track_name = 'Turf' if track == '芝' else 'Dirt'
-                        lines.append(f"  {track_name}: {t['races']}R -> Place rate:{t['top3_rate']:.0f}%")
+                        track_name = '芝' if track == '芝' else 'ダート'
+                        lines.append(f"  {track_name}: {t['races']}R → 複勝率:{t['top3_rate']:.0f}%")
 
             # Return rates
             rr = acc.get('return_rates', {})
             if rr.get('tansho_investment', 0) > 0:
                 lines.append("")
-                lines.append("**[Return Rates]** (100 yen each on rank 1)")
-                lines.append(f"  Win: {rr['tansho_return']:,}yen / {rr['tansho_investment']:,}yen = {rr['tansho_roi']:.1f}%")
-                lines.append(f"  Place: {rr['fukusho_return']:,}yen / {rr['fukusho_investment']:,}yen = {rr['fukusho_roi']:.1f}%")
+                lines.append("**【回収率】** (1位予想馬に各100円)")
+                lines.append(f"  単勝: {rr['tansho_return']:,}円 / {rr['tansho_investment']:,}円 = {rr['tansho_roi']:.1f}%")
+                lines.append(f"  複勝: {rr['fukusho_return']:,}円 / {rr['fukusho_investment']:,}円 = {rr['fukusho_roi']:.1f}%")
 
             message = "\n".join(lines)
             await interaction.followup.send(message, ephemeral=True)
@@ -139,7 +139,7 @@ class PredictionScheduler(commands.Cog):
 
         except Exception as e:
             logger.exception(f"Weekend result detail error: date={selected_date}, error={e}")
-            await interaction.followup.send(f"❌ Error: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ エラー: {str(e)}", ephemeral=True)
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
@@ -420,35 +420,35 @@ class PredictionScheduler(commands.Cog):
 
                             # Build simple message
                             lines = [
-                                f"🔥 **{venue} {race_num_formatted} Final Prediction**",
-                                f"{time_formatted} start {race_name}",
+                                f"🔥 **{venue} {race_num_formatted} 確定予想**",
+                                f"{time_formatted}発走 {race_name}",
                                 "",
                             ]
 
                             if rec_list:
-                                lines.append("**Win/Place Recommendations** (EV >= 1.5)")
+                                lines.append("**単複推奨** (EV >= 1.5)")
                                 for rec in rec_list:
                                     num = rec["horse_number"]
                                     name = rec["horse_name"][:8]
                                     ev_parts = []
                                     if rec["win_ev"]:
-                                        ev_parts.append(f"W{rec['win_ev']:.2f}")
+                                        ev_parts.append(f"単{rec['win_ev']:.2f}")
                                     if rec["place_ev"]:
-                                        ev_parts.append(f"P{rec['place_ev']:.2f}")
+                                        ev_parts.append(f"複{rec['place_ev']:.2f}")
                                     ev_str = "/".join(ev_parts)
                                     lines.append(f"  #{num} {name} (EV {ev_str})")
                             else:
-                                lines.append("**No Win/Place Recommendations** (No horses with EV >= 1.5)")
+                                lines.append("**単複推奨なし** (EV >= 1.5 該当なし)")
 
                             lines.append("")
 
                             # Axis horse recommendation
                             if axis_horse:
-                                lines.append("**Axis Horse** (for wide/exacta)")
+                                lines.append("**軸馬** (ワイド・馬連向け)")
                                 ah_num = axis_horse.get("horse_number", "?")
                                 ah_name = axis_horse.get("horse_name", "?")[:8]
                                 ah_place = axis_horse.get("place_probability", 0)
-                                lines.append(f"  🎯 #{ah_num} {ah_name} (Place rate {ah_place:.0%})")
+                                lines.append(f"  🎯 #{ah_num} {ah_name} (複勝率 {ah_place:.0%})")
 
                             message = "\n".join(lines)
                             await channel.send(message)
@@ -457,7 +457,7 @@ class PredictionScheduler(commands.Cog):
                             # Empty prediction result
                             logger.warning(f"Final prediction result empty: race_id={race_id}")
                             await channel.send(
-                                f"🔥 **{prediction.get('venue', '?')} {prediction.get('race_number', '?')}R Final Prediction Complete**"
+                                f"🔥 **{prediction.get('venue', '?')} {prediction.get('race_number', '?')}R 確定予想完了**"
                             )
                     else:
                         # Pre-race prediction deprecated - only final predictions notified
@@ -496,12 +496,12 @@ class PredictionScheduler(commands.Cog):
         hourly_running = self.hourly_check_task.is_running()
 
         lines = [
-            "⚙️ Auto Prediction Scheduler Status",
+            "⚙️ 自動予想スケジューラー状態",
             "",
-            f"Race check task: {'🟢 Running' if hourly_running else '🔴 Stopped'}",
-            f"Final predictions completed: {len(self.predicted_race_ids_final)} races",
+            f"レースチェックタスク: {'🟢 実行中' if hourly_running else '🔴 停止'}",
+            f"確定予想完了: {len(self.predicted_race_ids_final)}レース",
             "",
-            f"Notification channel ID: {self.notification_channel_id}",
+            f"通知チャンネルID: {self.notification_channel_id}",
         ]
 
         await ctx.send("\n".join(lines))
@@ -518,7 +518,7 @@ class PredictionScheduler(commands.Cog):
         self.predicted_race_ids_final.clear()
 
         logger.info("Scheduler reset complete")
-        await ctx.send("✅ Scheduler has been reset.")
+        await ctx.send("✅ スケジューラーをリセットしました。")
 
 
 async def setup(bot: commands.Bot):

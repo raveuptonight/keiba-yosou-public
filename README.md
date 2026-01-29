@@ -14,37 +14,62 @@ Horse racing prediction system using JRA-VAN data with machine learning (XGBoost
 
 ### Prerequisites
 
-- Python 3.11+
+- Docker & Docker Compose
 - PostgreSQL (with JRA-VAN data via mykeibadb)
-- Docker & Docker Compose (recommended)
+- NVIDIA GPU (recommended for training)
 
-### Setup
+### One-Command Setup
 
 ```bash
 # Clone repository
 git clone https://github.com/raveuptonight/keiba-yosou.git
 cd keiba-yosou
 
-# Copy environment template
-cp .env.example .env
-# Edit .env with your database credentials
+# Setup everything with one command
+make setup
+```
 
-# Start with Docker Compose
-docker-compose up -d
+This will:
+1. Create `.env` from template
+2. Build Docker images
+3. Start all services
+4. Check API health
 
-# Or use virtual environment
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+After setup, edit `.env` with your credentials:
+```bash
+# Edit credentials
+nano .env
+
+# Restart services
+make restart
 ```
 
 ### Train Model
 
 ```bash
-# Fast training (recommended)
-python -m src.models.fast_train
+# Train the ML model (~10 minutes)
+make train
 
-# Output: models/ensemble_model_latest.pkl
+# Or train in background
+make train-bg
+```
+
+### Common Commands
+
+```bash
+make up          # Start services
+make down        # Stop services
+make logs        # View logs
+make health      # Check API health
+make help        # Show all commands
+```
+
+### Manual Setup (without Make)
+
+```bash
+cp .env.example .env
+# Edit .env with your credentials
+docker-compose up -d
 ```
 
 ## System Architecture

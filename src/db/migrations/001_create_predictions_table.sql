@@ -5,16 +5,18 @@
 -- 説明: レース予想・分析・バイアス結果を保存するテーブル
 
 -- predictions テーブル（レース毎の予想結果）
--- ※ 既存テーブルは変更しない（race_id + is_final でUPSERT）
--- CREATE TABLE IF NOT EXISTS predictions (
---     prediction_id TEXT PRIMARY KEY,
---     race_id TEXT NOT NULL,
---     race_date DATE NOT NULL,
---     is_final BOOLEAN NOT NULL DEFAULT FALSE,
---     prediction_result JSONB NOT NULL,
---     predicted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
---     CONSTRAINT uq_predictions_race_final UNIQUE (race_id, is_final)
--- );
+CREATE TABLE IF NOT EXISTS predictions (
+    prediction_id TEXT PRIMARY KEY,
+    race_id TEXT NOT NULL,
+    race_date DATE NOT NULL,
+    is_final BOOLEAN NOT NULL DEFAULT FALSE,
+    prediction_result JSONB NOT NULL,
+    predicted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_predictions_race_final UNIQUE (race_id, is_final)
+);
+
+CREATE INDEX IF NOT EXISTS idx_predictions_race_id ON predictions (race_id);
+CREATE INDEX IF NOT EXISTS idx_predictions_race_date ON predictions (race_date DESC);
 
 -- analysis_results テーブル（日別の予想精度分析結果）
 CREATE TABLE IF NOT EXISTS analysis_results (
