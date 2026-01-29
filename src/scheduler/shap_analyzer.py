@@ -285,26 +285,29 @@ class ShapAnalyzer:
             return None
 
     def analyze_race(self, race_code: str, prediction: Dict) -> Optional[Dict]:
-        """1レースを分析"""
+        """1レースを分析（EV推奨・軸馬形式）"""
         # 特徴量抽出
         df = self.extract_features_for_race(race_code)
         if df is None or df.empty:
             return None
 
-        # 予想結果から1位予想馬を特定
+        # 予想結果から馬を取得
         ranked_horses = prediction.get('prediction_result', {}).get('ranked_horses', [])
         if not ranked_horses:
             return None
 
-        pred_1st = ranked_horses[0]
-        pred_1st_umaban = str(pred_1st.get('horse_number', '')).zfill(2)
+        # EV推奨馬を特定（EV >= 1.5）
+        ev_recommended = []
+        for h in ranked_horses:
+            win_prob = h.get('win_probability', 0)
+            odds = h.get('predicted_odds', 0)
+            if odds > 0 and win_prob > 0:
+                win_ev = win_prob * odds
+                if win_ev >= 1.5:
+                    ev_recommended.append(h)
 
-        # 実際の着順を取得
-        horse_row = df[df['umaban'].astype(str).str.zfill(2) == pred_1st_umaban]
-        if horse_row.empty:
-            return None
-
-        actual_chakujun = int(horse_row['actual_chakujun'].iloc[0])
+        # 軸馬を特定（複勝確率最高）
+        axis_horse = max(ranked_horses, key=lambda h: h.get('place_probability', 0)) if ranked_horses else None
 
         # 特徴量のみ抽出
         X = df[self.feature_names].fillna(0)
@@ -314,32 +317,57 @@ class ShapAnalyzer:
         if shap_values is None:
             return None
 
-        # 1位予想馬のインデックス
-        horse_idx = df[df['umaban'].astype(str).str.zfill(2) == pred_1st_umaban].index[0]
-        horse_shap = shap_values[horse_idx]
+        # 軸馬の分析
+        axis_umaban = str(axis_horse.get('horse_number', '')).zfill(2) if axis_horse else None
+        axis_analysis = None
+        if axis_umaban:
+            horse_row = df[df['umaban'].astype(str).str.zfill(2) == axis_umaban]
+            if not horse_row.empty:
+                actual_chakujun = int(horse_row['actual_chakujun'].iloc[0])
+                horse_idx = horse_row.index[0]
+                horse_shap = shap_values[horse_idx]
+                axis_contributions = {fname: float(horse_shap[i]) for i, fname in enumerate(self.feature_names)}
+                axis_analysis = {
+                    'umaban': axis_umaban,
+                    'bamei': axis_horse.get('horse_name', ''),
+                    'actual_chakujun': actual_chakujun,
+                    'is_place': actual_chakujun <= 3,
+                    'place_prob': axis_horse.get('place_probability', 0),
+                    'feature_contributions': axis_contributions,
+                }
 
-        # 特徴量寄与度をまとめる
-        feature_contributions = {}
-        for i, fname in enumerate(self.feature_names):
-            feature_contributions[fname] = float(horse_shap[i])
-
-        # 的中判定
-        is_hit = actual_chakujun == 1
-        is_place = actual_chakujun <= 3
+        # EV推奨馬の分析
+        ev_analyses = []
+        for h in ev_recommended:
+            h_umaban = str(h.get('horse_number', '')).zfill(2)
+            horse_row = df[df['umaban'].astype(str).str.zfill(2) == h_umaban]
+            if not horse_row.empty:
+                actual_chakujun = int(horse_row['actual_chakujun'].iloc[0])
+                horse_idx = horse_row.index[0]
+                horse_shap = shap_values[horse_idx]
+                ev_contributions = {fname: float(horse_shap[i]) for i, fname in enumerate(self.feature_names)}
+                win_prob = h.get('win_probability', 0)
+                odds = h.get('predicted_odds', 0)
+                ev_analyses.append({
+                    'umaban': h_umaban,
+                    'bamei': h.get('horse_name', ''),
+                    'actual_chakujun': actual_chakujun,
+                    'is_hit': actual_chakujun == 1,
+                    'is_place': actual_chakujun <= 3,
+                    'win_ev': win_prob * odds,
+                    'win_prob': win_prob,
+                    'feature_contributions': ev_contributions,
+                })
 
         return {
             'race_code': race_code,
-            'pred_1st_umaban': pred_1st_umaban,
-            'pred_1st_bamei': pred_1st.get('horse_name', ''),
-            'actual_chakujun': actual_chakujun,
-            'is_hit': is_hit,
-            'is_place': is_place,
-            'feature_contributions': feature_contributions,
-            'win_prob': pred_1st.get('win_probability', 0),
+            'axis_analysis': axis_analysis,
+            'ev_analyses': ev_analyses,
+            'has_ev_rec': len(ev_recommended) > 0,
         }
 
     def analyze_dates(self, target_dates: List[date]) -> Dict:
-        """複数日のレースを分析"""
+        """複数日のレースを分析（EV推奨・軸馬形式）"""
         all_analyses = []
 
         for target_date in target_dates:
@@ -358,38 +386,76 @@ class ShapAnalyzer:
         first_date = min(target_dates)
         last_date = max(target_dates)
 
-        # 的中/外れで分類
-        hits = [a for a in all_analyses if a['is_hit']]
-        places = [a for a in all_analyses if a['is_place'] and not a['is_hit']]
-        misses = [a for a in all_analyses if not a['is_place']]
+        # 軸馬の的中/外れで分類
+        axis_places = [a for a in all_analyses if a.get('axis_analysis') and a['axis_analysis'].get('is_place')]
+        axis_misses = [a for a in all_analyses if a.get('axis_analysis') and not a['axis_analysis'].get('is_place')]
 
-        # 特徴量寄与度を集計
-        hit_contributions = self._aggregate_contributions(hits)
-        miss_contributions = self._aggregate_contributions(misses)
+        # EV推奨馬の的中/外れで分類
+        ev_hits = []
+        ev_misses = []
+        for a in all_analyses:
+            for ev in a.get('ev_analyses', []):
+                if ev.get('is_hit'):
+                    ev_hits.append({'feature_contributions': ev['feature_contributions']})
+                elif not ev.get('is_place'):
+                    ev_misses.append({'feature_contributions': ev['feature_contributions']})
+
+        # 軸馬の特徴量寄与度を集計
+        axis_place_contributions = self._aggregate_contributions(
+            [{'feature_contributions': a['axis_analysis']['feature_contributions']} for a in axis_places]
+        )
+        axis_miss_contributions = self._aggregate_contributions(
+            [{'feature_contributions': a['axis_analysis']['feature_contributions']} for a in axis_misses]
+        )
+
+        # EV推奨馬の特徴量寄与度を集計
+        ev_hit_contributions = self._aggregate_contributions(ev_hits)
+        ev_miss_contributions = self._aggregate_contributions(ev_misses)
 
         # 差分を計算（的中時 - 外れ時）
-        diff_contributions = {}
-        all_features = set(hit_contributions.keys()) | set(miss_contributions.keys())
+        axis_diff = {}
+        all_features = set(axis_place_contributions.keys()) | set(axis_miss_contributions.keys())
         for fname in all_features:
-            hit_val = hit_contributions.get(fname, 0)
-            miss_val = miss_contributions.get(fname, 0)
-            diff_contributions[fname] = hit_val - miss_val
+            place_val = axis_place_contributions.get(fname, 0)
+            miss_val = axis_miss_contributions.get(fname, 0)
+            axis_diff[fname] = place_val - miss_val
+
+        ev_diff = {}
+        all_features = set(ev_hit_contributions.keys()) | set(ev_miss_contributions.keys())
+        for fname in all_features:
+            hit_val = ev_hit_contributions.get(fname, 0)
+            miss_val = ev_miss_contributions.get(fname, 0)
+            ev_diff[fname] = hit_val - miss_val
 
         # 重要な差分をソート
-        sorted_diff = sorted(diff_contributions.items(), key=lambda x: abs(x[1]), reverse=True)
+        sorted_axis_diff = sorted(axis_diff.items(), key=lambda x: abs(x[1]), reverse=True)
+        sorted_ev_diff = sorted(ev_diff.items(), key=lambda x: abs(x[1]), reverse=True)
+
+        # EV推奨馬の成績集計
+        total_ev_count = sum(len(a.get('ev_analyses', [])) for a in all_analyses)
+        ev_tansho_hits = sum(1 for a in all_analyses for ev in a.get('ev_analyses', []) if ev.get('is_hit'))
+        ev_fukusho_hits = sum(1 for a in all_analyses for ev in a.get('ev_analyses', []) if ev.get('is_place'))
 
         return {
             'status': 'success',
             'period': f"{first_date} - {last_date}",
             'total_races': len(all_analyses),
-            'hit_count': len(hits),
-            'place_count': len(places),
-            'miss_count': len(misses),
-            'hit_rate': len(hits) / len(all_analyses) * 100 if all_analyses else 0,
-            'place_rate': (len(hits) + len(places)) / len(all_analyses) * 100 if all_analyses else 0,
-            'hit_contributions': hit_contributions,
-            'miss_contributions': miss_contributions,
-            'diff_contributions': dict(sorted_diff[:20]),  # 上位20件
+            # 軸馬成績
+            'axis_place_count': len(axis_places),
+            'axis_miss_count': len(axis_misses),
+            'axis_place_rate': len(axis_places) / len(all_analyses) * 100 if all_analyses else 0,
+            'axis_place_contributions': axis_place_contributions,
+            'axis_miss_contributions': axis_miss_contributions,
+            'axis_diff_contributions': dict(sorted_axis_diff[:20]),
+            # EV推奨成績
+            'ev_rec_count': total_ev_count,
+            'ev_tansho_hits': ev_tansho_hits,
+            'ev_fukusho_hits': ev_fukusho_hits,
+            'ev_tansho_rate': ev_tansho_hits / total_ev_count * 100 if total_ev_count > 0 else 0,
+            'ev_fukusho_rate': ev_fukusho_hits / total_ev_count * 100 if total_ev_count > 0 else 0,
+            'ev_hit_contributions': ev_hit_contributions,
+            'ev_miss_contributions': ev_miss_contributions,
+            'ev_diff_contributions': dict(sorted_ev_diff[:20]),
             'analyses': all_analyses,
         }
 
@@ -536,7 +602,7 @@ class ShapAnalyzer:
         return {fname: np.mean(values) for fname, values in aggregated.items()}
 
     def generate_report(self, analysis: Dict) -> str:
-        """分析レポートを生成"""
+        """分析レポートを生成（EV推奨・軸馬形式）"""
         if analysis.get('status') != 'success':
             return "分析データがありません"
 
@@ -544,35 +610,45 @@ class ShapAnalyzer:
             "📊 **SHAP特徴量分析レポート**",
             f"期間: {analysis['period']}",
             f"分析レース数: {analysis['total_races']}R",
-            f"単勝的中: {analysis['hit_count']}R ({analysis['hit_rate']:.1f}%)",
-            f"複勝圏: {analysis['hit_count'] + analysis['place_count']}R ({analysis['place_rate']:.1f}%)",
             "",
-            "**【的中/外れで差が大きい特徴量】**",
-            "(正: 的中時に高い、負: 外れ時に高い)",
         ]
 
-        diff = analysis.get('diff_contributions', {})
-        for i, (fname, value) in enumerate(list(diff.items())[:10]):
-            sign = "+" if value > 0 else ""
-            lines.append(f"  {i+1}. {fname}: {sign}{value:.4f}")
+        # 軸馬成績
+        lines.append("**【軸馬成績】** (複勝確率1位)")
+        axis_place = analysis.get('axis_place_count', 0)
+        axis_total = axis_place + analysis.get('axis_miss_count', 0)
+        lines.append(f"  複勝的中: {axis_place}/{axis_total}R ({analysis.get('axis_place_rate', 0):.1f}%)")
 
-        # 外れレースで過大評価した特徴量
-        miss_contrib = analysis.get('miss_contributions', {})
-        if miss_contrib:
-            sorted_miss = sorted(miss_contrib.items(), key=lambda x: x[1], reverse=True)
+        # 軸馬の特徴量差分
+        axis_diff = analysis.get('axis_diff_contributions', {})
+        if axis_diff:
             lines.append("")
-            lines.append("**【外れ時に過大評価した特徴量】**")
-            for i, (fname, value) in enumerate(sorted_miss[:5]):
-                lines.append(f"  {i+1}. {fname}: {value:.4f}")
+            lines.append("**【軸馬: 複勝的中/外れで差が大きい特徴量】**")
+            lines.append("(正: 的中時に高い、負: 外れ時に高い)")
+            for i, (fname, value) in enumerate(list(axis_diff.items())[:7]):
+                sign = "+" if value > 0 else ""
+                lines.append(f"  {i+1}. {fname}: {sign}{value:.4f}")
 
-        # 的中レースで効いた特徴量
-        hit_contrib = analysis.get('hit_contributions', {})
-        if hit_contrib:
-            sorted_hit = sorted(hit_contrib.items(), key=lambda x: x[1], reverse=True)
-            lines.append("")
-            lines.append("**【的中時に寄与した特徴量】**")
-            for i, (fname, value) in enumerate(sorted_hit[:5]):
-                lines.append(f"  {i+1}. {fname}: {value:.4f}")
+        # EV推奨成績
+        lines.append("")
+        ev_count = analysis.get('ev_rec_count', 0)
+        if ev_count > 0:
+            lines.append("**【EV推奨成績】** (EV >= 1.5)")
+            lines.append(f"  推奨馬数: {ev_count}頭")
+            lines.append(f"  単勝的中: {analysis.get('ev_tansho_hits', 0)} ({analysis.get('ev_tansho_rate', 0):.1f}%)")
+            lines.append(f"  複勝的中: {analysis.get('ev_fukusho_hits', 0)} ({analysis.get('ev_fukusho_rate', 0):.1f}%)")
+
+            # EV推奨の特徴量差分
+            ev_diff = analysis.get('ev_diff_contributions', {})
+            if ev_diff:
+                lines.append("")
+                lines.append("**【EV推奨: 的中/外れで差が大きい特徴量】**")
+                for i, (fname, value) in enumerate(list(ev_diff.items())[:7]):
+                    sign = "+" if value > 0 else ""
+                    lines.append(f"  {i+1}. {fname}: {sign}{value:.4f}")
+        else:
+            lines.append("**【EV推奨成績】**")
+            lines.append("  EV推奨なし")
 
         return "\n".join(lines)
 

@@ -132,9 +132,4 @@ services:
       # 毎週火曜23:00 - モデル再学習
       ofelia.job-exec.weekly-retrain.schedule: "0 0 23 * * 2"
       ofelia.job-exec.weekly-retrain.command: "python -m src.scheduler.weekly_retrain_model"
-      # 毎日21:00 - 統合ジョブ（当日バイアス分析 + 翌日予想）
-      # 当日レースがあれば → バイアス分析実行・保存
-      # 翌日レースがあれば → 適切なバイアスを適用して予想実行
-      ofelia.job-exec.nightly-predict.schedule: "0 0 21 * * *"
-      ofelia.job-exec.nightly-predict.command: "python -m src.scheduler.daily_scheduler --nightly"
     restart: unless-stopped

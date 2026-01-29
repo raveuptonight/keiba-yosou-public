@@ -1,7 +1,7 @@
 """
 Discord Bot自動予想スケジューラー
 
-開催日9時と馬体重発表後に自動予想を実行
+レース30分前（馬体重発表後）に最終予想を自動実行し、Discordに通知
 """
 
 import os
@@ -11,266 +11,28 @@ from datetime import datetime, date, time, timedelta, timezone
 # 日本標準時
 JST = timezone(timedelta(hours=9))
 from typing import List, Dict, Any, Optional
-import asyncio
 import requests
 from discord.ext import tasks, commands
-from discord.ui import View, Select
 import discord
 
 from src.config import (
     API_BASE_URL_DEFAULT,
     DISCORD_REQUEST_TIMEOUT,
-    SCHEDULER_EVENING_PREDICTION_HOUR,
-    SCHEDULER_EVENING_PREDICTION_MINUTE,
     SCHEDULER_CHECK_INTERVAL_MINUTES,
     SCHEDULER_FINAL_PREDICTION_MINUTES_BEFORE,
     SCHEDULER_FINAL_PREDICTION_TOLERANCE_MINUTES,
 )
-from src.discord.formatters import format_prediction_notification, format_final_prediction_notification
-from src.models.ev_recommender import EVRecommender, format_ev_recommendations
+from src.models.ev_recommender import EVRecommender
 
 # ロガー設定
 logger = logging.getLogger(__name__)
-
-
-class RankingSelectView(View):
-    """ランキング表示選択ビュー（最終予想用）"""
-
-    def __init__(
-        self,
-        race_id: str,
-        prediction_data: Dict,
-        timeout: float = 3600  # 1時間有効
-    ):
-        super().__init__(timeout=timeout)
-        self.race_id = race_id
-        self.prediction_data = prediction_data
-
-    @discord.ui.button(label="勝率順", style=discord.ButtonStyle.primary, custom_id="ranking_win", emoji="🏆")
-    async def win_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """勝率順ランキングを表示"""
-        await self._show_ranking(interaction, "win")
-
-    @discord.ui.button(label="連対率順", style=discord.ButtonStyle.secondary, custom_id="ranking_quinella", emoji="🥈")
-    async def quinella_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """連対率順ランキングを表示"""
-        await self._show_ranking(interaction, "quinella")
-
-    @discord.ui.button(label="複勝率順", style=discord.ButtonStyle.secondary, custom_id="ranking_place", emoji="🥉")
-    async def place_ranking_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """複勝率順ランキングを表示"""
-        await self._show_ranking(interaction, "place")
-
-    @discord.ui.button(label="穴馬候補", style=discord.ButtonStyle.success, custom_id="ranking_dark", emoji="🐴")
-    async def dark_horses_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """穴馬候補を表示"""
-        await self._show_ranking(interaction, "dark")
-
-    async def _show_ranking(self, interaction: discord.Interaction, ranking_type: str):
-        """指定タイプのランキングを表示"""
-        await interaction.response.defer(ephemeral=True)
-
-        result = self.prediction_data.get("prediction_result", {})
-        ranked = result.get("ranked_horses", [])
-        venue = self.prediction_data.get("venue", "?")
-        race_num = self.prediction_data.get("race_number", "?")
-        race_name = self.prediction_data.get("race_name", "")
-
-        # レース番号フォーマット
-        try:
-            race_num_int = int(race_num)
-            race_num_formatted = f"{race_num_int}R"
-        except (ValueError, TypeError):
-            race_num_formatted = f"{race_num}R" if not str(race_num).endswith("R") else race_num
-
-        header = f"**{venue} {race_num_formatted}** {race_name}\n"
-
-        if ranking_type == "win":
-            # 勝率順（全馬表示）
-            lines = [header, "**勝率順ランキング（単勝向け）**\n"]
-            for h in ranked[:10]:
-                rank = h.get('rank', 0)
-                num = h.get('horse_number', '?')
-                name = h.get('horse_name', '?')[:8]
-                win = h.get('win_probability', 0)
-                quinella = h.get('quinella_probability', 0)
-                place = h.get('place_probability', 0)
-                lines.append(f"{rank}位 {num}番 {name} (単{win:.1%} 連{quinella:.1%} 複{place:.1%})")
-            message = "\n".join(lines)
-
-        elif ranking_type == "quinella":
-            # 連対率順Top5
-            quinella_ranking = result.get("quinella_ranking", [])
-            lines = [header, "**連対率順 Top5（馬連・ワイド向け）**\n"]
-            if quinella_ranking:
-                for entry in quinella_ranking[:5]:
-                    rank = entry.get('rank', 0)
-                    num = entry.get('horse_number', '?')
-                    prob = entry.get('quinella_prob', 0)
-                    # 馬名を取得
-                    horse_name = next((h.get('horse_name', '?') for h in ranked
-                                      if h.get('horse_number') == num), '?')[:8]
-                    lines.append(f"{rank}位 {num}番 {horse_name} 連対率: {prob:.1%}")
-            else:
-                lines.append("データなし")
-            message = "\n".join(lines)
-
-        elif ranking_type == "place":
-            # 複勝率順Top5
-            place_ranking = result.get("place_ranking", [])
-            lines = [header, "**複勝率順 Top5（複勝向け）**\n"]
-            if place_ranking:
-                for entry in place_ranking[:5]:
-                    rank = entry.get('rank', 0)
-                    num = entry.get('horse_number', '?')
-                    prob = entry.get('place_prob', 0)
-                    # 馬名を取得
-                    horse_name = next((h.get('horse_name', '?') for h in ranked
-                                      if h.get('horse_number') == num), '?')[:8]
-                    lines.append(f"{rank}位 {num}番 {horse_name} 複勝率: {prob:.1%}")
-            else:
-                lines.append("データなし")
-            message = "\n".join(lines)
-
-        elif ranking_type == "dark":
-            # 穴馬候補
-            dark_horses = result.get("dark_horses", [])
-            lines = [header, "**穴馬候補（複勝率>=20%かつ勝率<10%）**\n"]
-            if dark_horses:
-                for entry in dark_horses[:3]:
-                    num = entry.get('horse_number', '?')
-                    win = entry.get('win_prob', 0)
-                    place = entry.get('place_prob', 0)
-                    # 馬名を取得
-                    horse_name = next((h.get('horse_name', '?') for h in ranked
-                                      if h.get('horse_number') == num), '?')[:8]
-                    lines.append(f"🐴 {num}番 {horse_name}: 勝率{win:.1%} → 複勝率{place:.1%}")
-                lines.append("")
-                lines.append("_勝ち切れないが3着には来る可能性が高い馬_")
-            else:
-                lines.append("該当馬なし")
-            message = "\n".join(lines)
-        else:
-            message = "不明なランキングタイプ"
-
-        await interaction.followup.send(message, ephemeral=True)
-
-
-class PredictionSummaryView(View):
-    """予想完了後のレース選択ビュー"""
-
-    def __init__(self, races: List[Dict], api_base_url: str, timeout: float = 300):
-        super().__init__(timeout=timeout)
-        self.api_base_url = api_base_url
-        self.races = races
-
-        # 日付→競馬場→レース番号（降順）でソート
-        sorted_races = sorted(
-            races,
-            key=lambda r: (
-                r.get("race_date", ""),
-                r.get("venue", ""),
-                int(r.get("race_number", "0R").replace("R", "") or 0)
-            ),
-            reverse=True
-        )
-
-        options = []
-        for race in sorted_races[:25]:
-            race_date = race.get("race_date", "")
-            venue = race.get("venue", "")
-            race_num = race.get("race_number", "?R")
-            race_name = race.get("race_name", "")[:20]
-            race_id = race.get("race_id", "")
-            grade = race.get("grade", "")
-            grade_str = f" [{grade}]" if grade else ""
-
-            label = f"{race_date} {venue} {race_num} {race_name}{grade_str}"[:100]
-            description = f"{race.get('distance', '?')}m"[:100]
-
-            options.append(discord.SelectOption(
-                label=label,
-                value=race_id,
-                description=description
-            ))
-
-        if options:
-            select = Select(
-                placeholder="レースを選択して詳細を表示...",
-                options=options,
-                min_values=1,
-                max_values=1
-            )
-            select.callback = self.select_callback
-            self.add_item(select)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        """レースが選択されたときのコールバック"""
-        race_id = interaction.data["values"][0]
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            # 予想結果を取得
-            response = requests.get(
-                f"{self.api_base_url}/api/v1/predictions/race/{race_id}",
-                timeout=DISCORD_REQUEST_TIMEOUT,
-            )
-
-            if response.status_code == 200:
-                predictions = response.json()
-                if predictions:
-                    # 最新の予想を取得
-                    latest = predictions[0] if isinstance(predictions, list) else predictions
-
-                    # 予想詳細を取得
-                    pred_id = latest.get("prediction_id")
-                    detail_response = requests.get(
-                        f"{self.api_base_url}/api/v1/predictions/{pred_id}",
-                        timeout=DISCORD_REQUEST_TIMEOUT,
-                    )
-
-                    if detail_response.status_code == 200:
-                        data = detail_response.json()
-                        result = data.get("prediction_result", {})
-                        ranked = result.get("ranked_horses", [])
-
-                        # Embed作成
-                        embed = discord.Embed(
-                            title=f"🏇 {data.get('race_name', '?')}",
-                            description=f"{data.get('venue', '?')} {data.get('race_number', '?')}R | {data.get('race_date', '?')}",
-                            color=discord.Color.blue()
-                        )
-
-                        # 上位10頭を表示
-                        marks = ['◎', '○', '▲', '△', '△', '×', '×', '×', '☆', '☆']
-                        lines = []
-                        for h in ranked[:10]:
-                            rank = h.get('rank', 0)
-                            mark = marks[rank - 1] if rank <= len(marks) else '☆'
-                            lines.append(
-                                f"{mark} {rank}位 {h.get('horse_number', '?')}番 {h.get('horse_name', '?')[:8]} "
-                                f"(単{h.get('win_probability', 0):.1%} 連{h.get('quinella_probability', 0):.1%} 複{h.get('place_probability', 0):.1%})"
-                            )
-
-                        embed.add_field(name="予想順位", value="\n".join(lines), inline=False)
-                        await interaction.followup.send(embed=embed, ephemeral=True)
-                        return
-
-            await interaction.followup.send("予想データの取得に失敗しました", ephemeral=True)
-
-        except Exception as e:
-            logger.error(f"予想詳細取得エラー: {e}")
-            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
 
 
 class PredictionScheduler(commands.Cog):
     """
     自動予想スケジューラー
 
-    1. 毎日21時: 翌日開催レースの初回予想
-    2. レース1時間前: 馬体重発表後の再予想
-    3. prediction_selectインタラクション処理
+    レース30分前（馬体重発表後）に最終予想を自動実行し、Discordに通知
     """
 
     def __init__(self, bot: commands.Bot, notification_channel_id: Optional[int] = None):
@@ -286,7 +48,6 @@ class PredictionScheduler(commands.Cog):
         )
 
         # 実行済みレースID記録（重複予想防止）
-        self.predicted_race_ids_initial: set = set()  # 前日21時予想済み
         self.predicted_race_ids_final: set = set()    # 馬体重後予想済み
 
         logger.info(f"PredictionScheduler初期化: channel_id={self.notification_channel_id}")
@@ -382,163 +143,27 @@ class PredictionScheduler(commands.Cog):
         """
         インタラクションイベントハンドラ
 
-        daily_scheduler.pyから送信されたSelectメニューのインタラクションを処理
+        週末結果のSelectメニューのインタラクションを処理
         """
-        logger.info(f"インタラクション受信: type={interaction.type}, data={interaction.data}")
-
         # Selectメニューのインタラクションのみ処理
         if interaction.type != discord.InteractionType.component:
             return
 
         custom_id = interaction.data.get("custom_id")
-        logger.info(f"コンポーネントインタラクション: custom_id={custom_id}")
 
         # 週末結果の日付選択
         if custom_id == "weekend_result_select":
             await self._handle_weekend_result_select(interaction)
             return
 
-        # prediction_selectのみ処理
-        if custom_id != "prediction_select":
-            return
-
-        # 選択されたレースIDを取得
-        values = interaction.data.get("values", [])
-        if not values:
-            return
-
-        race_id = values[0]
-        logger.info(f"予想詳細リクエスト: race_id={race_id}, user={interaction.user}")
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            # 予想履歴を取得
-            history_response = requests.get(
-                f"{self.api_base_url}/api/v1/predictions/race/{race_id}",
-                timeout=30,
-            )
-
-            if history_response.status_code != 200:
-                await interaction.followup.send("予想データが見つかりません", ephemeral=True)
-                return
-
-            history = history_response.json()
-            predictions = history.get("predictions", [])
-
-            if not predictions:
-                await interaction.followup.send("このレースの予想はまだありません", ephemeral=True)
-                return
-
-            # 最新の予想を取得
-            latest = predictions[0]
-            pred_id = latest.get("prediction_id")
-
-            # 予想詳細を取得
-            detail_response = requests.get(
-                f"{self.api_base_url}/api/v1/predictions/{pred_id}",
-                timeout=30,
-            )
-
-            if detail_response.status_code != 200:
-                await interaction.followup.send("予想詳細の取得に失敗しました", ephemeral=True)
-                return
-
-            data = detail_response.json()
-            result = data.get("prediction_result", {})
-            ranked = result.get("ranked_horses", [])
-
-            if not ranked:
-                await interaction.followup.send("予想データがありません", ephemeral=True)
-                return
-
-            # 予想詳細フォーマット
-            venue = data.get("venue", "?")
-            race_num = data.get("race_number", "?")
-            race_name = data.get("race_name", "")
-            race_time = data.get("race_time", "")
-
-            # 発走時刻フォーマット
-            time_str = ""
-            if race_time and len(race_time) >= 4:
-                time_str = f"{race_time[:2]}:{race_time[2:4]}発走"
-
-            # レース番号フォーマット（"01" -> "1R"）
-            try:
-                race_num_int = int(race_num)
-                race_num_formatted = f"{race_num_int}R"
-            except (ValueError, TypeError):
-                race_num_formatted = f"{race_num}R" if not str(race_num).endswith("R") else race_num
-
-            # ヘッダー
-            header = f"**{venue} {race_num_formatted}** {time_str} {race_name}"
-            lines = [header, ""]
-
-            # 全馬表示（印なし、騎手名あり）
-            for h in ranked:
-                rank = h.get('rank', 0)
-                num = h.get('horse_number', '?')
-                name = h.get('horse_name', '?')
-                sex = h.get('horse_sex') or ''
-                age = h.get('horse_age')
-                sex_age = f"{sex}{age}" if sex and age else ""
-                jockey = (h.get('jockey_name') or '').replace('　', ' ')[:6]  # 全角→半角スペース
-                # 性別年齢と騎手の組み合わせ
-                if sex_age and jockey:
-                    info_str = f"[{sex_age}/{jockey}]"
-                elif sex_age:
-                    info_str = f"[{sex_age}]"
-                elif jockey:
-                    info_str = f"[{jockey}]"
-                else:
-                    info_str = ""
-                win_prob = h.get('win_probability', 0)
-                quinella_prob = h.get('quinella_probability', 0)
-                place_prob = h.get('place_probability', 0)
-
-                lines.append(
-                    f"{rank}位 {num}番 {name} {info_str} "
-                    f"(単勝{win_prob:.1%} 連対{quinella_prob:.1%} 複勝{place_prob:.1%})"
-                )
-
-            # モデル情報
-            model_info = result.get("model_info", "")
-            confidence = result.get("prediction_confidence", 0)
-            lines.append("")
-            lines.append(f"_{model_info} / 信頼度 {confidence:.1%}_")
-
-            message = "\n".join(lines)
-
-            # 2000文字を超える場合は分割
-            if len(message) > 2000:
-                message = message[:1950] + "\n...(省略)"
-
-            # ランキングボタン付きで送信
-            view = RankingSelectView(
-                race_id=race_id,
-                prediction_data=data,
-                timeout=3600  # 1時間有効
-            )
-            await interaction.followup.send(message, view=view, ephemeral=True)
-            logger.info(f"予想詳細送信完了: race_id={race_id}")
-
-        except requests.exceptions.Timeout:
-            logger.error(f"予想詳細取得タイムアウト: race_id={race_id}")
-            await interaction.followup.send("タイムアウト: APIの応答がありません", ephemeral=True)
-        except Exception as e:
-            logger.exception(f"予想詳細取得エラー: race_id={race_id}, error={e}")
-            await interaction.followup.send(f"エラー: {str(e)}", ephemeral=True)
-
     async def cog_load(self):
         """Cog読み込み時にタスク開始"""
         logger.info("自動予想スケジューラー開始")
-        self.evening_prediction_task.start()
         self.hourly_check_task.start()
 
     async def cog_unload(self):
         """Cog削除時にタスク停止"""
         logger.info("自動予想スケジューラー停止")
-        self.evening_prediction_task.cancel()
         self.hourly_check_task.cancel()
 
     def get_notification_channel(self) -> Optional[discord.TextChannel]:
@@ -553,64 +178,6 @@ class PredictionScheduler(commands.Cog):
             return None
 
         return channel
-
-    @tasks.loop(time=time(hour=SCHEDULER_EVENING_PREDICTION_HOUR, minute=SCHEDULER_EVENING_PREDICTION_MINUTE, tzinfo=JST))
-    async def evening_prediction_task(self):
-        """
-        毎日21時に翌日開催レースの予想を実行
-
-        開催日前日の夜、全レースの初回予想を実行します。
-        日付が一致しないレースは除外されます。
-        """
-        logger.info("21時予想タスク実行")
-
-        try:
-            # 翌日のレース一覧を取得（日付厳密チェック有効）
-            tomorrow = datetime.now(JST).date() + timedelta(days=1)
-            races = await self._fetch_races_for_date(tomorrow, strict_date_match=True)
-
-            if not races:
-                logger.info(f"明日({tomorrow})はレース開催なし - 予想スキップ")
-                # 通知チャンネルにも通知（オプション）
-                channel = self.get_notification_channel()
-                if channel:
-                    await channel.send(f"📅 明日({tomorrow})は中央競馬の開催がありません。")
-                return
-
-            logger.info(f"明日のレース数: {len(races)}")
-            channel = self.get_notification_channel()
-
-            if channel:
-                await channel.send(f"🌙 明日は{len(races)}レースの予想を開始します。")
-
-            # 各レースの予想を実行
-            for race in races:
-                race_id = race.get("race_id")
-
-                # すでに予想済みならスキップ
-                if race_id in self.predicted_race_ids_initial:
-                    logger.debug(f"前日予想済みスキップ: {race_id}")
-                    continue
-
-                # 予想実行
-                success = await self._execute_prediction(race_id, is_final=False)
-
-                if success:
-                    self.predicted_race_ids_initial.add(race_id)
-                    # レート制限対策で少し待機
-                    await asyncio.sleep(2)
-
-            if channel:
-                # 予想完了メッセージとレース選択ドロップダウンを送信
-                view = PredictionSummaryView(races, self.api_base_url, timeout=3600)
-                await channel.send(
-                    f"✅ 明日の初回予想が完了しました！（{len(races)}レース）\n"
-                    "▼ レースを選択して詳細を確認できます",
-                    view=view
-                )
-
-        except Exception as e:
-            logger.exception(f"21時予想タスクエラー: {e}")
 
     @tasks.loop(minutes=SCHEDULER_CHECK_INTERVAL_MINUTES)
     async def hourly_check_task(self):
@@ -729,16 +296,18 @@ class PredictionScheduler(commands.Cog):
             logger.error(f"レース一覧取得エラー: {e}")
             return []
 
-    async def _execute_prediction(self, race_id: str, is_final: bool = False) -> bool:
+    async def _execute_prediction(self, race_id: str, is_final: bool = False, send_notification: bool = True) -> Optional[Dict]:
         """
         予想を実行
 
         Args:
             race_id: レースID
             is_final: 最終予想（馬体重後）かどうか
+            send_notification: 通知を送信するかどうか（Falseの場合は予想結果を返す）
 
         Returns:
-            成功したらTrue
+            send_notification=Trueの場合: 成功したらTrue、失敗したらFalse
+            send_notification=Falseの場合: 成功したら予想結果Dict、失敗したらNone
         """
         try:
             logger.info(f"予想実行: race_id={race_id}, is_final={is_final}")
@@ -758,16 +327,19 @@ class PredictionScheduler(commands.Cog):
                 pred_id = prediction.get('prediction_id')
                 logger.info(f"予想成功: prediction_id={pred_id}")
 
+                # 通知なしモードの場合、予想結果を返す
+                if not send_notification:
+                    return prediction
+
                 # 通知チャンネルに送信
                 channel = self.get_notification_channel()
                 if channel:
                     if is_final:
-                        # 最終予想: コンパクトサマリー + ボタンで詳細表示
+                        # 最終予想: シンプルな期待値ベース形式
                         result = prediction.get("prediction_result", {})
                         ranked = result.get("ranked_horses", [])
 
                         if ranked:
-                            # コンパクトサマリーを生成
                             venue = prediction.get("venue", "不明")
                             race_number = prediction.get("race_number", "?")
                             race_time = prediction.get("race_time", "")
@@ -786,56 +358,97 @@ class PredictionScheduler(commands.Cog):
                             else:
                                 time_formatted = race_time
 
-                            # サマリーメッセージ（Top3のみ表示）
+                            # === 期待値ベース馬券推奨を取得 ===
+                            race_code = prediction.get("race_code") or race_id
+                            ev_recommender = EVRecommender()
+                            ev_recs = ev_recommender.get_recommendations(
+                                race_code=race_code,
+                                ranked_horses=ranked,
+                                use_realtime_odds=True,
+                            )
+
+                            # EV >= 1.5 の推奨馬を収集（単勝・複勝合わせて最大3頭）
+                            win_recs = ev_recs.get("win_recommendations", [])
+                            place_recs = ev_recs.get("place_recommendations", [])
+
+                            # 推奨馬を統合（重複排除）
+                            recommended = {}
+                            for rec in win_recs:
+                                num = rec["horse_number"]
+                                if num not in recommended:
+                                    recommended[num] = {
+                                        "horse_number": num,
+                                        "horse_name": rec["horse_name"],
+                                        "win_ev": rec["expected_value"],
+                                        "win_odds": rec["odds"],
+                                        "place_ev": None,
+                                        "place_odds": None,
+                                    }
+                                else:
+                                    recommended[num]["win_ev"] = rec["expected_value"]
+                                    recommended[num]["win_odds"] = rec["odds"]
+
+                            for rec in place_recs:
+                                num = rec["horse_number"]
+                                if num not in recommended:
+                                    recommended[num] = {
+                                        "horse_number": num,
+                                        "horse_name": rec["horse_name"],
+                                        "win_ev": None,
+                                        "win_odds": None,
+                                        "place_ev": rec["expected_value"],
+                                        "place_odds": rec["odds"],
+                                    }
+                                else:
+                                    recommended[num]["place_ev"] = rec["expected_value"]
+                                    recommended[num]["place_odds"] = rec["odds"]
+
+                            # EV順でソート（win_evとplace_evの最大値で）
+                            rec_list = sorted(
+                                recommended.values(),
+                                key=lambda x: max(x.get("win_ev") or 0, x.get("place_ev") or 0),
+                                reverse=True
+                            )[:3]  # 最大3頭
+
+                            # === 軸馬推奨（ワイド・連系用）===
+                            # 軸馬 = 複勝確率が最も高い馬（3着以内に来る確率が最も高い）
+                            axis_horse = max(ranked, key=lambda h: h.get("place_probability", 0)) if ranked else None
+
+                            # シンプルなメッセージ構築
                             lines = [
                                 f"🔥 **{venue} {race_num_formatted} 最終予想**",
                                 f"{time_formatted}発走 {race_name}",
                                 "",
-                                "**予想 Top3**",
                             ]
 
-                            marks = ['◎', '○', '▲']
-                            for i, h in enumerate(ranked[:3]):
-                                mark = marks[i]
-                                num = h.get('horse_number', '?')
-                                name = h.get('horse_name', '?')[:8]
-                                win = h.get('win_probability', 0)
-                                lines.append(f"{mark} {num}番 {name} (勝率 {win:.1%})")
-
-                            # 穴馬候補があれば表示
-                            dark_horses = result.get("dark_horses", [])
-                            if dark_horses:
-                                lines.append("")
-                                lines.append(f"🐴 穴馬候補: {len(dark_horses)}頭")
+                            if rec_list:
+                                lines.append("**単複推奨** (EV >= 1.5)")
+                                for rec in rec_list:
+                                    num = rec["horse_number"]
+                                    name = rec["horse_name"][:8]
+                                    ev_parts = []
+                                    if rec["win_ev"]:
+                                        ev_parts.append(f"単{rec['win_ev']:.2f}")
+                                    if rec["place_ev"]:
+                                        ev_parts.append(f"複{rec['place_ev']:.2f}")
+                                    ev_str = "/".join(ev_parts)
+                                    lines.append(f"  {num}番 {name} (EV {ev_str})")
+                            else:
+                                lines.append("**単複推奨なし** (EV >= 1.5 の馬なし)")
 
                             lines.append("")
-                            lines.append("▼ ボタンを押してランキング詳細を表示")
+
+                            # 軸馬推奨
+                            if axis_horse:
+                                lines.append("**軸馬** (ワイド・連系用)")
+                                ah_num = axis_horse.get("horse_number", "?")
+                                ah_name = axis_horse.get("horse_name", "?")[:8]
+                                ah_place = axis_horse.get("place_probability", 0)
+                                lines.append(f"  🎯 {ah_num}番 {ah_name} (複勝率 {ah_place:.0%})")
 
                             message = "\n".join(lines)
-
-                            # RankingSelectViewを作成
-                            view = RankingSelectView(
-                                race_id=race_id,
-                                prediction_data=prediction,
-                                timeout=3600  # 1時間有効
-                            )
-
-                            await channel.send(message, view=view)
-
-                            # 期待値ベース馬券推奨を取得・送信
-                            try:
-                                race_code = prediction.get("race_code") or race_id
-                                ev_recommender = EVRecommender()
-                                ev_recs = ev_recommender.get_recommendations(
-                                    race_code=race_code,
-                                    ranked_horses=ranked,
-                                    use_realtime_odds=True,
-                                )
-                                ev_message = format_ev_recommendations(ev_recs)
-                                await channel.send(ev_message)
-                                logger.info(f"EV推奨送信完了: race_id={race_id}")
-                            except Exception as ev_err:
-                                logger.error(f"EV推奨取得エラー: race_id={race_id}, error={ev_err}")
+                            await channel.send(message)
+                            logger.info(f"最終予想送信完了: race_id={race_id}, 推奨馬={len(rec_list)}頭")
                         else:
                             # 予想結果が空の場合
                             logger.warning(f"最終予想結果が空: race_id={race_id}")
@@ -843,20 +456,8 @@ class PredictionScheduler(commands.Cog):
                                 f"🔥 **{prediction.get('venue', '?')} {prediction.get('race_number', '?')}R 最終予想完了**"
                             )
                     else:
-                        # 前日予想: 従来のフォーマット
-                        message = format_prediction_notification(
-                            race_name=prediction.get("race_name", "不明"),
-                            race_date=date.fromisoformat(prediction.get("race_date")),
-                            venue=prediction.get("venue", "不明"),
-                            race_time=prediction.get("race_time", "不明"),
-                            race_number=prediction.get("race_number", "不明"),
-                            prediction_result=prediction.get("prediction_result", {}),
-                            total_investment=prediction.get("total_investment", 0),
-                            expected_return=prediction.get("expected_return", 0),
-                            expected_roi=prediction.get("expected_roi", 0.0) * 100,
-                            prediction_url=f"{self.api_base_url}/predictions/{pred_id}",
-                        )
-                        await channel.send(message)
+                        # 前日予想は廃止 - 当日最終予想のみ通知
+                        logger.debug(f"前日予想スキップ（廃止）: race_id={race_id}")
 
                 return True
             else:
@@ -873,12 +474,6 @@ class PredictionScheduler(commands.Cog):
             logger.exception(f"予想実行エラー: race_id={race_id}, error={e}")
             return False
 
-    @evening_prediction_task.before_loop
-    async def before_evening_task(self):
-        """21時タスク開始前にBot準備完了を待つ"""
-        await self.bot.wait_until_ready()
-        logger.info("21時予想タスク準備完了")
-
     @hourly_check_task.before_loop
     async def before_hourly_task(self):
         """レースチェックタスク開始前にBot準備完了を待つ"""
@@ -894,18 +489,10 @@ class PredictionScheduler(commands.Cog):
         Args:
             ctx: コマンドコンテキスト
         """
-        evening_running = self.evening_prediction_task.is_running()
         hourly_running = self.hourly_check_task.is_running()
-
-        evening_next = self.evening_prediction_task.next_iteration
-        evening_next_str = evening_next.strftime("%Y-%m-%d %H:%M:%S") if evening_next else "不明"
 
         lines = [
             "⚙️ 自動予想スケジューラーステータス",
-            "",
-            f"21時予想タスク: {'🟢 実行中' if evening_running else '🔴 停止中'}",
-            f"次回実行: {evening_next_str}",
-            f"前日予想済み: {len(self.predicted_race_ids_initial)}レース",
             "",
             f"レースチェックタスク: {'🟢 実行中' if hourly_running else '🔴 停止中'}",
             f"最終予想済み: {len(self.predicted_race_ids_final)}レース",
@@ -924,7 +511,6 @@ class PredictionScheduler(commands.Cog):
         Args:
             ctx: コマンドコンテキスト
         """
-        self.predicted_race_ids_initial.clear()
         self.predicted_race_ids_final.clear()
 
         logger.info("スケジューラーリセット完了")

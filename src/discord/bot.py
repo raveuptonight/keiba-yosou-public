@@ -1,11 +1,10 @@
 """
 競馬予想Discord Bot
 
-予想完了通知、レース結果報告、スラッシュコマンド実行などを行う
+予想完了通知、レース結果報告などを行う
 """
 
 import os
-import asyncio
 import logging
 from typing import Optional
 import discord
@@ -28,8 +27,7 @@ class KeibaBot(commands.Bot):
     """
     競馬予想Bot
 
-    Discord通知、スラッシュコマンド実行、予想完了通知などを行います。
-    コマンド結果はコマンド実行者のみに表示（ephemeral）されます。
+    Discord通知、予想完了通知などを行います。
     """
 
     def __init__(self):
@@ -68,10 +66,6 @@ class KeibaBot(commands.Bot):
             self.command_channel_id = 0
             logger.warning(f"DISCORD_COMMAND_CHANNEL_ID が不正な値です: {command_channel_id_str}")
 
-        # ギルドID（スラッシュコマンド即時反映用、オプション）
-        guild_id_str = os.getenv("DISCORD_GUILD_ID")
-        self.guild_id = int(guild_id_str) if guild_id_str else None
-
     async def setup_hook(self):
         """
         Bot起動時の初期化処理
@@ -79,15 +73,6 @@ class KeibaBot(commands.Bot):
         Raises:
             BotError: コマンドCogのロードに失敗した場合
         """
-        # スラッシュコマンドCogをロード
-        try:
-            logger.info("スラッシュコマンドCogロード開始")
-            await self.load_extension("src.discord.slash_commands")
-            logger.info("スラッシュコマンドCogロード完了")
-        except Exception as e:
-            logger.error(f"スラッシュコマンドCogのロードに失敗: {e}")
-            raise BotError(f"スラッシュコマンドCogのロードに失敗: {e}") from e
-
         # スケジューラーCogをロード
         try:
             logger.info("スケジューラーCogロード開始")
@@ -96,27 +81,6 @@ class KeibaBot(commands.Bot):
         except Exception as e:
             logger.error(f"スケジューラーCogのロードに失敗: {e}")
             raise BotError(f"スケジューラーCogのロードに失敗: {e}") from e
-
-        # 予測コマンドCogをロード
-        try:
-            logger.info("予測コマンドCogロード開始")
-            await self.load_extension("src.discord.commands.prediction")
-            logger.info("予測コマンドCogロード完了")
-        except Exception as e:
-            logger.error(f"予測コマンドCogのロードに失敗: {e}")
-            raise BotError(f"予測コマンドCogのロードに失敗: {e}") from e
-
-        # スラッシュコマンドを同期
-        if self.guild_id:
-            # 特定ギルドに即時反映（開発用）
-            guild = discord.Object(id=self.guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info(f"スラッシュコマンド同期完了（ギルド: {self.guild_id}）")
-        else:
-            # グローバル同期（反映に最大1時間）
-            await self.tree.sync()
-            logger.info("スラッシュコマンド同期完了（グローバル）")
 
     async def on_ready(self):
         """
@@ -128,7 +92,7 @@ class KeibaBot(commands.Bot):
         try:
             # ステータス設定
             await self.change_presence(
-                activity=discord.Game(name="競馬予想 | /help でヘルプ")
+                activity=discord.Game(name="競馬予想")
             )
 
             # チャンネル確認（起動メッセージは送信しない）

@@ -19,9 +19,12 @@ JST = timezone(timedelta(hours=9))
 # ロガー設定
 logger = logging.getLogger(__name__)
 
-# デフォルト閾値
-DEFAULT_WIN_EV_THRESHOLD = 1.2   # 単勝期待値閾値
-DEFAULT_PLACE_EV_THRESHOLD = 1.2  # 複勝期待値閾値
+# デフォルト閾値（バックテスト結果: EV>=1.5で回収率417%）
+DEFAULT_WIN_EV_THRESHOLD = 1.5   # 単勝期待値閾値
+DEFAULT_PLACE_EV_THRESHOLD = 1.5  # 複勝期待値閾値
+# 緩い閾値（推奨候補用）
+LOOSE_WIN_EV_THRESHOLD = 1.2
+LOOSE_PLACE_EV_THRESHOLD = 1.2
 
 
 class EVRecommender:
@@ -91,53 +94,79 @@ class EVRecommender:
                 }
 
             # 期待値計算と推奨生成
-            win_recommendations = []
-            place_recommendations = []
+            win_recommendations = []      # EV >= 1.5（強い推奨）
+            place_recommendations = []    # EV >= 1.5（強い推奨）
+            win_candidates = []           # EV >= 1.2（候補）
+            place_candidates = []         # EV >= 1.2（候補）
+            top1_win_rec = None           # 1位予想 + EV条件
+            top1_place_rec = None         # 1位予想 + EV条件
 
             for horse in ranked_horses:
                 umaban = str(int(horse.get("horse_number", 0)))
                 horse_name = horse.get("horse_name", "不明")
                 win_prob = horse.get("win_probability", 0)
                 place_prob = horse.get("place_probability", 0)
+                rank = horse.get("rank", 99)
 
                 # 単勝期待値
                 tansho_odd = tansho_odds.get(umaban, 0)
                 if tansho_odd > 0 and win_prob > 0:
                     win_ev = win_prob * tansho_odd
+                    rec = {
+                        "horse_number": int(umaban),
+                        "horse_name": horse_name,
+                        "win_probability": win_prob,
+                        "odds": tansho_odd,
+                        "expected_value": win_ev,
+                        "rank": rank,
+                    }
                     if win_ev >= self.win_ev_threshold:
-                        win_recommendations.append({
-                            "horse_number": int(umaban),
-                            "horse_name": horse_name,
-                            "win_probability": win_prob,
-                            "odds": tansho_odd,
-                            "expected_value": win_ev,
-                        })
+                        win_recommendations.append(rec)
+                    elif win_ev >= LOOSE_WIN_EV_THRESHOLD:
+                        win_candidates.append(rec)
+                    # 1位予想 + EV >= 1.0
+                    if rank == 1 and win_ev >= 1.0 and top1_win_rec is None:
+                        top1_win_rec = rec
 
                 # 複勝期待値
                 fukusho_odd = fukusho_odds.get(umaban, 0)
                 if fukusho_odd > 0 and place_prob > 0:
                     place_ev = place_prob * fukusho_odd
+                    rec = {
+                        "horse_number": int(umaban),
+                        "horse_name": horse_name,
+                        "place_probability": place_prob,
+                        "odds": fukusho_odd,
+                        "expected_value": place_ev,
+                        "rank": rank,
+                    }
                     if place_ev >= self.place_ev_threshold:
-                        place_recommendations.append({
-                            "horse_number": int(umaban),
-                            "horse_name": horse_name,
-                            "place_probability": place_prob,
-                            "odds": fukusho_odd,
-                            "expected_value": place_ev,
-                        })
+                        place_recommendations.append(rec)
+                    elif place_ev >= LOOSE_PLACE_EV_THRESHOLD:
+                        place_candidates.append(rec)
+                    # 1位予想 + EV >= 1.0
+                    if rank == 1 and place_ev >= 1.0 and top1_place_rec is None:
+                        top1_place_rec = rec
 
             # 期待値順でソート
             win_recommendations.sort(key=lambda x: x["expected_value"], reverse=True)
             place_recommendations.sort(key=lambda x: x["expected_value"], reverse=True)
+            win_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
+            place_candidates.sort(key=lambda x: x["expected_value"], reverse=True)
 
             logger.info(
                 f"EV推奨: race_code={race_code}, "
-                f"win={len(win_recommendations)}件, place={len(place_recommendations)}件"
+                f"win={len(win_recommendations)}件(候補{len(win_candidates)}件), "
+                f"place={len(place_recommendations)}件(候補{len(place_candidates)}件)"
             )
 
             return {
-                "win_recommendations": win_recommendations,
-                "place_recommendations": place_recommendations,
+                "win_recommendations": win_recommendations,      # EV >= 1.5
+                "place_recommendations": place_recommendations,  # EV >= 1.5
+                "win_candidates": win_candidates,                # 1.2 <= EV < 1.5
+                "place_candidates": place_candidates,            # 1.2 <= EV < 1.5
+                "top1_win": top1_win_rec,                        # 1位予想 + EV >= 1.0
+                "top1_place": top1_place_rec,                    # 1位予想 + EV >= 1.0
                 "odds_source": odds_source,
                 "odds_time": odds_time,
             }
@@ -335,65 +364,3 @@ class EVRecommender:
         except Exception as e:
             logger.error(f"確定複勝オッズ取得エラー: {e}")
             return {}
-
-
-def format_ev_recommendations(recommendations: Dict) -> str:
-    """
-    EV推奨をDiscord用にフォーマット
-
-    Args:
-        recommendations: get_recommendations()の戻り値
-
-    Returns:
-        フォーマット済み文字列
-    """
-    lines = []
-
-    win_recs = recommendations.get("win_recommendations", [])
-    place_recs = recommendations.get("place_recommendations", [])
-    odds_time = recommendations.get("odds_time")
-    error = recommendations.get("error")
-
-    if error:
-        return f"⚠️ オッズ取得エラー: {error}"
-
-    if not win_recs and not place_recs:
-        return "📊 期待値推奨: 該当馬なし（EV >= 1.2 の馬がいません）"
-
-    lines.append("💰 **期待値ベース馬券推奨**")
-    if odds_time:
-        lines.append(f"_オッズ時刻: {odds_time}_")
-    lines.append("")
-
-    # 単勝推奨
-    if win_recs:
-        lines.append("**【単勝】** (EV = 勝率 × オッズ)")
-        for rec in win_recs[:3]:  # 最大3頭
-            num = rec["horse_number"]
-            name = rec["horse_name"][:6]
-            prob = rec["win_probability"]
-            odds = rec["odds"]
-            ev = rec["expected_value"]
-            lines.append(f"  🎯 {num}番 {name}: EV={ev:.2f} (確率{prob:.1%} × {odds:.1f}倍)")
-    else:
-        lines.append("**【単勝】** 推奨なし")
-
-    lines.append("")
-
-    # 複勝推奨
-    if place_recs:
-        lines.append("**【複勝】** (EV = 複勝率 × オッズ)")
-        for rec in place_recs[:3]:  # 最大3頭
-            num = rec["horse_number"]
-            name = rec["horse_name"][:6]
-            prob = rec["place_probability"]
-            odds = rec["odds"]
-            ev = rec["expected_value"]
-            lines.append(f"  🎯 {num}番 {name}: EV={ev:.2f} (確率{prob:.1%} × {odds:.1f}倍)")
-    else:
-        lines.append("**【複勝】** 推奨なし")
-
-    lines.append("")
-    lines.append("_※EV(期待値) >= 1.2 の馬を推奨（1.0=損益分岐点）_")
-
-    return "\n".join(lines)
