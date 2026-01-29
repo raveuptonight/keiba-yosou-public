@@ -61,8 +61,8 @@ def compare_models(
     new_features = new_model_data['feature_names']
 
     # Get classification models
-    old_models = old_model_data.get('models', {})
-    new_models = new_model_data.get('models', {})
+    old_model_data.get('models', {})
+    new_model_data.get('models', {})
 
     # Get test data (including payout data)
     db = get_db()
@@ -194,7 +194,7 @@ def evaluate_model(
         win_actual = (df['target'] == 1).astype(int)
         try:
             eval_result['win_auc'] = float(roc_auc_score(win_actual, win_prob))
-        except:
+        except Exception:
             eval_result['win_auc'] = 0.5
 
     # Quinella AUC
@@ -207,7 +207,7 @@ def evaluate_model(
         quinella_actual = (df['target'] <= 2).astype(int)
         try:
             eval_result['quinella_auc'] = float(roc_auc_score(quinella_actual, quinella_prob))
-        except:
+        except Exception:
             eval_result['quinella_auc'] = 0.5
 
     # Place AUC
@@ -220,7 +220,7 @@ def evaluate_model(
         place_actual = (df['target'] <= 3).astype(int)
         try:
             eval_result['place_auc'] = float(roc_auc_score(place_actual, place_prob))
-        except:
+        except Exception:
             eval_result['place_auc'] = 0.5
 
     # Top-3 coverage (calculated per race)
@@ -231,7 +231,7 @@ def evaluate_model(
         top3_hits = 0
         total_races = 0
 
-        for race_code, race_df in df_eval.groupby('race_code'):
+        for _race_code, race_df in df_eval.groupby('race_code'):
             race_df_sorted = race_df.sort_values('pred_rank')
             top3_pred = race_df_sorted.head(3)['target'].values
             if any(t == 1 for t in top3_pred):
@@ -296,7 +296,7 @@ def get_ensemble_proba(
     if calibrator is not None:
         try:
             return calibrator.predict(raw_prob)
-        except:
+        except Exception:
             pass
     return raw_prob
 

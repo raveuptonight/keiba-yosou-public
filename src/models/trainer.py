@@ -65,7 +65,7 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
 
     y_train = y.iloc[:train_end]
     y_calib = y.iloc[train_end:calib_end]
-    y_test = y.iloc[calib_end:]
+    y.iloc[calib_end:]
     y_val = y_calib
 
     y_win_train = y_win.iloc[:train_end]

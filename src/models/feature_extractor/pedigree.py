@@ -69,7 +69,7 @@ def get_sire_stats_batch(conn, sire_ids: list[str], year: int, is_turf: bool = T
     if not sire_ids:
         return {}
 
-    unique_ids = list(set(s for s in sire_ids if s))
+    unique_ids = list({s for s in sire_ids if s})
     if not unique_ids:
         return {}
 
@@ -132,7 +132,7 @@ def get_sire_maiden_stats_batch(conn, sire_ids: list[str], year: int) -> dict[st
     if not sire_ids:
         return {}
 
-    unique_ids = list(set(s for s in sire_ids if s))
+    unique_ids = list({s for s in sire_ids if s})
     if not unique_ids:
         return {}
 

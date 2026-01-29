@@ -120,7 +120,7 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     pedigree_info = extractor._get_pedigree_batch(kettonums)
     race_codes = [e['race_code'] for e in entries]
     zenso_info = extractor._get_zenso_batch(kettonums, race_codes, entries)
-    jockey_codes = list(set(e.get('kishu_code', '') for e in entries if e.get('kishu_code')))
+    jockey_codes = list({e.get('kishu_code', '') for e in entries if e.get('kishu_code')})
     jockey_recent = extractor._get_jockey_recent_batch(jockey_codes, year)
 
     # Sire stats
@@ -213,7 +213,7 @@ def compute_ml_predictions(
         # Format 2: xgb_model, lgb_model (weekly retrain format)
         # Format 3: models.xgboost, models.lightgbm (legacy)
         models_dict = model_data.get('models', {})
-        version = model_data.get('version', '')
+        model_data.get('version', '')
 
         # Get regression models
         if 'xgb_regressor' in models_dict:
@@ -289,7 +289,7 @@ def compute_ml_predictions(
             logger.info(f"Found {len(race_df)} horses for race {race_id}")
 
             # Extract only features expected by model
-            available_features = [f for f in feature_names if f in race_df.columns]
+            [f for f in feature_names if f in race_df.columns]
             missing_features = [f for f in feature_names if f not in race_df.columns]
             if missing_features:
                 logger.warning(f"Missing features: {missing_features[:5]}...")

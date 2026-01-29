@@ -13,9 +13,12 @@ Enhanced features (v2):
 """
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.features.enhanced_features import EnhancedFeatureExtractor
+
+if TYPE_CHECKING:
+    from src.features.daily_bias import DailyBiasResult
 from src.features.extractors.calculators import (
     calc_avg_time_diff,
     calc_class_change,

@@ -169,4 +169,4 @@ async def get_odds(
         raise
     except Exception as e:
         logger.error(f"Failed to get odds: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e

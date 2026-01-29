@@ -112,7 +112,7 @@ async def search_horses(
 
     except Exception as e:
         logger.error(f"Failed to search horses: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 def _get_venue_name(venue_code: str) -> str:
@@ -316,7 +316,7 @@ async def get_horse(
         raise
     except Exception as e:
         logger.error(f"Failed to get horse detail: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -374,4 +374,4 @@ async def get_horse_training(
 
     except Exception as e:
         logger.error(f"Failed to get training data: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e

@@ -69,7 +69,7 @@ def get_race_results(target_date: date) -> list[dict]:
                 if r[3] and r[3].strip():
                     try:
                         ninki = int(r[3])
-                    except:
+                    except Exception:
                         pass
                 results.append({
                     'umaban': r[0],

@@ -130,7 +130,7 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict = None
         # Distance category
         try:
             kyori_int = int(kyori) if kyori else 0
-        except:
+        except Exception:
             kyori_int = 0
         if kyori_int <= 1400:
             distance_cat = '短距離'
@@ -367,7 +367,7 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict = None
         comparison['races'].append(race_result)
 
         # Category-based aggregation
-        for cat_name, cat_key, cat_val in [
+        for cat_name, _cat_key, cat_val in [
             ('by_venue', keibajo, keibajo),
             ('by_distance', distance_cat, distance_cat),
             ('by_field_size', field_cat, field_cat),

@@ -65,10 +65,10 @@ async def generate_prediction(
     except ValueError as e:
         # レースが見つからない
         logger.warning(f"Race not found: {e}")
-        raise RaceNotFoundException(request.race_id)
+        raise RaceNotFoundException(request.race_id) from e
     except Exception as e:
         logger.error(f"Failed to generate prediction: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -113,7 +113,7 @@ async def get_prediction(
         raise
     except Exception as e:
         logger.error(f"Failed to get prediction: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -167,4 +167,4 @@ async def get_race_predictions(
 
     except Exception as e:
         logger.error(f"Failed to get race predictions: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e

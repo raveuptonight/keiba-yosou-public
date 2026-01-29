@@ -115,7 +115,7 @@ async def search_jockeys(
 
     except Exception as e:
         logger.error(f"Failed to search jockeys: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -230,7 +230,7 @@ async def get_jockey(
 
     except Exception as e:
         logger.error(f"Failed to get jockey stats: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -281,7 +281,7 @@ async def search_trainers(
 
     except Exception as e:
         logger.error(f"Failed to search trainers: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -409,4 +409,4 @@ async def get_trainer(
 
     except Exception as e:
         logger.error(f"Failed to get trainer stats: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e

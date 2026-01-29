@@ -453,7 +453,7 @@ def calc_distance_change(past_races: list[dict], race_info: dict) -> int:
     if not past_races:
         return 0
 
-    current_dist = safe_int(race_info.get('kyori'), 0)
+    safe_int(race_info.get('kyori'), 0)
     # Past race distance requires JOIN, simplified version returns 0
     return 0
 

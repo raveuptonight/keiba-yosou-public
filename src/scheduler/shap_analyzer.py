@@ -477,8 +477,8 @@ class ShapAnalyzer:
             return {}
 
         diff = analysis.get('diff_contributions', {})
-        hit_contrib = analysis.get('hit_contributions', {})
-        miss_contrib = analysis.get('miss_contributions', {})
+        analysis.get('hit_contributions', {})
+        analysis.get('miss_contributions', {})
 
         adjustments = {}
 

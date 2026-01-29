@@ -189,7 +189,7 @@ def train_new_model(model_dir: Path, years: int = 3) -> dict:
 
         y_train = y[:train_end]
         y_calib = y[train_end:calib_end]
-        y_test = y[calib_end:]
+        y[calib_end:]
         y_val = y_calib
 
         y_win_train = y_win[:train_end]
@@ -427,7 +427,7 @@ def train_new_model(model_dir: Path, years: int = 3) -> dict:
 
             top3_hits = 0
             total_races = 0
-            for race_code, group in test_df.groupby('race_code'):
+            for _race_code, group in test_df.groupby('race_code'):
                 if len(group) < 3:
                     continue
                 winner = group[group['target'] == 1]

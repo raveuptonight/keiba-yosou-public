@@ -93,7 +93,7 @@ class FastFeatureExtractor:
         logger.info(f"  Entries: {len(entries)}")
 
         # 3. Batch fetch past performance (last 10 races) - exclude current race to prevent data leak
-        kettonums = list(set(e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')))
+        kettonums = list({e['ketto_toroku_bango'] for e in entries if e.get('ketto_toroku_bango')})
         past_stats = db_queries.get_past_stats_batch(self.conn, kettonums, entries=entries)
         logger.info(f"  Past stats: {len(past_stats)} horses")
 
@@ -147,7 +147,7 @@ class FastFeatureExtractor:
         logger.info(f"  Zenso details: {len(zenso_info)}")
 
         # Jockey recent performance
-        jockey_codes = list(set(e.get('kishu_code', '') for e in entries if e.get('kishu_code')))
+        jockey_codes = list({e.get('kishu_code', '') for e in entries if e.get('kishu_code')})
         jockey_recent = venue.get_jockey_recent_batch(self.conn, jockey_codes, year)
         logger.info(f"  Jockey recent: {len(jockey_recent)}")
 

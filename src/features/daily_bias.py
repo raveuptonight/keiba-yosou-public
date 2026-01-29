@@ -161,7 +161,7 @@ class DailyBiasAnalyzer:
                 horses = cur.fetchall()
 
                 for horse in horses:
-                    umaban = horse[0]
+                    horse[0]
                     wakuban = horse[1]
                     chakujun = int(horse[2]) if horse[2] else 99
                     kyakushitsu = horse[3]
@@ -397,7 +397,7 @@ def print_bias_report(bias_result: DailyBiasResult):
     print(f"{'='*60}")
 
     print("\n* Venue Bias")
-    for venue_code, vb in sorted(bias_result.venue_biases.items()):
+    for _venue_code, vb in sorted(bias_result.venue_biases.items()):
         waku_indicator = "Inner favored" if vb.waku_bias > 0.05 else ("Outer favored" if vb.waku_bias < -0.05 else "Neutral")
         pace_indicator = "Front favored" if vb.pace_bias > 0.05 else ("Closer favored" if vb.pace_bias < -0.05 else "Neutral")
 

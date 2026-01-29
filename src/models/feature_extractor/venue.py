@@ -315,7 +315,7 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
             # Final 3F ranking
             zenso1_agari_rank = z1.get('agari_rank', 9)
             zenso2_agari_rank = z2.get('agari_rank', 9)
-            zenso3_agari_rank = z3.get('agari_rank', 9) if len(races) > 2 else 9
+            z3.get('agari_rank', 9) if len(races) > 2 else 9
             agari_ranks = [r.get('agari_rank', 9) for r in races[:3] if r.get('agari_rank', 0) > 0]
             avg_agari_rank_3 = sum(agari_ranks) / len(agari_ranks) if agari_ranks else 9.0
 
@@ -334,7 +334,7 @@ def get_zenso_batch(conn, kettonums: list[str], race_codes: list[str], entries: 
                 }
 
             z1_pos = calc_position_changes(z1) if z1 else {}
-            z2_pos = calc_position_changes(z2) if z2 else {}
+            calc_position_changes(z2) if z2 else {}
 
             # Late closing tendency (moved up 3+ positions from corner 3 to 4)
             late_push_count = 0
@@ -390,7 +390,7 @@ def get_jockey_recent_batch(conn, jockey_codes: list[str], year: int) -> dict[st
     if not jockey_codes:
         return {}
 
-    unique_codes = list(set(c for c in jockey_codes if c))
+    unique_codes = list({c for c in jockey_codes if c})
     if not unique_codes:
         return {}
 
@@ -445,7 +445,7 @@ def get_jockey_maiden_stats_batch(conn, jockey_codes: list[str], year: int) -> d
     if not jockey_codes:
         return {}
 
-    unique_codes = list(set(c for c in jockey_codes if c))
+    unique_codes = list({c for c in jockey_codes if c})
     if not unique_codes:
         return {}
 

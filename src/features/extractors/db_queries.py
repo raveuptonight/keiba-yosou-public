@@ -572,7 +572,7 @@ def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> d
         return cache[cache_key]
 
     # Get race date and search for training before that
-    race_date = race_code[4:12] if len(race_code) >= 12 else ''
+    race_code[4:12] if len(race_code) >= 12 else ''
 
     sql = """
         SELECT

@@ -234,7 +234,7 @@ class EVRecommender:
                     if now.month == 12 and month == "01":
                         year += 1
                     odds_time_str = f"{year}-{month}-{day} {hour}:{minute}"
-                except:
+                except Exception:
                     pass
 
             logger.debug(f"Time-series win odds retrieved: race_code={race_code}, count={len(odds_dict)}, time={latest_time}")

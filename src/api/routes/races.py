@@ -169,7 +169,7 @@ async def get_today_races(
             races = []
             for race in races_data:
                 # 出走頭数を取得
-                entry_count = await get_race_entry_count(conn, race[COL_RACE_ID])
+                await get_race_entry_count(conn, race[COL_RACE_ID])
 
                 races.append(RaceBase(
                     race_id=race[COL_RACE_ID],
@@ -200,7 +200,7 @@ async def get_today_races(
 
     except Exception as e:
         logger.error(f"Failed to get today's races: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -269,7 +269,7 @@ async def get_upcoming_races_list(
 
     except Exception as e:
         logger.error(f"Failed to get upcoming races: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -309,8 +309,8 @@ async def get_races_for_date(
     try:
         from datetime import datetime
         parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
-    except ValueError:
-        raise DatabaseErrorException(f"Invalid date format: {target_date}. Use YYYY-MM-DD")
+    except ValueError as e:
+        raise DatabaseErrorException(f"Invalid date format: {target_date}. Use YYYY-MM-DD") from e
 
     try:
         async with get_connection() as conn:
@@ -349,7 +349,7 @@ async def get_races_for_date(
 
     except Exception as e:
         logger.error(f"Failed to get races for date {target_date}: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -548,7 +548,7 @@ async def get_race(
         raise
     except Exception as e:
         logger.error(f"Failed to get race detail: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e
 
 
 @router.get(
@@ -638,4 +638,4 @@ async def search_races_by_name(
 
     except Exception as e:
         logger.error(f"Failed to search races by name: {e}")
-        raise DatabaseErrorException(str(e))
+        raise DatabaseErrorException(str(e)) from e

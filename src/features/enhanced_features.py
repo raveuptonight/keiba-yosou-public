@@ -400,7 +400,7 @@ class EnhancedFeatureExtractor:
         # 1=improving (better finishes), 0=stable, -1=declining
         if len(past_races) >= 3:
             c1 = features['zenso1_chakujun']
-            c2 = features['zenso2_chakujun']
+            features['zenso2_chakujun']
             c3 = features['zenso3_chakujun']
             # Compare 1st and 3rd last race
             if c1 < c3 - 2:
@@ -414,7 +414,7 @@ class EnhancedFeatureExtractor:
 
         # Last 3F trend
         agaris = []
-        for i, race in enumerate(past_races[:3]):
+        for _, race in enumerate(past_races[:3]):
             l3f = self._safe_int(race.get('kohan_3f'), 0)
             if l3f > 0:
                 agaris.append(l3f / 10.0)
