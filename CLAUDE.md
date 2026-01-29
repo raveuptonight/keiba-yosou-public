@@ -1,156 +1,181 @@
-# CLAUDE.md - keiba-yosou プロジェクト指示書
+# CLAUDE.md - keiba-yosou Project Instructions
 
-## プロジェクト概要
+## Project Overview
 
-JRA-VANの公式競馬データを活用し、機械学習（XGBoost + LightGBM）による競馬予想システム。
-データ分析と統計的手法を組み合わせた予想を提供する。
+Horse racing prediction system using JRA-VAN official data with machine learning (XGBoost + LightGBM + CatBoost ensemble).
+Provides predictions combining data analysis and statistical methods.
 
-## リポジトリ情報
+## Repository Info
 
-- **リモート**: https://github.com/raveuptonight/keiba-yosou
-- **ブランチ戦略**: main（本番）、develop（開発）、feature/*（機能開発）
+- **Remote**: https://github.com/raveuptonight/keiba-yosou
+- **Branch Strategy**: main (production), develop (development), feature/* (feature development)
 
-### Git操作のルール
+### Git Rules
 
-- 作業前に `git pull` で最新化
-- コミットは機能単位で細かく
-- コミットメッセージは日本語OK、簡潔に
-- pushする前に動作確認
+- `git pull` before starting work
+- Commit in small functional units
+- Commit messages can be in Japanese or English
+- Verify functionality before pushing
 
-## ドキュメント
+## Documentation
 
-詳細は以下を参照：
+| File | Contents |
+|------|----------|
+| `README.md` | Project overview, quick start, architecture |
+| `README_USAGE.md` | Detailed usage guide, API reference |
+| `docs/PROJECT_OVERVIEW.md` | System config, directory structure |
+| `docs/JRA_VAN_SPEC.md` | JRA-VAN data spec, tables, SQL examples |
 
-| ファイル | 内容 |
-|---------|------|
-| `docs/PROJECT_OVERVIEW.md` | システム構成、ディレクトリ構成、開発フェーズ |
-| `docs/JRA_VAN_SPEC.md` | JRA-VANデータ仕様、テーブル詳細、SQLクエリ例 |
-| `docs/DEVELOPMENT_ROADMAP.md` | 設計思想、特徴量設計、プロンプト設計 |
+## Tech Stack
 
-## 技術スタック
+- **Language**: Python 3.11+
+- **DB**: PostgreSQL (via mykeibadb)
+- **Data**: JRA-VAN Data Lab.
+- **ML**: XGBoost + LightGBM + CatBoost (ensemble)
+- **Env**: WSL2 + VS Code + Docker
 
-- **言語**: Python 3.11+
-- **DB**: PostgreSQL 18（ローカル）→ Neon（将来）
-- **データ**: JRA-VAN Data Lab. + mykeibadb
-- **ML**: XGBoost + LightGBM（アンサンブル）
-- **環境**: WSL2 + VS Code + Docker
-
-## ディレクトリ構成
+## Directory Structure
 
 ```
 keiba-yosou/
-├── CLAUDE.md            # この指示書
-├── docs/                # ドキュメント
+├── CLAUDE.md                    # This file
+├── docs/                        # Documentation
 ├── src/
-│   ├── db/              # DB接続、クエリ
-│   ├── features/        # 特徴量生成
-│   ├── models/          # 機械学習モデル
-│   ├── api/             # FastAPI
-│   └── discord/         # Discord Bot
-├── models/              # 学習済みモデル保存
-├── scripts/             # ユーティリティ
-├── tests/               # テスト
-├── .env.example         # 環境変数テンプレート
-└── requirements.txt     # Python依存関係
+│   ├── api/                     # FastAPI REST API
+│   │   ├── routes/              # API endpoints
+│   │   └── schemas/             # Pydantic models
+│   ├── db/                      # Database connections
+│   │   └── queries/             # SQL queries
+│   ├── discord/                 # Discord Bot
+│   ├── features/                # Feature extraction
+│   │   └── extractors/          # Modular extractors (db_queries, calculators)
+│   ├── models/                  # ML models
+│   │   └── feature_extractor/   # FastFeatureExtractor modules
+│   ├── scheduler/               # Scheduled tasks
+│   │   ├── result/              # Result analysis (db_operations, analyzer, notifier)
+│   │   └── retrain/             # Model retraining (trainer, evaluator, manager, notifier)
+│   └── services/                # Business logic
+│       └── prediction/          # Prediction modules (ml_engine, bias_adjustment, etc.)
+├── models/                      # Trained model files
+│   ├── ensemble_model_latest.pkl
+│   └── backup/
+├── scripts/                     # Utilities
+├── tests/                       # Tests
+└── requirements.txt
 ```
 
-## 現在のフェーズ
+## Current System Features
 
-**Phase 1: データ基盤構築**
+1. **Ensemble Model**: XGBoost + LightGBM + CatBoost with optimized weights
+2. **Calibrated Probabilities**: Isotonic regression for reliable probability outputs
+3. **EV-based Recommendations**: Expected Value >= 1.5 threshold for betting
+4. **Axis Horse**: Highest place probability for wide/exacta strategies
+5. **Automated Predictions**: Discord Bot, 30 minutes before race
+6. **Weekly Retraining**: Tuesday 23:00 JST with automatic deployment if improved
 
-- [x] JRA-VAN契約済み
-- [x] mykeibadbセットアップ済み
-- [x] ローカルPostgreSQL構築済み
-- [ ] データ取り込み中（数日かかる）
-- [ ] テーブル構造確認
-- [ ] 基本クエリ作成
-
-### 次のタスク
-
-1. ディレクトリ構成の作成
-2. DB接続モジュール（src/db/connection.py）
-3. 基本クエリ（src/db/queries.py）
-4. テーブル構造確認スクリプト
-
-## コーディング規約
+## Coding Standards
 
 ### Python
 
-- フォーマッター: black
-- リンター: ruff
-- 型ヒント: 推奨
-- docstring: Google style
+- Formatter: black
+- Linter: ruff
+- Type hints: Recommended
+- Docstring: Google style (English)
 
-### 命名規則
+### Naming Conventions
 
-- ファイル名: snake_case
-- クラス名: PascalCase
-- 関数・変数: snake_case
-- 定数: UPPER_SNAKE_CASE
+- Files: snake_case
+- Classes: PascalCase
+- Functions/Variables: snake_case
+- Constants: UPPER_SNAKE_CASE
 
-### インポート順序
+### Import Order
 
 ```python
-# 標準ライブラリ
+# Standard library
 import os
 from datetime import datetime
 
-# サードパーティ
+# Third-party
 import pandas as pd
 import xgboost as xgb
 
-# ローカル
-from src.db.connection import get_connection
+# Local
+from src.db.connection import get_db
 ```
 
-## DB接続情報
+## DB Connection
 
-### ローカルPostgreSQL
+### Local PostgreSQL
 
 ```
-Host: localhost
+Host: localhost (or DB_HOST env var)
 Port: 5432
 Database: keiba_db
 User: postgres
 ```
 
-※パスワードは `.env` で管理（.env.example参照）
+Password managed in `.env` (see .env.example)
 
-### 接続確認
+### Connection Test
 
 ```bash
 psql -U postgres -d keiba_db -c "SELECT version();"
 ```
 
-## よく使うコマンド
+## Common Commands
 
 ```bash
-# 仮想環境作成
+# Create virtual environment
 python -m venv venv
 source venv/bin/activate
 
-# 依存関係インストール
+# Install dependencies
 pip install -r requirements.txt
 
-# テスト実行
+# Run tests
 pytest tests/
 
-# フォーマット
+# Format code
 black src/
 
-# リント
+# Lint
 ruff check src/
+
+# Train model
+python -m src.models.fast_train
+
+# Start API server
+python -m src.api.main
+
+# Start Discord Bot
+python -m src.discord.bot
 ```
 
-## 注意事項
+## Docker Commands
 
-1. **JV-LinkはWindows専用** - WSLからは直接使えない、データはmykeibadb経由
-2. **データ取り込みに数日かかる** - 1986年からの全データ
-3. **.envはコミットしない** - .gitignoreに追加済みか確認
-4. **JRA-VANデータの再配布禁止** - ライセンス注意
+```bash
+# Start all containers
+docker-compose up -d
 
-## 困ったとき
+# Check logs
+docker-compose logs -f keiba-ml-trainer
 
-- テーブル名がわからない → `\dt` でテーブル一覧
-- カラム名がわからない → `\d テーブル名` で構造確認
-- JRA-VAN仕様 → `docs/JRA_VAN_SPEC.md` 参照
+# Rebuild
+docker-compose down && docker-compose up -d --build
+```
+
+## Important Notes
+
+1. **JV-Link is Windows-only** - Use mykeibadb for data access in WSL
+2. **Initial data import takes days** - Full data from 1986
+3. **Never commit .env** - Check .gitignore
+4. **JRA-VAN data redistribution prohibited** - License restriction
+
+## Troubleshooting
+
+- Table names unknown → `\dt` for table list
+- Column names unknown → `\d table_name` for structure
+- JRA-VAN spec → see `docs/JRA_VAN_SPEC.md`
+- API issues → check `docker-compose logs keiba-api`
+- Model issues → `python -m src.models.fast_train` to retrain
