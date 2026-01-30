@@ -5,6 +5,7 @@ Functions for backing up, deploying, and version controlling models.
 """
 
 import logging
+import os
 import shutil
 import subprocess
 from datetime import datetime
@@ -74,8 +75,6 @@ def git_commit_and_push_model(
     Returns:
         True if successful, False otherwise
     """
-    import os
-
     try:
         # Find repository root
         repo_root = _find_git_root(model_path)
@@ -185,8 +184,6 @@ def _configure_git_credentials(repo_root: Path) -> None:
     Args:
         repo_root: Path to the git repository root
     """
-    import os
-
     # Configure user name and email
     git_user_name = os.getenv("GIT_USER_NAME", "keiba-bot")
     git_user_email = os.getenv("GIT_USER_EMAIL", "bot@example.com")
@@ -215,7 +212,7 @@ def _configure_git_credentials(repo_root: Path) -> None:
         if result.returncode == 0:
             remote_url = result.stdout.strip()
             # Convert to authenticated URL if it's a GitHub HTTPS URL
-            if "github.com" in remote_url and not "@" in remote_url:
+            if "github.com" in remote_url and "@" not in remote_url:
                 if remote_url.startswith("https://github.com"):
                     auth_url = remote_url.replace(
                         "https://github.com",
