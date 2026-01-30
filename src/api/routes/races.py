@@ -620,7 +620,9 @@ async def search_races_by_name(
 
             logger.info(f"Found {len(races)} races matching '{query}'")
             return RaceListResponse(
-                date=None, races=races, count=len(races)  # None because results may span multiple dates
+                date=None,
+                races=races,
+                count=len(races),  # None because results may span multiple dates
             )
 
     except Exception as e:
