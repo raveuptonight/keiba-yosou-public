@@ -1,7 +1,7 @@
 """
-予想関連のPydanticスキーマ
+Prediction-related Pydantic schemas.
 
-確率ベース・ランキング形式・順位分布・信頼度スコアを出力
+Outputs probability-based ranking format, position distribution, and confidence scores.
 """
 
 from datetime import datetime
@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 
 class PositionDistribution(BaseModel):
-    """順位分布予測"""
+    """Position distribution prediction."""
 
     first: float = Field(..., ge=0.0, le=1.0, description="1着確率")
     second: float = Field(..., ge=0.0, le=1.0, description="2着確率")
@@ -19,7 +19,7 @@ class PositionDistribution(BaseModel):
 
 
 class HorseRankingEntry(BaseModel):
-    """全馬ランキングエントリ（確率ベース）"""
+    """Horse ranking entry (probability-based)."""
 
     rank: int = Field(..., ge=1, description="予測順位（1が最上位）")
     horse_number: int = Field(..., ge=1, le=18, description="馬番（1-18）")
@@ -36,7 +36,7 @@ class HorseRankingEntry(BaseModel):
 
 
 class QuinellaRankingEntry(BaseModel):
-    """連対率順ランキングエントリ"""
+    """Quinella rate ranking entry."""
 
     rank: int
     horse_number: int
@@ -44,7 +44,7 @@ class QuinellaRankingEntry(BaseModel):
 
 
 class PlaceRankingEntry(BaseModel):
-    """複勝率順ランキングエントリ"""
+    """Place rate ranking entry."""
 
     rank: int
     horse_number: int
@@ -52,7 +52,7 @@ class PlaceRankingEntry(BaseModel):
 
 
 class DarkHorseEntry(BaseModel):
-    """穴馬候補エントリ"""
+    """Dark horse candidate entry."""
 
     horse_number: int
     win_prob: float
@@ -60,7 +60,7 @@ class DarkHorseEntry(BaseModel):
 
 
 class PredictionResult(BaseModel):
-    """予想結果本体（確率ベース・ランキング形式）"""
+    """Prediction result body (probability-based ranking format)."""
 
     ranked_horses: list[HorseRankingEntry] = Field(
         ..., description="全馬ランキング（勝率順・単勝向け）"
@@ -79,7 +79,7 @@ class PredictionResult(BaseModel):
 
 
 class PredictionRequest(BaseModel):
-    """予想生成リクエスト"""
+    """Prediction generation request."""
 
     race_id: str = Field(..., min_length=16, max_length=16, description="レースID（16桁）")
     is_final: bool = Field(False, description="最終予想フラグ（馬体重後）")
@@ -87,7 +87,7 @@ class PredictionRequest(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    """予想生成レスポンス"""
+    """Prediction generation response."""
 
     prediction_id: str = Field(..., description="予想ID")
     race_id: str = Field(..., description="レースID")
@@ -104,7 +104,7 @@ class PredictionResponse(BaseModel):
 
 
 class PredictionHistoryItem(BaseModel):
-    """予想履歴アイテム"""
+    """Prediction history item."""
 
     prediction_id: str = Field(..., description="予想ID")
     predicted_at: datetime = Field(..., description="予想実行日時")
@@ -113,7 +113,7 @@ class PredictionHistoryItem(BaseModel):
 
 
 class PredictionHistoryResponse(BaseModel):
-    """予想履歴レスポンス"""
+    """Prediction history response."""
 
     race_id: str = Field(..., description="レースID")
     predictions: list[PredictionHistoryItem] = Field(..., description="予想履歴一覧")

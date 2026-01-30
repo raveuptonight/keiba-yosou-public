@@ -1,8 +1,8 @@
 """
-コードマスタテーブルからマッピングを取得
+Code Master Table Retrieval Module
 
-JRA-VANのコードマスタテーブルから各種コードの名称を取得し、
-キャッシュして使用する。
+Retrieves code names from JRA-VAN code master tables
+and caches them for use.
 """
 
 import logging
@@ -11,31 +11,31 @@ from asyncpg import Connection
 
 logger = logging.getLogger(__name__)
 
-# グローバルキャッシュ（起動時に一度だけロード）
+# Global cache (loaded once at startup)
 _CODE_CACHE: dict[str, dict[str, str]] = {}
 
 
 async def load_code_master(conn: Connection, table_name: str) -> dict[str, str]:
     """
-    コードマスタテーブルから code -> meisho のマッピングを取得
+    Retrieve code -> name mapping from a code master table.
 
     Args:
-        conn: データベース接続
-        table_name: コードマスタテーブル名
+        conn: Database connection
+        table_name: Code master table name
 
     Returns:
-        コード -> 名称 のマッピング辞書
+        Dictionary mapping code to name
     """
     try:
-        # テーブルごとに異なるカラム名を使用
+        # Use different column names depending on the table
         if table_name == "keibajo_code":
-            # 競馬場コードは jomei カラムを使用
+            # Racecourse code uses jomei column
             query = f"SELECT code, jomei AS meisho FROM {table_name}"
         elif table_name == "tozai_shozoku_code":
-            # 東西所属コードは meisho2 カラムを使用（美浦/栗東）
+            # East/West affiliation code uses meisho2 column (Miho/Ritto)
             query = f"SELECT code, meisho2 AS meisho FROM {table_name}"
         else:
-            # その他のテーブルは meisho カラムを使用
+            # Other tables use meisho column
             query = f"SELECT code, meisho FROM {table_name}"
 
         rows = await conn.fetch(query)
@@ -44,7 +44,7 @@ async def load_code_master(conn: Connection, table_name: str) -> dict[str, str]:
         for row in rows:
             code = row["code"].strip() if row["code"] else ""
             meisho = row["meisho"].strip() if row["meisho"] else ""
-            if code:  # 空コードは除外
+            if code:  # Exclude empty codes
                 mapping[code] = meisho
 
         logger.info(f"Loaded {len(mapping)} codes from {table_name}")
@@ -57,25 +57,25 @@ async def load_code_master(conn: Connection, table_name: str) -> dict[str, str]:
 
 async def initialize_code_cache(conn: Connection) -> None:
     """
-    全コードマスタをキャッシュにロード
+    Load all code masters into cache.
 
     Args:
-        conn: データベース接続
+        conn: Database connection
     """
     global _CODE_CACHE
 
-    # ロード対象のコードマスタテーブル
+    # Code master tables to load
     tables = [
-        "keibajo_code",  # 競馬場コード
-        "grade_code",  # グレードコード
-        "kyoso_shubetsu_code",  # 競走種別コード
-        "kyoso_joken_code",  # 競走条件コード
-        "track_code",  # トラックコード
-        "babajotai_code",  # 馬場状態コード
-        "tenko_code",  # 天候コード
-        "seibetsu_code",  # 性別コード
-        "moshoku_code",  # 毛色コード
-        "tozai_shozoku_code",  # 東西所属コード
+        "keibajo_code",  # Racecourse code
+        "grade_code",  # Grade code
+        "kyoso_shubetsu_code",  # Race type code
+        "kyoso_joken_code",  # Race condition code
+        "track_code",  # Track code
+        "babajotai_code",  # Track condition code
+        "tenko_code",  # Weather code
+        "seibetsu_code",  # Sex code
+        "moshoku_code",  # Coat color code
+        "tozai_shozoku_code",  # East/West affiliation code
     ]
 
     for table in tables:
@@ -86,14 +86,14 @@ async def initialize_code_cache(conn: Connection) -> None:
 
 def get_code_name(table_name: str, code: str) -> str:
     """
-    コードから名称を取得（キャッシュから）
+    Get name from code (from cache).
 
     Args:
-        table_name: コードマスタテーブル名
-        code: コード値
+        table_name: Code master table name
+        code: Code value
 
     Returns:
-        名称（見つからない場合は空文字列）
+        Name (empty string if not found)
     """
     if not code:
         return ""
@@ -107,55 +107,55 @@ def get_code_name(table_name: str, code: str) -> str:
     return _CODE_CACHE[table_name].get(code, "")
 
 
-# ===== ヘルパー関数（後方互換性のため） =====
+# ===== Helper Functions (for backward compatibility) =====
 
 
 def get_keibajo_name(code: str) -> str:
-    """競馬場コードから名称を取得"""
+    """Get racecourse name from code."""
     return get_code_name("keibajo_code", code)
 
 
 def get_grade_name(code: str) -> str:
-    """グレードコードから名称を取得"""
+    """Get grade name from code."""
     return get_code_name("grade_code", code)
 
 
 def get_kyoso_shubetsu_name(code: str) -> str:
-    """競走種別コードから名称を取得"""
+    """Get race type name from code."""
     name = get_code_name("kyoso_shubetsu_code", code)
-    # "サラブレッド系3歳" -> "3歳" のように簡略化
+    # Simplify "サラブレッド系3歳" -> "3歳"
     if "サラブレッド系" in name:
         name = name.replace("サラブレッド系", "").strip()
     return name
 
 
 def get_kyoso_joken_name(code: str) -> str:
-    """競走条件コードから名称を取得"""
+    """Get race condition name from code."""
     return get_code_name("kyoso_joken_code", code)
 
 
 def get_track_name(code: str) -> str:
-    """トラックコードから名称を取得"""
+    """Get track name from code."""
     return get_code_name("track_code", code)
 
 
 def get_babajotai_name(code: str) -> str:
-    """馬場状態コードから名称を取得"""
+    """Get track condition name from code."""
     return get_code_name("babajotai_code", code)
 
 
 def get_tenko_name(code: str) -> str:
-    """天候コードから名称を取得"""
+    """Get weather name from code."""
     return get_code_name("tenko_code", code)
 
 
 def get_seibetsu_name(code: str) -> str:
-    """性別コードから名称を取得"""
+    """Get sex name from code."""
     return get_code_name("seibetsu_code", code)
 
 
 def get_moshoku_name(code: str) -> str:
-    """毛色コードから名称を取得"""
+    """Get coat color name from code."""
     return get_code_name("moshoku_code", code)
 
 
@@ -163,29 +163,29 @@ def generate_race_condition_name(
     kyoso_joken_code: str | None, kyoso_shubetsu_code: str | None, grade_code: str | None
 ) -> str:
     """
-    レース条件から条件戦の名称を生成
+    Generate race condition name from codes.
 
     Args:
-        kyoso_joken_code: 競走条件コード
-        kyoso_shubetsu_code: 競走種別コード
-        grade_code: グレードコード
+        kyoso_joken_code: Race condition code
+        kyoso_shubetsu_code: Race type code
+        grade_code: Grade code
 
     Returns:
-        生成されたレース名（例: "3歳未勝利", "3歳以上1勝クラス"）
+        Generated race name (e.g., "3歳未勝利", "3歳以上1勝クラス")
     """
-    # 重賞レースの場合は元のレース名を使うべき
+    # Graded races should use original race name
     if grade_code and grade_code in ["A", "B", "C", "D"]:
         return ""
 
     parts = []
 
-    # 競走種別（年齢・性別）
+    # Race type (age/sex)
     if kyoso_shubetsu_code:
         shubetsu = get_kyoso_shubetsu_name(kyoso_shubetsu_code)
         if shubetsu:
             parts.append(shubetsu)
 
-    # 競走条件（クラス）
+    # Race condition (class)
     if kyoso_joken_code and kyoso_joken_code != "000":
         joken = get_kyoso_joken_name(kyoso_joken_code)
         if joken:

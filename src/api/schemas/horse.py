@@ -1,5 +1,5 @@
 """
-馬情報関連のPydanticスキーマ
+Horse information Pydantic schemas.
 """
 
 from datetime import date
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class Trainer(BaseModel):
-    """調教師情報"""
+    """Trainer information."""
 
     code: str = Field(..., description="調教師コード")
     name: str = Field(..., description="調教師名")
@@ -16,7 +16,7 @@ class Trainer(BaseModel):
 
 
 class Pedigree(BaseModel):
-    """血統情報"""
+    """Pedigree information."""
 
     sire: str = Field(..., description="父馬")
     dam: str = Field(..., description="母馬")
@@ -27,7 +27,7 @@ class Pedigree(BaseModel):
 
 
 class TrainingData(BaseModel):
-    """調教データ"""
+    """Training data."""
 
     training_type: str = Field(..., description="調教種別（坂路/ウッド）")
     training_date: str = Field(..., description="調教日（YYYYMMDD）")
@@ -36,7 +36,7 @@ class TrainingData(BaseModel):
 
 
 class RecentRace(BaseModel):
-    """最近のレース成績"""
+    """Recent race results."""
 
     race_id: str = Field(..., min_length=16, max_length=16, description="レースID")
     race_name: str = Field(..., description="レース名")
@@ -57,7 +57,7 @@ class RecentRace(BaseModel):
 
 
 class HorseSearchResult(BaseModel):
-    """馬検索結果"""
+    """Horse search result."""
 
     kettonum: str = Field(..., min_length=10, max_length=10, description="血統登録番号")
     name: str = Field(..., description="馬名")
@@ -69,7 +69,7 @@ class HorseSearchResult(BaseModel):
 
 
 class TrainingRecord(BaseModel):
-    """調教記録（DB生データ形式）"""
+    """Training record (raw DB data format)."""
 
     training_type: str = Field(..., description="調教種別（hanro/wood）")
     chokyo_nengappi: str = Field(..., description="調教日（YYYYMMDD）")
@@ -78,7 +78,7 @@ class TrainingRecord(BaseModel):
 
 
 class HorseDetail(BaseModel):
-    """馬の詳細情報"""
+    """Detailed horse information."""
 
     kettonum: str = Field(..., min_length=10, max_length=10, description="血統登録番号")
     horse_name: str = Field(..., description="馬名")

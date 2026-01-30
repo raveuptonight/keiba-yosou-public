@@ -1,7 +1,7 @@
 """
-PostgreSQL非同期接続管理モジュール (asyncpg)
+PostgreSQL Async Connection Management Module (asyncpg)
 
-FastAPI用の非同期接続プール管理
+Async connection pool management for FastAPI.
 """
 
 import logging
@@ -21,12 +21,12 @@ from src.config import (
 
 logger = logging.getLogger(__name__)
 
-# グローバル接続プール
+# Global connection pool
 _pool: asyncpg.Pool | None = None
 
 
 async def init_db_pool() -> None:
-    """データベース接続プールを初期化"""
+    """Initialize the database connection pool."""
     global _pool
 
     if _pool is not None:
@@ -42,7 +42,7 @@ async def init_db_pool() -> None:
             password=DB_PASSWORD,
             min_size=DB_POOL_MIN_SIZE,
             max_size=DB_POOL_MAX_SIZE,
-            command_timeout=120,  # 120秒でタイムアウト
+            command_timeout=120,  # 120 second timeout
         )
         logger.info(f"Database pool initialized: {DB_USER}@{DB_HOST}:{DB_PORT}/{DB_NAME}")
     except Exception as e:
@@ -51,7 +51,7 @@ async def init_db_pool() -> None:
 
 
 async def close_db_pool() -> None:
-    """データベース接続プールをクローズ"""
+    """Close the database connection pool."""
     global _pool
 
     if _pool is None:
@@ -69,13 +69,13 @@ async def close_db_pool() -> None:
 
 def get_pool() -> asyncpg.Pool:
     """
-    接続プールを取得
+    Get the connection pool.
 
     Returns:
-        asyncpg.Pool: 接続プール
+        asyncpg.Pool: Connection pool
 
     Raises:
-        RuntimeError: プールが初期化されていない場合
+        RuntimeError: If pool is not initialized
     """
     if _pool is None:
         raise RuntimeError("Database pool not initialized. Call init_db_pool() first.")
@@ -85,14 +85,14 @@ def get_pool() -> asyncpg.Pool:
 @asynccontextmanager
 async def get_connection():
     """
-    データベース接続を取得するコンテキストマネージャ
+    Context manager for acquiring a database connection.
 
-    使用例:
+    Usage:
         async with get_connection() as conn:
             result = await conn.fetch("SELECT * FROM race LIMIT 10")
 
     Yields:
-        asyncpg.Connection: データベース接続
+        asyncpg.Connection: Database connection
     """
     pool = get_pool()
     async with pool.acquire() as connection:
@@ -102,16 +102,16 @@ async def get_connection():
 @asynccontextmanager
 async def get_transaction():
     """
-    トランザクション付きデータベース接続を取得
+    Context manager for acquiring a database connection with transaction.
 
-    使用例:
+    Usage:
         async with get_transaction() as conn:
             await conn.execute("INSERT INTO ...")
             await conn.execute("UPDATE ...")
-            # 正常終了時は自動コミット、例外時は自動ロールバック
+            # Auto-commit on success, auto-rollback on exception
 
     Yields:
-        asyncpg.Connection: トランザクション付き接続
+        asyncpg.Connection: Connection with transaction
     """
     async with get_connection() as conn:
         async with conn.transaction():
@@ -120,10 +120,10 @@ async def get_transaction():
 
 async def test_connection() -> bool:
     """
-    データベース接続をテスト
+    Test database connection.
 
     Returns:
-        bool: 接続成功時True、失敗時False
+        bool: True if connection successful, False otherwise
     """
     try:
         async with get_connection() as conn:
@@ -137,10 +137,10 @@ async def test_connection() -> bool:
 
 async def get_table_list() -> list[dict]:
     """
-    データベース内の全テーブル一覧を取得
+    Get list of all tables in the database.
 
     Returns:
-        list[dict]: テーブル情報のリスト
+        list[dict]: List of table information
     """
     sql = """
         SELECT
@@ -165,14 +165,14 @@ async def get_table_list() -> list[dict]:
 
 async def execute_query(sql: str, *args) -> list[dict]:
     """
-    汎用SELECT クエリ実行
+    Execute a generic SELECT query.
 
     Args:
-        sql: SQLクエリ
-        *args: クエリパラメータ
+        sql: SQL query
+        *args: Query parameters
 
     Returns:
-        list[dict]: クエリ結果
+        list[dict]: Query results
     """
     try:
         async with get_connection() as conn:
@@ -185,14 +185,14 @@ async def execute_query(sql: str, *args) -> list[dict]:
 
 async def execute_one(sql: str, *args) -> dict | None:
     """
-    単一行を返すSELECTクエリ実行
+    Execute a SELECT query that returns a single row.
 
     Args:
-        sql: SQLクエリ
-        *args: クエリパラメータ
+        sql: SQL query
+        *args: Query parameters
 
     Returns:
-        Optional[dict]: クエリ結果（見つからない場合はNone）
+        Optional[dict]: Query result (None if not found)
     """
     try:
         async with get_connection() as conn:
@@ -205,14 +205,14 @@ async def execute_one(sql: str, *args) -> dict | None:
 
 async def execute_value(sql: str, *args):
     """
-    単一値を返すSELECTクエリ実行
+    Execute a SELECT query that returns a single value.
 
     Args:
-        sql: SQLクエリ
-        *args: クエリパラメータ
+        sql: SQL query
+        *args: Query parameters
 
     Returns:
-        Any: クエリ結果の単一値
+        Any: Single value from query result
     """
     try:
         async with get_connection() as conn:

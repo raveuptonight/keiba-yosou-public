@@ -1,5 +1,5 @@
 """
-予想生成エンドポイント
+Prediction generation endpoints.
 """
 
 import logging
@@ -32,20 +32,20 @@ router = APIRouter()
 )
 async def generate_prediction(request: PredictionRequest) -> PredictionResponse:
     """
-    予想を生成
+    Generate prediction.
 
-    機械学習モデルを使用してレース予想を生成します。
-    データ集約、ML推論、DB保存を実行します。
+    Generates race predictions using machine learning models.
+    Performs data aggregation, ML inference, and database storage.
 
     Args:
-        request: 予想生成リクエスト
+        request: Prediction generation request.
 
     Returns:
-        PredictionResponse: 予想結果
+        PredictionResponse: Prediction result.
 
     Raises:
-        RaceNotFoundException: レースが見つからない
-        DatabaseErrorException: DB接続エラー
+        RaceNotFoundException: Race not found.
+        DatabaseErrorException: Database connection error.
     """
     logger.info(
         f"POST /predictions/generate: race_id={request.race_id}, is_final={request.is_final}"
@@ -59,7 +59,7 @@ async def generate_prediction(request: PredictionRequest) -> PredictionResponse:
         return response
 
     except ValueError as e:
-        # レースが見つからない
+        # Race not found
         logger.warning(f"Race not found: {e}")
         raise RaceNotFoundException(request.race_id) from e
     except Exception as e:
@@ -78,17 +78,17 @@ async def get_prediction(
     prediction_id: str = Path(..., description="予想ID（UUID）")
 ) -> PredictionResponse:
     """
-    保存済み予想を取得
+    Get saved prediction.
 
     Args:
-        prediction_id: 予想ID
+        prediction_id: Prediction ID.
 
     Returns:
-        PredictionResponse: 予想結果
+        PredictionResponse: Prediction result.
 
     Raises:
-        PredictionNotFoundException: 予想が見つからない
-        DatabaseErrorException: DB接続エラー
+        PredictionNotFoundException: Prediction not found.
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /predictions/{prediction_id}")
 
@@ -121,22 +121,22 @@ async def get_race_predictions(
     is_final: bool | None = Query(None, description="最終予想のみ取得（true/false）"),
 ) -> PredictionHistoryResponse:
     """
-    レースの予想履歴を取得
+    Get prediction history for a race.
 
     Args:
-        race_id: レースID（16桁）
-        is_final: 最終予想フラグでフィルタ（オプション）
+        race_id: Race ID (16 digits).
+        is_final: Filter by final prediction flag (optional).
 
     Returns:
-        PredictionHistoryResponse: 予想履歴
+        PredictionHistoryResponse: Prediction history.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /predictions/race/{race_id}?is_final={is_final}")
 
     try:
-        # get_predictions_by_race は既に PredictionHistoryItem のリストを返す
+        # get_predictions_by_race already returns a list of PredictionHistoryItem
         predictions = await prediction_service.get_predictions_by_race(race_id, is_final=is_final)
 
         response = PredictionHistoryResponse(race_id=race_id, predictions=predictions)

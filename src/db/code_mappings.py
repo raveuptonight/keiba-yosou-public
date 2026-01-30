@@ -1,13 +1,13 @@
 """
-JRA-VAN コードマッピング定義 (DEPRECATED)
+JRA-VAN Code Mapping Definitions (DEPRECATED)
 
-このファイルは後方互換性のために残されています。
-新しいコードでは src.db.code_master を使用してください。
+This file is kept for backward compatibility.
+For new code, use src.db.code_master instead.
 
-コードマスタテーブルから動的に値を取得するようになりました。
+Values are now dynamically retrieved from code master tables.
 """
 
-# 新しいcode_masterモジュールから関数をインポート
+# Import functions from new code_master module
 from src.db.code_master import (
     generate_race_condition_name,
     get_babajotai_name,
@@ -21,7 +21,7 @@ from src.db.code_master import (
     get_track_name,
 )
 
-# 後方互換性のため、__all__でエクスポート
+# Export for backward compatibility
 __all__ = [
     "get_keibajo_name",
     "get_grade_name",

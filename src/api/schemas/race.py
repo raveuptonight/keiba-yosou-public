@@ -1,5 +1,5 @@
 """
-レース関連のPydanticスキーマ
+Race-related Pydantic schemas.
 """
 
 from pydantic import BaseModel, Field
@@ -8,7 +8,7 @@ from src.api.schemas.common import PrizeMoneyResponse
 
 
 class RaceBase(BaseModel):
-    """レース基本情報"""
+    """Race basic information."""
 
     race_id: str = Field(..., min_length=16, max_length=16, description="レースID（16桁）")
     race_name: str = Field(..., description="レース名")
@@ -23,7 +23,7 @@ class RaceBase(BaseModel):
 
 
 class RaceEntry(BaseModel):
-    """レース出走馬情報"""
+    """Race entry (horse) information."""
 
     horse_number: int = Field(..., ge=1, le=18, description="馬番（1-18）")
     kettonum: str = Field(..., min_length=10, max_length=10, description="血統登録番号（10桁）")
@@ -44,7 +44,7 @@ class RaceEntry(BaseModel):
 
 
 class RaceResult(BaseModel):
-    """レース結果情報"""
+    """Race result information."""
 
     horse_number: int = Field(..., description="馬番")
     horse_name: str = Field(..., description="馬名")
@@ -56,7 +56,7 @@ class RaceResult(BaseModel):
 
 
 class PayoffInfo(BaseModel):
-    """払戻金情報"""
+    """Payoff information."""
 
     kumi: str = Field(..., description="組番（例: '5', '5-9', '5→9→4'）")
     payoff: int = Field(..., description="払戻金（円）")
@@ -64,7 +64,7 @@ class PayoffInfo(BaseModel):
 
 
 class RacePayoffs(BaseModel):
-    """レース払戻金"""
+    """Race payoffs."""
 
     win: PayoffInfo | None = Field(None, description="単勝")
     place: list[PayoffInfo] | None = Field(None, description="複勝")
@@ -77,7 +77,7 @@ class RacePayoffs(BaseModel):
 
 
 class RaceDetail(RaceBase):
-    """レース詳細情報"""
+    """Detailed race information."""
 
     track_condition: str | None = Field(None, description="馬場状態（良/稍/重/不）")
     weather: str | None = Field(None, description="天気（晴/曇/小雨/雨）")
@@ -92,7 +92,7 @@ class RaceDetail(RaceBase):
 
 
 class HorseInMatchup(BaseModel):
-    """対戦表内の馬情報"""
+    """Horse information within matchup table."""
 
     kettonum: str = Field(..., description="血統登録番号")
     name: str = Field(..., description="馬名")
@@ -101,7 +101,7 @@ class HorseInMatchup(BaseModel):
 
 
 class HeadToHeadRace(BaseModel):
-    """馬同士の過去対戦レース"""
+    """Past head-to-head race between horses."""
 
     race_id: str = Field(..., description="レースID")
     race_name: str = Field(..., description="レース名")
@@ -112,7 +112,7 @@ class HeadToHeadRace(BaseModel):
 
 
 class RaceListResponse(BaseModel):
-    """レース一覧レスポンス"""
+    """Race list response."""
 
     date: str | None = Field(None, description="レース日（YYYY-MM-DD）、複数日にまたがる場合はNone")
     races: list[RaceBase] = Field(..., description="レース一覧")

@@ -1,5 +1,5 @@
 """
-オッズ関連のPydanticスキーマ
+Odds-related Pydantic schemas.
 """
 
 from datetime import datetime
@@ -8,21 +8,21 @@ from pydantic import BaseModel, Field
 
 
 class SingleOdds(BaseModel):
-    """単一馬番オッズ（単勝・複勝等）"""
+    """Single horse number odds (win/place, etc.)."""
 
     horse_number: int = Field(..., ge=1, le=18, description="馬番（1-18）")
     odds: float = Field(..., ge=0.1, description="オッズ")
 
 
 class CombinationOdds(BaseModel):
-    """複数馬番組み合わせオッズ（馬連・3連複等）"""
+    """Multiple horse number combination odds (quinella/trio, etc.)."""
 
     numbers: list[int] = Field(..., min_length=2, description="馬番リスト")
     odds: float = Field(..., ge=0.1, description="オッズ")
 
 
 class OddsResponse(BaseModel):
-    """オッズ情報レスポンス"""
+    """Odds information response."""
 
     race_id: str = Field(..., min_length=16, max_length=16, description="レースID")
     ticket_type: str = Field(..., description="券種（win/place/quinella/exacta/trio/trifecta）")

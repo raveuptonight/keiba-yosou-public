@@ -1,12 +1,12 @@
 """
-騎手・調教師関連のPydanticスキーマ
+Jockey and trainer Pydantic schemas.
 """
 
 from pydantic import BaseModel, Field
 
 
 class JockeyBasicInfo(BaseModel):
-    """騎手基本情報"""
+    """Jockey basic information."""
 
     kishu_code: str = Field(..., description="騎手コード")
     name: str = Field(..., description="騎手名")
@@ -17,7 +17,7 @@ class JockeyBasicInfo(BaseModel):
 
 
 class OverallStats(BaseModel):
-    """通算成績"""
+    """Career statistics."""
 
     total_races: int = Field(..., ge=0, description="総騎乗数/出走数")
     wins: int = Field(..., ge=0, description="1着数")
@@ -29,7 +29,7 @@ class OverallStats(BaseModel):
 
 
 class SurfaceStats(BaseModel):
-    """馬場別成績"""
+    """Track surface statistics."""
 
     turf_races: int = Field(..., ge=0, description="芝出走数")
     turf_wins: int = Field(..., ge=0, description="芝勝利数")
@@ -40,7 +40,7 @@ class SurfaceStats(BaseModel):
 
 
 class DistanceCategoryStats(BaseModel):
-    """距離別成績"""
+    """Distance category statistics."""
 
     category: str = Field(..., description="距離カテゴリ")
     races: int = Field(..., ge=0, description="出走数")
@@ -49,7 +49,7 @@ class DistanceCategoryStats(BaseModel):
 
 
 class VenueStats(BaseModel):
-    """競馬場別成績"""
+    """Venue statistics."""
 
     venue: str = Field(..., description="競馬場名")
     venue_code: str = Field(..., description="競馬場コード")
@@ -59,7 +59,7 @@ class VenueStats(BaseModel):
 
 
 class TopJockey(BaseModel):
-    """主戦騎手情報"""
+    """Primary jockey information."""
 
     kishu_code: str = Field(..., description="騎手コード")
     jockey_name: str = Field(..., description="騎手名")
@@ -69,7 +69,7 @@ class TopJockey(BaseModel):
 
 
 class JockeyStats(BaseModel):
-    """騎手詳細統計"""
+    """Jockey detailed statistics."""
 
     basic_info: JockeyBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
@@ -79,7 +79,7 @@ class JockeyStats(BaseModel):
 
 
 class TrainerBasicInfo(BaseModel):
-    """調教師基本情報"""
+    """Trainer basic information."""
 
     chokyoshi_code: str = Field(..., description="調教師コード")
     name: str = Field(..., description="調教師名")
@@ -90,7 +90,7 @@ class TrainerBasicInfo(BaseModel):
 
 
 class TrainerStats(BaseModel):
-    """調教師詳細統計"""
+    """Trainer detailed statistics."""
 
     basic_info: TrainerBasicInfo = Field(..., description="基本情報")
     overall_stats: OverallStats = Field(..., description="通算成績")
@@ -101,7 +101,7 @@ class TrainerStats(BaseModel):
 
 
 class JockeySearchResult(BaseModel):
-    """騎手検索結果"""
+    """Jockey search result."""
 
     kishu_code: str = Field(..., description="騎手コード")
     name: str = Field(..., description="騎手名")
@@ -110,7 +110,7 @@ class JockeySearchResult(BaseModel):
 
 
 class TrainerSearchResult(BaseModel):
-    """調教師検索結果"""
+    """Trainer search result."""
 
     chokyoshi_code: str = Field(..., description="調教師コード")
     name: str = Field(..., description="調教師名")

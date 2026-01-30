@@ -1,5 +1,5 @@
 """
-統計情報関連のPydanticスキーマ
+Statistics-related Pydantic schemas.
 """
 
 from datetime import date
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class StatsBase(BaseModel):
-    """統計情報基本"""
+    """Base statistics information."""
 
     total_races: int = Field(..., ge=0, description="総出走数")
     wins: int = Field(..., ge=0, description="勝利数")
@@ -20,7 +20,7 @@ class StatsBase(BaseModel):
 
 
 class VenueStats(BaseModel):
-    """競馬場別統計"""
+    """Venue statistics."""
 
     venue: str = Field(..., description="競馬場名")
     races: int = Field(..., ge=0, description="出走数")
@@ -29,7 +29,7 @@ class VenueStats(BaseModel):
 
 
 class DistanceStats(BaseModel):
-    """距離別統計"""
+    """Distance statistics."""
 
     range: str = Field(..., description="距離範囲（例: '1200-1600'）")
     races: int = Field(..., ge=0, description="出走数")
@@ -38,7 +38,7 @@ class DistanceStats(BaseModel):
 
 
 class JockeyStatsResponse(BaseModel):
-    """騎手成績統計"""
+    """Jockey performance statistics."""
 
     jockey_code: str = Field(..., description="騎手コード")
     jockey_name: str = Field(..., description="騎手名")
@@ -49,7 +49,7 @@ class JockeyStatsResponse(BaseModel):
 
 
 class TrainerStatsResponse(BaseModel):
-    """調教師成績統計"""
+    """Trainer performance statistics."""
 
     trainer_code: str = Field(..., description="調教師コード")
     trainer_name: str = Field(..., description="調教師名")
@@ -60,7 +60,7 @@ class TrainerStatsResponse(BaseModel):
 
 
 class ROIHistory(BaseModel):
-    """ROI推移データ"""
+    """ROI history data."""
 
     race_date: date
     race_name: str

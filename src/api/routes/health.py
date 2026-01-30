@@ -1,5 +1,5 @@
 """
-ヘルスチェックエンドポイント
+Health check endpoints.
 """
 
 import logging
@@ -24,16 +24,16 @@ router = APIRouter()
 )
 async def health_check() -> HealthCheckResponse:
     """
-    ヘルスチェック
+    Health check.
 
-    APIサーバーの稼働状態、DB接続、Claude API状態を確認します。
+    Checks API server status, database connection, and Claude API status.
 
     Returns:
-        HealthCheckResponse: ヘルスチェック結果
+        HealthCheckResponse: Health check result.
     """
     logger.debug("Health check requested")
 
-    # DB接続チェック
+    # Database connection check
     db_status = "disconnected"
     try:
         if await test_connection():
@@ -45,11 +45,11 @@ async def health_check() -> HealthCheckResponse:
         logger.error(f"Database connection check failed: {e}")
         db_status = "error"
 
-    # Claude API状態チェック（現在は常にavailable）
-    # TODO: 実際のAPI状態をチェック
+    # Claude API status check (currently always available)
+    # TODO: Check actual API status
     claude_api_status = "available"
 
-    # ステータス判定
+    # Status determination
     overall_status = "ok" if db_status == "connected" else "degraded"
 
     response = HealthCheckResponse(

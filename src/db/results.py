@@ -1,7 +1,7 @@
 """
-予想結果データベース管理モジュール
+Prediction Results Database Management Module
 
-PostgreSQLのpredictionsスキーマに対する操作を提供する。
+Provides operations for the predictions schema in PostgreSQL.
 """
 
 from datetime import date
@@ -13,10 +13,10 @@ from src.db.connection import get_db
 
 
 class PredictionResultsDB:
-    """予想結果DB管理クラス"""
+    """Prediction results database management class."""
 
     def __init__(self):
-        """初期化"""
+        """Initialize."""
         self.db = get_db()
 
     def save_prediction(
@@ -33,22 +33,22 @@ class PredictionResultsDB:
         llm_model: str,
     ) -> int:
         """
-        予想を保存
+        Save a prediction.
 
         Args:
-            race_id: レースID
-            race_name: レース名
-            race_date: レース日
-            venue: 競馬場
-            analysis_result: 分析結果（dict）
-            prediction_result: 予想結果（dict）
-            total_investment: 総投資額
-            expected_return: 期待回収額
-            expected_roi: 期待ROI
-            llm_model: 使用LLMモデル
+            race_id: Race ID
+            race_name: Race name
+            race_date: Race date
+            venue: Racecourse
+            analysis_result: Analysis result (dict)
+            prediction_result: Prediction result (dict)
+            total_investment: Total investment amount
+            expected_return: Expected return amount
+            expected_roi: Expected ROI
+            llm_model: LLM model used
 
         Returns:
-            int: 挿入されたレコードのID
+            int: ID of the inserted record
         """
         conn = self.db.get_connection()
         try:
@@ -106,19 +106,19 @@ class PredictionResultsDB:
         reflection_result: dict[str, Any],
     ) -> int:
         """
-        レース結果を保存
+        Save race result.
 
         Args:
-            prediction_id: 予想ID
-            actual_result: 実際のレース結果（dict）
-            total_return: 実際の回収額
-            profit: 収支
-            actual_roi: 実際のROI
-            prediction_accuracy: 予想精度
-            reflection_result: 反省結果（dict）
+            prediction_id: Prediction ID
+            actual_result: Actual race result (dict)
+            total_return: Actual return amount
+            profit: Profit/loss
+            actual_roi: Actual ROI
+            prediction_accuracy: Prediction accuracy
+            reflection_result: Reflection result (dict)
 
         Returns:
-            int: 挿入されたレコードのID
+            int: ID of the inserted record
         """
         conn = self.db.get_connection()
         try:
@@ -155,13 +155,13 @@ class PredictionResultsDB:
 
     def get_prediction_by_race_id(self, race_id: str) -> dict[str, Any] | None:
         """
-        レースIDから予想を取得
+        Get prediction by race ID.
 
         Args:
-            race_id: レースID
+            race_id: Race ID
 
         Returns:
-            Dict or None: 予想レコード
+            Dict or None: Prediction record
         """
         conn = self.db.get_connection()
         try:
@@ -180,13 +180,13 @@ class PredictionResultsDB:
 
     def get_recent_predictions(self, limit: int = 10) -> list[dict[str, Any]]:
         """
-        最近の予想一覧を取得
+        Get recent predictions list.
 
         Args:
-            limit: 取得件数
+            limit: Number of records to retrieve
 
         Returns:
-            List[Dict]: 予想一覧
+            List[Dict]: List of predictions
         """
         conn = self.db.get_connection()
         try:
@@ -205,13 +205,13 @@ class PredictionResultsDB:
 
     def get_stats(self, period: str = "all") -> dict[str, Any] | None:
         """
-        統計情報を取得
+        Get statistics.
 
         Args:
-            period: 集計期間（daily/weekly/monthly/all）
+            period: Aggregation period (daily/weekly/monthly/all)
 
         Returns:
-            Dict or None: 統計情報
+            Dict or None: Statistics
         """
         conn = self.db.get_connection()
         try:
@@ -237,17 +237,17 @@ class PredictionResultsDB:
         end_date: date | None,
     ) -> None:
         """
-        統計情報を更新
+        Update statistics.
 
         Args:
-            period: 集計期間
-            start_date: 開始日
-            end_date: 終了日
+            period: Aggregation period
+            start_date: Start date
+            end_date: End date
         """
         conn = self.db.get_connection()
         try:
             with conn.cursor() as cur:
-                # 統計を計算
+                # Calculate statistics
                 cur.execute(
                     """
                     SELECT
@@ -277,7 +277,7 @@ class PredictionResultsDB:
                 )
                 stats = cur.fetchone()
 
-                # 統計を保存
+                # Save statistics
                 cur.execute(
                     """
                     INSERT INTO predictions.stats (
@@ -310,16 +310,16 @@ class PredictionResultsDB:
             conn.close()
 
 
-# グローバルインスタンス
+# Global instance
 _results_db: PredictionResultsDB | None = None
 
 
 def get_results_db() -> PredictionResultsDB:
     """
-    PredictionResultsDBのグローバルインスタンスを取得
+    Get global instance of PredictionResultsDB.
 
     Returns:
-        PredictionResultsDB: 予想結果DB管理オブジェクト
+        PredictionResultsDB: Prediction results database management object
     """
     global _results_db
     if _results_db is None:
@@ -328,18 +328,18 @@ def get_results_db() -> PredictionResultsDB:
 
 
 if __name__ == "__main__":
-    # 簡単な動作確認
-    print("=== 予想結果DB動作確認 ===")
+    # Simple operation check
+    print("=== Prediction Results DB Operation Check ===")
     db = get_results_db()
 
-    # 最近の予想を取得
+    # Get recent predictions
     recent = db.get_recent_predictions(limit=5)
-    print(f"最近の予想件数: {len(recent)}")
+    print(f"Recent prediction count: {len(recent)}")
 
-    # 統計情報を取得
+    # Get statistics
     stats = db.get_stats("all")
     if stats:
-        print(f"総レース数: {stats.get('total_races', 0)}")
-        print(f"回収率: {stats.get('roi', 0):.2f}%")
+        print(f"Total races: {stats.get('total_races', 0)}")
+        print(f"ROI: {stats.get('roi', 0):.2f}%")
     else:
-        print("統計情報なし")
+        print("No statistics")

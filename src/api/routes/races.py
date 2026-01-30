@@ -1,5 +1,5 @@
 """
-レース情報エンドポイント
+Race information endpoints.
 """
 
 import logging
@@ -70,11 +70,11 @@ def _get_race_name_with_fallback(
     kyoso_joken_code: str | None = None,
     kyoso_shubetsu_code: str | None = None,
 ) -> str:
-    """レース名が空の場合にフォールバック値を返す"""
+    """Return a fallback value if race name is empty."""
     if race_name and race_name.strip():
         return race_name.strip()
 
-    # レース名が空の場合、条件コードから生成
+    # Generate name from condition code if race name is empty
     from src.db.code_mappings import generate_race_condition_name
 
     condition_name = generate_race_condition_name(kyoso_joken_code, kyoso_shubetsu_code, grade_code)
@@ -82,14 +82,14 @@ def _get_race_name_with_fallback(
     if condition_name:
         return condition_name
 
-    # それでも生成できない場合
+    # Fallback if still unable to generate
     if grade_code in ["A", "B", "C", "D"]:
         return "重賞レース"
     return "条件戦"
 
 
 def _get_venue_name(venue_code: str) -> str:
-    """競馬場コードから名称を取得"""
+    """Get venue name from venue code."""
     venue_map = {
         "01": "札幌",
         "02": "函館",
@@ -106,7 +106,7 @@ def _get_venue_name(venue_code: str) -> str:
 
 
 def _get_grade_display(grade_code: str | None) -> str | None:
-    """グレードコードから表示名を取得"""
+    """Get display name from grade code."""
     if not grade_code:
         return None
     grade_map = {
@@ -124,7 +124,7 @@ def _get_grade_display(grade_code: str | None) -> str | None:
 
 
 def _format_track_code(track_code: str) -> str:
-    """馬場コードをフォーマット"""
+    """Format track code to display name."""
     if track_code.startswith("1"):
         return "芝"
     elif track_code.startswith("2"):
@@ -144,17 +144,17 @@ async def get_today_races(
     venue: str | None = Query(None, description="競馬場コード（01=札幌, 02=函館, etc.）"),
 ) -> RaceListResponse:
     """
-    今日のレース一覧を取得
+    Get today's race list.
 
     Args:
-        grade: グレードフィルタ（オプション）
-        venue: 競馬場コード（オプション）
+        grade: Grade filter (optional).
+        venue: Venue code (optional).
 
     Returns:
-        RaceListResponse: レース一覧
+        RaceListResponse: Race list.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /races/today: grade={grade}, venue={venue}")
 
@@ -162,10 +162,10 @@ async def get_today_races(
         async with get_connection() as conn:
             races_data = await get_races_today(conn, venue_code=venue, grade_filter=grade)
 
-            # レスポンス用に変換
+            # Convert to response format
             races = []
             for race in races_data:
-                # 出走頭数を取得
+                # Get entry count
                 await get_race_entry_count(conn, race[COL_RACE_ID])
 
                 races.append(
@@ -212,14 +212,14 @@ async def get_upcoming_races_list(
     grade: str | None = Query(None, description="グレードフィルタ（A=G1, B=G2, C=G3）"),
 ) -> RaceListResponse:
     """
-    今後のレース一覧を取得
+    Get upcoming race list.
 
     Args:
-        days: 何日先まで取得するか（デフォルト7日）
-        grade: グレードフィルタ（オプション）
+        days: Number of days ahead to fetch (default 7).
+        grade: Grade filter (optional).
 
     Returns:
-        RaceListResponse: レース一覧
+        RaceListResponse: Race list.
     """
     logger.info(f"GET /races/upcoming: days={days}, grade={grade}")
 
@@ -274,15 +274,15 @@ async def get_races_for_date(
     grade: str | None = Query(None, description="グレードフィルタ（A=G1, B=G2, C=G3）"),
 ) -> RaceListResponse:
     """
-    指定日のレース一覧を取得
+    Get race list for a specified date.
 
     Args:
-        target_date: 対象日（YYYY-MM-DD形式）
-        venue: 競馬場コード（オプション）
-        grade: グレードフィルタ（オプション）
+        target_date: Target date (YYYY-MM-DD format).
+        venue: Venue code (optional).
+        grade: Grade filter (optional).
 
     Returns:
-        RaceListResponse: レース一覧
+        RaceListResponse: Race list.
     """
     logger.info(f"GET /races/date/{target_date}: venue={venue}, grade={grade}")
 
@@ -342,17 +342,17 @@ async def get_race(
     race_id: str = Path(..., min_length=16, max_length=16, description="レースID（16桁）")
 ) -> RaceDetail:
     """
-    レース詳細情報を取得
+    Get race detail information.
 
     Args:
-        race_id: レースID（16桁）
+        race_id: Race ID (16 digits).
 
     Returns:
-        RaceDetail: レース詳細情報
+        RaceDetail: Race detail information.
 
     Raises:
-        RaceNotFoundException: レースが見つからない
-        DatabaseErrorException: DB接続エラー
+        RaceNotFoundException: Race not found.
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /races/{race_id}")
 
@@ -367,14 +367,14 @@ async def get_race(
             race = detail["race"]
             entries_data = detail["entries"]
 
-            # 出走馬情報を変換
+            # Convert entry information
             entries = []
             for entry in entries_data:
-                # 性別変換
+                # Sex conversion
                 sex_map = {"1": "牡", "2": "牝", "3": "騙"}
                 sex = sex_map.get(entry.get(COL_SEX), None)
 
-                # 前走情報を構築
+                # Build previous race information
                 last_race_str = None
                 if entry.get("last_venue_code") and entry.get("last_finish"):
                     last_venue = _get_venue_name(entry["last_venue_code"])
@@ -402,7 +402,7 @@ async def get_race(
                     )
                 )
 
-            # 賞金情報
+            # Prize money information
             prize_money = PrizeMoneyResponse(
                 first=race.get("honshokin1", 0),
                 second=race.get("honshokin2", 0),
@@ -411,10 +411,10 @@ async def get_race(
                 fifth=race.get("honshokin5", 0),
             )
 
-            # 馬場状態（芝またはダート）
+            # Track condition (turf or dirt)
             track_condition = race.get(COL_SHIBA_BABA_CD) or race.get(COL_DIRT_BABA_CD)
 
-            # レース日付を取得
+            # Get race date
             race_year = race.get(COL_KAISAI_YEAR)
             race_monthday = race.get(COL_KAISAI_MONTHDAY)
             race_date = None
@@ -424,12 +424,12 @@ async def get_race(
                 except (ValueError, IndexError):
                     pass
 
-            # 過去のレースかチェック（レース日 < 今日）
+            # Check if past race (race date < today)
             results_data = None
             payoffs_data = None
             lap_times_data = None
             if race_date and race_date < date.today():
-                # 結果と配当を取得
+                # Get results and payoffs
                 try:
                     results_raw = await get_race_results(conn, race_id)
                     if results_raw:
@@ -492,9 +492,9 @@ async def get_race(
                     lap_times_data = await get_race_lap_times(conn, race_id)
                 except Exception as e:
                     logger.warning(f"Failed to get race results/payoffs: {e}")
-                    # 結果・配当取得エラーでも、レース情報は返す
+                    # Return race info even if results/payoffs fetch fails
 
-            # 出走馬の過去対戦成績を取得
+            # Get head-to-head records for entered horses
             head_to_head_data = None
             try:
                 kettonums = [entry[COL_KETTONUM] for entry in entries_data]
@@ -522,7 +522,7 @@ async def get_race(
                         ]
             except Exception as e:
                 logger.warning(f"Failed to get head-to-head data: {e}")
-                # 対戦表取得エラーでも、レース情報は返す
+                # Return race info even if head-to-head fetch fails
 
             response = RaceDetail(
                 race_id=race[COL_RACE_ID],
@@ -573,19 +573,19 @@ async def search_races_by_name(
     limit: int = Query(20, ge=1, le=100, description="最大取得件数（1〜100）"),
 ) -> RaceListResponse:
     """
-    レース名で検索
+    Search races by name.
 
     Args:
-        query: レース名検索クエリ（部分一致）
-        days_before: 過去何日前まで検索するか
-        days_after: 未来何日先まで検索するか
-        limit: 最大取得件数
+        query: Race name search query (partial match).
+        days_before: Number of days before to search.
+        days_after: Number of days after to search.
+        limit: Maximum number of results.
 
     Returns:
-        RaceListResponse: マッチしたレース一覧
+        RaceListResponse: List of matching races.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(
         f"GET /races/search/name: query={query}, days_before={days_before}, days_after={days_after}"
@@ -620,7 +620,7 @@ async def search_races_by_name(
 
             logger.info(f"Found {len(races)} races matching '{query}'")
             return RaceListResponse(
-                date=None, races=races, count=len(races)  # 複数日付にまたがる可能性があるためNone
+                date=None, races=races, count=len(races)  # None because results may span multiple dates
             )
 
     except Exception as e:

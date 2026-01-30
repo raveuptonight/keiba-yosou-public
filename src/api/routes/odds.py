@@ -1,5 +1,5 @@
 """
-オッズ情報エンドポイント
+Odds information endpoints.
 """
 
 import logging
@@ -39,24 +39,24 @@ async def get_odds(
     ),
 ) -> OddsResponse:
     """
-    オッズ情報を取得
+    Get odds information.
 
     Args:
-        race_id: レースID（16桁）
-        ticket_type: 券種
+        race_id: Race ID (16 digits).
+        ticket_type: Ticket type.
 
     Returns:
-        OddsResponse: オッズ情報
+        OddsResponse: Odds information.
 
     Raises:
-        RaceNotFoundException: レースが見つからない
-        DatabaseErrorException: DB接続エラー
+        RaceNotFoundException: Race not found.
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /odds/{race_id}?ticket_type={ticket_type}")
 
     try:
         async with get_connection() as conn:
-            # レース存在チェック
+            # Check if race exists
             exists = await check_race_exists(conn, race_id)
             if not exists:
                 logger.warning(f"Race not found: {race_id}")
@@ -64,25 +64,25 @@ async def get_odds(
 
             odds_data: list[SingleOdds | CombinationOdds] = []
 
-            # 券種に応じてオッズを取得
+            # Get odds based on ticket type
             if ticket_type == "win":
-                # 単勝オッズ
+                # Win odds
                 win_place = await get_odds_win_place(conn, race_id)
                 odds_data = [
                     SingleOdds(horse_number=o["umaban"], odds=o["odds"]) for o in win_place["win"]
                 ]
 
             elif ticket_type == "place":
-                # 複勝オッズ
+                # Place odds
                 win_place = await get_odds_win_place(conn, race_id)
-                # 複勝は範囲があるため、中央値を返す
+                # Return median as place odds have a range
                 odds_data = [
                     SingleOdds(horse_number=o["umaban"], odds=(o["odds_min"] + o["odds_max"]) / 2)
                     for o in win_place["place"]
                 ]
 
             elif ticket_type == "quinella":
-                # 馬連オッズ
+                # Quinella odds
                 quinella = await get_odds_quinella(conn, race_id, limit=100)
                 odds_data = [
                     CombinationOdds(numbers=[o["umaban1"], o["umaban2"]], odds=o["odds"])
@@ -90,7 +90,7 @@ async def get_odds(
                 ]
 
             elif ticket_type == "exacta":
-                # 馬単オッズ
+                # Exacta odds
                 exacta = await get_odds_exacta(conn, race_id, limit=100)
                 odds_data = [
                     CombinationOdds(numbers=[o["umaban1"], o["umaban2"]], odds=o["odds"])
@@ -98,9 +98,9 @@ async def get_odds(
                 ]
 
             elif ticket_type == "wide":
-                # ワイドオッズ
+                # Wide odds
                 wide = await get_odds_wide(conn, race_id, limit=100)
-                # ワイドも範囲があるため、中央値を返す
+                # Return median as wide odds have a range
                 odds_data = [
                     CombinationOdds(
                         numbers=[o["umaban1"], o["umaban2"]],
@@ -110,7 +110,7 @@ async def get_odds(
                 ]
 
             elif ticket_type == "trio":
-                # 3連複オッズ
+                # Trio odds
                 trio = await get_odds_trio(conn, race_id, limit=100)
                 odds_data = [
                     CombinationOdds(
@@ -120,7 +120,7 @@ async def get_odds(
                 ]
 
             elif ticket_type == "trifecta":
-                # 3連単オッズ
+                # Trifecta odds
                 trifecta = await get_odds_trifecta(conn, race_id, limit=100)
                 odds_data = [
                     CombinationOdds(

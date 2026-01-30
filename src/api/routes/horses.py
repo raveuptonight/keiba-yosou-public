@@ -1,5 +1,5 @@
 """
-馬情報エンドポイント
+Horse information endpoints.
 """
 
 import logging
@@ -59,14 +59,14 @@ async def search_horses(
     limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[HorseSearchResult]:
     """
-    馬名で馬を検索
+    Search horses by name.
 
     Args:
-        name: 検索する馬名
-        limit: 取得件数上限
+        name: Horse name to search.
+        limit: Maximum number of results.
 
     Returns:
-        List[HorseSearchResult]: 検索結果リスト
+        List[HorseSearchResult]: Search result list.
     """
     logger.info(f"GET /horses/search: name={name}, limit={limit}")
 
@@ -78,7 +78,7 @@ async def search_horses(
             for row in results:
                 sex_map = {"1": "牡", "2": "牝", "3": "セ"}
 
-                # 生年月日を変換（'YYYYMMDD' -> date）
+                # Convert birth date ('YYYYMMDD' -> date)
                 birth_date_str = row.get("birth_date")
                 birth_date_val = None
                 if birth_date_str and len(str(birth_date_str)) >= 8:
@@ -96,7 +96,7 @@ async def search_horses(
                         birth_date=birth_date_val,
                         runs=row.get("runs", 0),
                         wins=row.get("wins", 0),
-                        prize=0,  # TODO: 賞金情報取得
+                        prize=0,  # TODO: Fetch prize money
                     )
                 )
 
@@ -109,7 +109,7 @@ async def search_horses(
 
 
 def _get_venue_name(venue_code: str) -> str:
-    """競馬場コードから名称を取得"""
+    """Get venue name from venue code."""
     venue_map = {
         "01": "札幌",
         "02": "函館",
@@ -126,13 +126,13 @@ def _get_venue_name(venue_code: str) -> str:
 
 
 def _get_sex_name(sex_code: str) -> str:
-    """性別コードから名称を取得"""
+    """Get sex name from sex code."""
     sex_map = {"1": "牡", "2": "牝", "3": "騙"}
     return sex_map.get(sex_code, "不明")
 
 
 def _get_color_name(color_code: str) -> str:
-    """毛色コードから名称を取得"""
+    """Get coat color name from color code."""
     color_map = {
         "1": "鹿毛",
         "2": "栗毛",
@@ -148,7 +148,7 @@ def _get_color_name(color_code: str) -> str:
 
 
 def _get_affiliation(tozai_code: str) -> str:
-    """所属コードから名称を取得"""
+    """Get affiliation name from tozai code."""
     affiliation_map = {"1": "美浦", "2": "栗東"}
     return affiliation_map.get(tozai_code, "不明")
 
@@ -165,18 +165,18 @@ async def get_horse(
     history_limit: int = Query(10, ge=1, le=50, description="過去成績取得件数（デフォルト: 10）"),
 ) -> HorseDetail:
     """
-    馬の詳細情報を取得
+    Get horse detail information.
 
     Args:
-        kettonum: 血統登録番号（10桁）
-        history_limit: 過去成績取得件数
+        kettonum: Pedigree registration number (10 digits).
+        history_limit: Number of past race records to fetch.
 
     Returns:
-        HorseDetail: 馬の詳細情報
+        HorseDetail: Horse detail information.
 
     Raises:
-        HorseNotFoundException: 馬が見つからない
-        DatabaseErrorException: DB接続エラー
+        HorseNotFoundException: Horse not found.
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /horses/{kettonum} (history_limit={history_limit})")
 
@@ -192,14 +192,14 @@ async def get_horse(
             recent_races_data = detail.get("recent_races", [])
             pedigree_data = detail.get("pedigree", {})
 
-            # 調教師情報
+            # Trainer information
             trainer = Trainer(
                 code=horse_info.get(COL_CHOKYOSICODE, "不明"),
                 name=horse_info.get(COL_CHOKYOSI_NAME, "不明"),
                 affiliation=_get_affiliation(horse_info.get("tozai_code", "1")),
             )
 
-            # 血統情報
+            # Pedigree information
             pedigree = Pedigree(
                 sire=pedigree_data.get("chichi_name", "不明"),
                 dam=pedigree_data.get("haha_name", "不明"),
@@ -209,15 +209,15 @@ async def get_horse(
                 dam_dam=pedigree_data.get("haha_haha_name", "不明"),
             )
 
-            # 過去成績
+            # Past race records
             recent_races = []
             for race in recent_races_data:
-                # 日付フォーマット
+                # Date format
                 race_year = race[COL_KAISAI_YEAR]
                 race_monthday = race[COL_KAISAI_MONTHDAY]
                 race_date = date(int(race_year), int(race_monthday[:2]), int(race_monthday[2:]))
 
-                # 調教データを取得（レース前14日以内）
+                # Get training data (within 14 days before race)
                 race_date_str = f"{race_year}{race_monthday}"
                 training_data = await get_training_before_race(
                     conn, kettonum, race_date_str, days_before=14
@@ -242,8 +242,8 @@ async def get_horse(
                         track_condition=race.get("baba_jotai", "不明"),
                         finish_position=race[COL_KAKUTEI_CHAKUJUN],
                         time=race.get(COL_TIME, "不明"),
-                        time_diff=race.get("time_sa"),  # 勝ち馬とのタイム差
-                        winner_name=race.get("winner_name"),  # 勝ち馬名
+                        time_diff=race.get("time_sa"),  # Time difference from winner
+                        winner_name=race.get("winner_name"),  # Winner name
                         jockey=race.get(COL_KISYU_NAME, "不明"),
                         weight=float(race.get("futan", 0)) / 10.0,
                         horse_weight=race.get("bataiju"),
@@ -253,7 +253,7 @@ async def get_horse(
                     )
                 )
 
-            # 通算成績を計算（総合成績から）
+            # Calculate career record (from overall stats)
             sogo_1 = int(horse_info.get("sogo_1chaku", "0") or "0")
             sogo_2 = int(horse_info.get("sogo_2chaku", "0") or "0")
             sogo_3 = int(horse_info.get("sogo_3chaku", "0") or "0")
@@ -265,11 +265,11 @@ async def get_horse(
             wins = sogo_1
             win_rate = wins / total_races if total_races > 0 else 0.0
 
-            # 通算獲得賞金（クエリで計算済み）
+            # Total prize money (already calculated in query)
             total_prize_money = horse_info.get("total_prize_money", 0) or 0
 
-            # 生年月日を変換
-            birth_date_val = date(2000, 1, 1)  # デフォルト値
+            # Convert birth date
+            birth_date_val = date(2000, 1, 1)  # Default value
             birth_date_str = horse_info.get(COL_BIRTH_DATE)
             if birth_date_str:
                 try:
@@ -278,10 +278,10 @@ async def get_horse(
                 except (ValueError, IndexError):
                     pass
 
-            # 調教データを変換
+            # Convert training data
             training_data = detail.get("training", [])
             training_records = []
-            for t in training_data[:5]:  # 直近5件
+            for t in training_data[:5]:  # Latest 5 records
                 training_records.append(
                     TrainingRecord(
                         training_type=t.get("training_type", "unknown"),
@@ -306,7 +306,7 @@ async def get_horse(
                 wins=wins,
                 win_rate=win_rate,
                 prize_money=total_prize_money,
-                running_style=None,  # TODO: 脚質判定ロジックを追加
+                running_style=None,  # TODO: Add running style determination logic
                 pedigree=pedigree,
                 recent_races=recent_races,
                 training=training_records,
@@ -334,17 +334,17 @@ async def get_horse_training(
     days_back: int = Query(30, ge=7, le=90, description="何日前まで取得するか（7〜90日）"),
 ) -> list[TrainingData]:
     """
-    馬の調教データを取得
+    Get horse training data.
 
     Args:
-        kettonum: 血統登録番号（10桁）
-        days_back: 何日前まで取得するか
+        kettonum: Pedigree registration number (10 digits).
+        days_back: Number of days back to fetch.
 
     Returns:
-        List[TrainingData]: 調教データリスト
+        List[TrainingData]: Training data list.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /horses/{kettonum}/training: days_back={days_back}")
 

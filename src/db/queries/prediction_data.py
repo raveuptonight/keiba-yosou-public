@@ -1,8 +1,9 @@
 """
-予想データ集約クエリモジュール
+Prediction Data Aggregation Query Module.
 
-予想生成に必要な全データを27テーブルから効率的に集約するクエリ群
-API_DESIGN.mdの「データ集約クエリ」セクションに基づいて実装
+Query functions for efficiently aggregating all data needed for prediction
+generation from 27 tables. Implementation based on the "Data Aggregation Query"
+section in API_DESIGN.md.
 """
 
 import logging
@@ -30,39 +31,40 @@ logger = logging.getLogger(__name__)
 
 async def get_race_prediction_data(conn: Connection, race_id: str) -> dict[str, Any]:
     """
-    予想生成に必要な全データを集約
+    Aggregate all data needed for prediction generation.
 
-    27テーブルからレース予想に必要な全情報を一括取得します。
-    API_DESIGN.mdの「データ集約クエリ」セクションに記載された処理フローに従います。
+    Retrieves all information needed for race prediction from 27 tables.
+    Follows the processing flow described in the "Data Aggregation Query"
+    section of API_DESIGN.md.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
         {
-            "race": {...},           # レース基本情報（RA）
-            "horses": [...],         # 出走馬情報（SE, UM）
-            "histories": {...},      # 各馬の過去10走（SE + RA）
-            "pedigrees": {...},      # 血統情報（SK, HN）
-            "training": {...},       # 調教情報（HC, WC）
-            "statistics": {...},     # 着度数統計（CK）
-            "odds": {...}            # オッズ情報（O1-O6）
+            "race": {...},           # Race basic info (RA)
+            "horses": [...],         # Entry info (SE, UM)
+            "histories": {...},      # Past 10 races per horse (SE + RA)
+            "pedigrees": {...},      # Pedigree info (SK, HN)
+            "training": {...},       # Training info (HC, WC)
+            "statistics": {...},     # Finish position stats (CK)
+            "odds": {...}            # Odds info (O1-O6)
         }
 
     Raises:
-        ValueError: レースが見つからない場合
+        ValueError: If race is not found.
     """
     logger.info(f"Starting data aggregation for race_id={race_id}")
 
-    # 1. レース基本情報取得（RA）
+    # 1. Get race basic info (RA)
     race_info = await get_race_info(conn, race_id)
     if not race_info:
         raise ValueError(f"Race not found: race_id={race_id}")
 
     logger.debug(f"Race info retrieved: {race_info[COL_RACE_NAME]}")
 
-    # 2. 出走馬一覧取得（SE, UM, KS, CH, O1）
+    # 2. Get entry list (SE, UM, KS, CH, O1)
     horses = await get_race_entries(conn, race_id)
     if not horses:
         logger.warning(f"No horses found for race_id={race_id}")
@@ -78,29 +80,29 @@ async def get_race_prediction_data(conn: Connection, race_id: str) -> dict[str, 
 
     logger.debug(f"Found {len(horses)} horses")
 
-    # 3. 血統登録番号リストを抽出
+    # 3. Extract pedigree registration number list
     kettonums = [horse[COL_KETTONUM] for horse in horses]
 
     logger.debug(f"Extracted {len(kettonums)} kettonums")
 
-    # 4. 並列データ取得（各馬の詳細データ）
-    # 4.1 過去成績（SE + RA: 過去10走）
+    # 4. Parallel data retrieval (detailed data for each horse)
+    # 4.1 Past race history (SE + RA: last 10 races)
     logger.debug("Fetching horse histories...")
     histories = await get_horses_recent_races(conn, kettonums, limit=10)
 
-    # 4.2 血統情報（SK, HN）
+    # 4.2 Pedigree info (SK, HN)
     logger.debug("Fetching pedigrees...")
     pedigrees = await get_horses_pedigree(conn, kettonums)
 
-    # 4.3 調教情報（HC, WC: 最新1ヶ月）
+    # 4.3 Training info (HC, WC: last month)
     logger.debug("Fetching training data...")
     training = await get_horses_training(conn, kettonums, days_back=30)
 
-    # 4.4 着度数統計（CK）
+    # 4.4 Finish position stats (CK)
     logger.debug("Fetching statistics...")
     statistics = await get_horses_statistics(conn, race_id, kettonums)
 
-    # 5. オッズ情報取得（O1-O6）
+    # 5. Get odds info (O1-O6)
     logger.debug("Fetching odds data...")
     odds = await get_race_odds(conn, race_id)
 
@@ -121,14 +123,14 @@ async def get_multiple_races_prediction_data(
     conn: Connection, race_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
     """
-    複数レースの予想データを一括取得
+    Batch retrieve prediction data for multiple races.
 
     Args:
-        conn: データベース接続
-        race_ids: レースIDのリスト
+        conn: Database connection.
+        race_ids: List of race IDs.
 
     Returns:
-        Dict[race_id, 予想データ]
+        Dict[race_id, prediction_data]
     """
     result = {}
 
@@ -148,25 +150,25 @@ async def get_multiple_races_prediction_data(
 
 async def get_race_prediction_data_slim(conn: Connection, race_id: str) -> dict[str, Any]:
     """
-    予想データの軽量版を取得（過去成績を5走に制限）
+    Get lightweight version of prediction data (limited to 5 past races).
 
-    朝予想など、データ量を抑えたい場合に使用します。
+    Used when data volume needs to be reduced, such as for morning predictions.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        予想データ（histories は各馬5走まで）
+        Prediction data (histories limited to 5 races per horse).
     """
     logger.info(f"Starting slim data aggregation for race_id={race_id}")
 
-    # レース基本情報
+    # Race basic info
     race_info = await get_race_info(conn, race_id)
     if not race_info:
         raise ValueError(f"Race not found: race_id={race_id}")
 
-    # 出走馬一覧
+    # Entry list
     horses = await get_race_entries(conn, race_id)
     if not horses:
         return {
@@ -183,19 +185,19 @@ async def get_race_prediction_data_slim(conn: Connection, race_id: str) -> dict[
 
     kettonums = [horse[COL_KETTONUM] for horse in horses]
 
-    # 過去成績は5走まで
+    # Race history limited to 5 races
     histories = await get_horses_recent_races(conn, kettonums, limit=5)
 
-    # 血統情報
+    # Pedigree info
     pedigrees = await get_horses_pedigree(conn, kettonums)
 
-    # 調教情報（最新3本まで）
+    # Training info (up to 3 latest sessions)
     training = await get_horses_training(conn, kettonums, days_back=14)
 
-    # 着度数統計
+    # Finish position stats
     statistics = await get_horses_statistics(conn, race_id, kettonums)
 
-    # オッズ情報（単勝・複勝のみ）
+    # Odds info (win and place only)
     odds = await get_race_odds(conn, race_id, ticket_types=["win", "place"])
 
     logger.info(f"Slim data aggregation completed for race_id={race_id}")
@@ -213,10 +215,10 @@ async def get_race_prediction_data_slim(conn: Connection, race_id: str) -> dict[
 
 async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
     """
-    予想データの整合性をチェック
+    Check prediction data integrity.
 
     Args:
-        data: get_race_prediction_data() の返り値
+        data: Return value from get_race_prediction_data().
 
     Returns:
         {
@@ -235,41 +237,41 @@ async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
 
     from src.db.table_names import COL_BAMEI, COL_KETTONUM
 
-    # 出走馬がいるかチェック
+    # Check if there are any entries
     if not data.get("horses"):
         warnings.append("No horses found")
         return {"is_valid": False, "warnings": warnings, "missing_data": missing_data}
 
-    # 各馬のデータ完全性チェック
+    # Check data completeness for each horse
     for horse in data["horses"]:
         kettonum = horse[COL_KETTONUM]
         horse_name = horse[COL_BAMEI]
 
-        # 過去成績がない馬
+        # Horse with no race history
         if kettonum not in data["histories"] or not data["histories"][kettonum]:
             missing_data["histories"].append(horse_name)
             warnings.append(f"No race history for {horse_name}")
 
-        # 血統情報がない馬
+        # Horse with no pedigree info
         if kettonum not in data["pedigrees"]:
             missing_data["pedigrees"].append(horse_name)
             warnings.append(f"No pedigree data for {horse_name}")
 
-        # 調教情報がない馬
+        # Horse with no training info
         if kettonum not in data["training"] or not data["training"][kettonum]:
             missing_data["training"].append(horse_name)
             warnings.append(f"No training data for {horse_name}")
 
-        # 着度数統計がない馬
+        # Horse with no finish position stats
         if kettonum not in data["statistics"]:
             missing_data["statistics"].append(horse_name)
             warnings.append(f"No statistics data for {horse_name}")
 
-    # オッズ情報がない場合
+    # No odds info available
     if not data.get("odds") or not data["odds"].get("win"):
         warnings.append("No odds data available")
 
-    # 警告があってもデータ取得自体は成功とみなす
+    # Data retrieval is considered successful even with warnings
     is_valid = len(data["horses"]) > 0
 
     return {"is_valid": is_valid, "warnings": warnings, "missing_data": missing_data}
@@ -277,10 +279,10 @@ async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
 
 async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
     """
-    予想データのサマリー情報を生成
+    Generate summary information for prediction data.
 
     Args:
-        data: get_race_prediction_data() の返り値
+        data: Return value from get_race_prediction_data().
 
     Returns:
         {
@@ -323,7 +325,7 @@ async def get_prediction_data_summary(data: dict[str, Any]) -> dict[str, Any]:
             },
         }
 
-    # データ完全性の計算
+    # Calculate data completeness
     kettonums = [h[COL_KETTONUM] for h in horses]
 
     histories_count = sum(

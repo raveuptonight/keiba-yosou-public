@@ -1,7 +1,8 @@
 """
-馬情報取得クエリモジュール
+Horse Information Query Module.
 
-馬の基本情報、過去成績、血統情報、調教情報などを取得するクエリ群
+Query functions for retrieving horse basic information, race history,
+pedigree information, and training data.
 """
 
 import logging
@@ -54,14 +55,14 @@ logger = logging.getLogger(__name__)
 
 async def get_horse_info(conn: Connection, kettonum: str) -> dict[str, Any] | None:
     """
-    馬の基本情報を取得
+    Get horse basic information.
 
     Args:
-        conn: データベース接続
-        kettonum: 血統登録番号（10桁）
+        conn: Database connection.
+        kettonum: Pedigree registration number (10 digits).
 
     Returns:
-        馬情報のdict、見つからない場合はNone
+        Horse information dict, or None if not found.
     """
     sql = f"""
         SELECT
@@ -89,7 +90,7 @@ async def get_horse_info(conn: Connection, kettonum: str) -> dict[str, Any] | No
             u.sogo_4chaku,
             u.sogo_5chaku,
             u.sogo_chakugai,
-            -- 賞金合計を計算（カラムがcharacter型の場合に対応）
+            -- Calculate total prize money (handles character type columns)
             COALESCE(NULLIF(u.heichi_honshokin_ruikei, '')::bigint, 0) +
             COALESCE(NULLIF(u.shogai_honshokin_ruikei, '')::bigint, 0) +
             COALESCE(NULLIF(u.heichi_fukashokin_ruikei, '')::bigint, 0) +
@@ -113,17 +114,17 @@ async def get_horses_recent_races(
     conn: Connection, kettonums: list[str], limit: int = 10
 ) -> dict[str, list[dict[str, Any]]]:
     """
-    複数の馬の過去成績を一括取得（直近N走）
+    Batch retrieve recent race history for multiple horses (last N races).
 
     Args:
-        conn: データベース接続
-        kettonums: 血統登録番号のリスト
-        limit: 各馬の取得走数（デフォルト: 10）
+        conn: Database connection.
+        kettonums: List of pedigree registration numbers.
+        limit: Number of races to retrieve per horse (default: 10).
 
     Returns:
-        Dict[kettonum, 過去成績リスト]
+        Dict[kettonum, list of past race results]
     """
-    # 10年以内のデータに絞り込み
+    # Filter to data within the last 10 years
     cutoff_year = str(date.today().year - ML_TRAINING_YEARS_BACK)
 
     sql = f"""
@@ -181,7 +182,7 @@ async def get_horses_recent_races(
     try:
         rows = await conn.fetch(sql, kettonums, DATA_KUBUN_KAKUTEI, cutoff_year, limit)
 
-        # kettonum ごとにグループ化
+        # Group by kettonum
         result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
@@ -199,15 +200,15 @@ async def get_horse_recent_races(
     conn: Connection, kettonum: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
-    単一馬の過去成績を取得（直近N走）
+    Get recent race history for a single horse (last N races).
 
     Args:
-        conn: データベース接続
-        kettonum: 血統登録番号（10桁）
-        limit: 取得走数（デフォルト: 10）
+        conn: Database connection.
+        kettonum: Pedigree registration number (10 digits).
+        limit: Number of races to retrieve (default: 10).
 
     Returns:
-        過去成績のリスト
+        List of past race results.
     """
     result = await get_horses_recent_races(conn, [kettonum], limit)
     return result.get(kettonum, [])
@@ -215,14 +216,14 @@ async def get_horse_recent_races(
 
 async def get_horses_pedigree(conn: Connection, kettonums: list[str]) -> dict[str, dict[str, Any]]:
     """
-    複数の馬の血統情報を一括取得
+    Batch retrieve pedigree information for multiple horses.
 
     Args:
-        conn: データベース接続
-        kettonums: 血統登録番号のリスト
+        conn: Database connection.
+        kettonums: List of pedigree registration numbers.
 
     Returns:
-        Dict[kettonum, 血統情報dict]
+        Dict[kettonum, pedigree_info_dict]
     """
     sql = f"""
         SELECT
@@ -258,7 +259,7 @@ async def get_horses_pedigree(conn: Connection, kettonums: list[str]) -> dict[st
     try:
         rows = await conn.fetch(sql, kettonums)
 
-        # kettonum ごとに辞書化
+        # Convert to dict by kettonum
         result: dict[str, dict[str, Any]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
@@ -274,22 +275,22 @@ async def get_horses_training(
     conn: Connection, kettonums: list[str], days_back: int = 30
 ) -> dict[str, list[dict[str, Any]]]:
     """
-    複数の馬の調教情報を一括取得（直近N日分）
+    Batch retrieve training information for multiple horses (last N days).
 
     Args:
-        conn: データベース接続
-        kettonums: 血統登録番号のリスト
-        days_back: 何日前まで取得するか（デフォルト: 30日）
+        conn: Database connection.
+        kettonums: List of pedigree registration numbers.
+        days_back: Number of days back to retrieve (default: 30 days).
 
     Returns:
-        Dict[kettonum, 調教情報リスト]
+        Dict[kettonum, list of training info]
     """
     cutoff_date = (date.today() - timedelta(days=days_back)).strftime("%Y%m%d")
 
-    # 坂路調教（HC）とウッド調教（WC）を統合
+    # Combine slope training (HC) and wood chip training (WC)
     sql = f"""
         WITH combined_training AS (
-            -- 坂路調教
+            -- Slope training
             SELECT
                 ketto_toroku_bango,
                 chokyo_nengappi,
@@ -307,7 +308,7 @@ async def get_horses_training(
 
             UNION ALL
 
-            -- ウッド調教
+            -- Wood chip training
             SELECT
                 ketto_toroku_bango,
                 chokyo_nengappi,
@@ -341,7 +342,7 @@ async def get_horses_training(
     try:
         rows = await conn.fetch(sql, kettonums, cutoff_date)
 
-        # kettonum ごとにグループ化
+        # Group by kettonum
         result: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             kettonum = row["ketto_toroku_bango"]
@@ -359,15 +360,15 @@ async def get_horses_statistics(
     conn: Connection, race_id: str, kettonums: list[str]
 ) -> dict[str, dict[str, Any]]:
     """
-    複数の馬の着度数統計を一括取得
+    Batch retrieve finish position statistics for multiple horses.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        kettonums: 血統登録番号のリスト
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        kettonums: List of pedigree registration numbers.
 
     Returns:
-        Dict[kettonum, 着度数統計dict]
+        Dict[kettonum, finish_position_stats_dict]
     """
     sql = f"""
         SELECT
@@ -386,7 +387,7 @@ async def get_horses_statistics(
     try:
         rows = await conn.fetch(sql, race_id, kettonums)
 
-        # kettonum ごとに辞書化
+        # Convert to dict by kettonum
         result: dict[str, dict[str, Any]] = {}
         for row in rows:
             kettonum = row[COL_KETTONUM]
@@ -394,7 +395,7 @@ async def get_horses_statistics(
 
         return result
     except Exception as e:
-        # 統計テーブルが存在しない場合は空の辞書を返す
+        # Return empty dict if statistics table doesn't exist
         logger.warning(f"Statistics not available: race_id={race_id}, error={e}")
         return {}
 
@@ -403,29 +404,29 @@ async def get_horse_detail(
     conn: Connection, kettonum: str, history_limit: int = 10
 ) -> dict[str, Any] | None:
     """
-    馬の詳細情報を取得（基本情報+過去成績+血統）
+    Get horse detailed information (basic info + race history + pedigree).
 
     Args:
-        conn: データベース接続
-        kettonum: 血統登録番号（10桁）
-        history_limit: 過去成績の取得件数（デフォルト: 10）
+        conn: Database connection.
+        kettonum: Pedigree registration number (10 digits).
+        history_limit: Number of past races to retrieve (default: 10).
 
     Returns:
-        馬の詳細情報のdict、見つからない場合はNone
+        Horse detail dict, or None if not found.
     """
-    # 基本情報
+    # Basic info
     horse_info = await get_horse_info(conn, kettonum)
     if not horse_info:
         return None
 
-    # 過去成績
+    # Race history
     recent_races = await get_horse_recent_races(conn, kettonum, history_limit)
 
-    # 血統情報
+    # Pedigree info
     pedigree_dict = await get_horses_pedigree(conn, [kettonum])
     pedigree = pedigree_dict.get(kettonum)
 
-    # 調教情報
+    # Training info
     training_dict = await get_horses_training(conn, [kettonum])
     training = training_dict.get(kettonum, [])
 
@@ -440,14 +441,14 @@ async def get_horse_detail(
 
 async def check_horse_exists(conn: Connection, kettonum: str) -> bool:
     """
-    馬が存在するかチェック
+    Check if a horse exists.
 
     Args:
-        conn: データベース接続
-        kettonum: 血統登録番号（10桁）
+        conn: Database connection.
+        kettonum: Pedigree registration number (10 digits).
 
     Returns:
-        存在する場合True、しない場合False
+        True if horse exists, False otherwise.
     """
     sql = f"""
         SELECT EXISTS(
@@ -468,17 +469,17 @@ async def search_horses_by_name(
     conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
-    馬名で馬を検索
+    Search horses by name.
 
     Args:
-        conn: データベース接続
-        name: 馬名（部分一致）
-        limit: 取得件数上限
+        conn: Database connection.
+        name: Horse name (partial match).
+        limit: Maximum number of results.
 
     Returns:
-        馬情報のリスト
+        List of horse information.
     """
-    # kyosoba_master2の実カラム名を直接使用
+    # Use actual column names from kyosoba_master2
     sql = f"""
         SELECT
             u.ketto_toroku_bango,
@@ -505,7 +506,7 @@ async def search_horses_by_name(
     """
 
     try:
-        # 部分一致検索のパターン
+        # Pattern for partial match search
         search_pattern = f"%{name}%"
         rows = await conn.fetch(sql, search_pattern, limit)
 
@@ -534,29 +535,29 @@ async def get_training_before_race(
     conn: Connection, kettonum: str, race_date: str, days_before: int = 14
 ) -> dict[str, Any] | None:
     """
-    レース前の直近調教データを取得
+    Get training data before a race.
 
     Args:
-        conn: データベース接続
-        kettonum: 血統登録番号
-        race_date: レース日（YYYYMMDD形式）
-        days_before: 何日前まで遡るか（デフォルト: 14日）
+        conn: Database connection.
+        kettonum: Pedigree registration number.
+        race_date: Race date (YYYYMMDD format).
+        days_before: Number of days to look back (default: 14 days).
 
     Returns:
-        調教データ（坂路またはウッドチップ）
+        Training data (slope or wood chip).
     """
     try:
-        # race_dateをdate型に変換
+        # Convert race_date to date type
         race_year = int(race_date[:4])
         race_month = int(race_date[4:6])
         race_day = int(race_date[6:8])
         race_dt = date(race_year, race_month, race_day)
 
-        # 検索開始日
+        # Search start date
         start_date = race_dt - timedelta(days=days_before)
         start_date_str = start_date.strftime("%Y%m%d")
 
-        # 坂路調教データを検索
+        # Search slope training data
         hanro_sql = f"""
             SELECT
                 chokyo_nengappi as training_date,
@@ -576,7 +577,7 @@ async def get_training_before_race(
             hanro_sql, kettonum, start_date_str, race_date, DATA_KUBUN_KAKUTEI
         )
 
-        # ウッドチップ調教データを検索
+        # Search wood chip training data
         wood_sql = f"""
             SELECT
                 chokyo_nengappi as training_date,
@@ -596,7 +597,7 @@ async def get_training_before_race(
             wood_sql, kettonum, start_date_str, race_date, DATA_KUBUN_KAKUTEI
         )
 
-        # より新しい方を返す
+        # Return the more recent one
         if hanro_row and wood_row:
             if hanro_row["training_date"] >= wood_row["training_date"]:
                 return dict(hanro_row)

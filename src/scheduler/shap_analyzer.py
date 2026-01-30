@@ -1,10 +1,10 @@
 """
-SHAP分析モジュール
+SHAP Analysis Module
 
-週末レースの予想結果を分析し、特徴量の寄与度を可視化する
-- 的中/外れ別の特徴量重要度比較
-- 過大評価/過小評価パターンの検出
-- 週次分析レポート生成
+Analyzes weekend race prediction results and visualizes feature contributions.
+- Compares feature importance between hits and misses
+- Detects overestimation/underestimation patterns
+- Generates weekly analysis reports
 """
 
 import json
@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 class ShapAnalyzer:
-    """SHAP値による予想分析"""
+    """Prediction analysis using SHAP values."""
 
     def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl"):
         self.model_path = model_path
@@ -42,12 +42,12 @@ class ShapAnalyzer:
         self._load_model()
 
     def _load_model(self):
-        """モデルを読み込み"""
+        """Load the model."""
         try:
             model_data = joblib.load(self.model_path)
             models_dict = model_data.get("models", {})
 
-            # 回帰モデル取得
+            # Get regression models
             if "xgb_regressor" in models_dict:
                 self.xgb_model = models_dict["xgb_regressor"]
                 self.lgb_model = models_dict.get("lgb_regressor")
@@ -59,19 +59,19 @@ class ShapAnalyzer:
                 self.lgb_model = models_dict.get("lightgbm")
 
             self.feature_names = model_data.get("feature_names", [])
-            logger.info(f"モデル読み込み完了: {len(self.feature_names)}特徴量")
+            logger.info(f"Model loaded: {len(self.feature_names)} features")
 
-            # SHAP Explainerを初期化（XGBoostを使用）
+            # Initialize SHAP Explainer (using XGBoost)
             if SHAP_AVAILABLE and self.xgb_model is not None:
                 self.explainer = shap.TreeExplainer(self.xgb_model)
-                logger.info("SHAP TreeExplainer初期化完了")
+                logger.info("SHAP TreeExplainer initialized")
 
         except Exception as e:
-            logger.error(f"モデル読み込み失敗: {e}")
+            logger.error(f"Model loading failed: {e}")
             raise
 
     def get_recent_race_dates(self, days_back: int = 7) -> list[date]:
-        """直近のレース日（予想データがある日）を取得"""
+        """Get recent race dates (dates with prediction data)."""
         db = get_db()
         conn = db.get_connection()
 
@@ -94,7 +94,7 @@ class ShapAnalyzer:
             conn.close()
 
     def get_predictions_from_db(self, target_date: date) -> list[dict]:
-        """DBから予想データを取得（レースごとに最新の予想のみ）"""
+        """Get prediction data from DB (only latest prediction per race)."""
         db = get_db()
         conn = db.get_connection()
 
@@ -134,14 +134,14 @@ class ShapAnalyzer:
                 )
 
             cur.close()
-            logger.info(f"予想データ取得: {len(predictions)}レース ({target_date})")
+            logger.info(f"Prediction data retrieved: {len(predictions)} races ({target_date})")
             return predictions
 
         finally:
             conn.close()
 
     def get_race_results(self, target_date: date) -> dict[str, dict]:
-        """レース結果を取得"""
+        """Get race results."""
         db = get_db()
         conn = db.get_connection()
 
@@ -186,7 +186,7 @@ class ShapAnalyzer:
             conn.close()
 
     def extract_features_for_race(self, race_code: str) -> pd.DataFrame | None:
-        """レースの特徴量を抽出"""
+        """Extract features for a race."""
         db = get_db()
         conn = db.get_connection()
 
@@ -194,7 +194,7 @@ class ShapAnalyzer:
             extractor = FastFeatureExtractor(conn)
             cur = conn.cursor()
 
-            # レース情報取得
+            # Get race information
             cur.execute(
                 """
                 SELECT kaisai_nen, race_code, kaisai_gappi, keibajo_code,
@@ -223,7 +223,7 @@ class ShapAnalyzer:
             races = [dict(zip(race_cols, race_row))]
             year = int(race_row[0])
 
-            # 出走馬データ取得
+            # Get race entry data
             cur.execute(
                 """
                 SELECT
@@ -246,14 +246,14 @@ class ShapAnalyzer:
             if not entries:
                 return None
 
-            # 過去成績取得
+            # Get past performance stats
             kettonums = [e["ketto_toroku_bango"] for e in entries if e.get("ketto_toroku_bango")]
             past_stats = extractor._get_past_stats_batch(kettonums)
 
-            # 騎手・調教師キャッシュ
+            # Jockey and trainer cache
             extractor._cache_jockey_trainer_stats(year)
 
-            # 追加データ
+            # Additional data
             jh_pairs = [
                 (e.get("kishu_code", ""), e.get("ketto_toroku_bango", ""))
                 for e in entries
@@ -268,7 +268,7 @@ class ShapAnalyzer:
                     past_stats[kettonum]["left_turn_rate"] = stats["left_turn_rate"]
             training_stats = extractor._get_training_stats_batch(kettonums)
 
-            # 特徴量生成
+            # Generate features
             features_list = []
             for entry in entries:
                 features = extractor._build_features(
@@ -292,41 +292,41 @@ class ShapAnalyzer:
             return pd.DataFrame(features_list)
 
         except Exception as e:
-            logger.error(f"特徴量抽出エラー ({race_code}): {e}")
+            logger.error(f"Feature extraction error ({race_code}): {e}")
             return None
         finally:
             conn.close()
 
     def calculate_shap_values(self, X: pd.DataFrame) -> np.ndarray | None:
-        """SHAP値を計算"""
+        """Calculate SHAP values."""
         if not SHAP_AVAILABLE:
-            logger.warning("SHAPライブラリが利用できません")
+            logger.warning("SHAP library not available")
             return None
 
         if self.explainer is None:
-            logger.warning("SHAP Explainerが初期化されていません")
+            logger.warning("SHAP Explainer not initialized")
             return None
 
         try:
             shap_values = self.explainer.shap_values(X)
             return shap_values
         except Exception as e:
-            logger.error(f"SHAP値計算エラー: {e}")
+            logger.error(f"SHAP value calculation error: {e}")
             return None
 
     def analyze_race(self, race_code: str, prediction: dict) -> dict | None:
-        """1レースを分析（EV推奨・軸馬形式）"""
-        # 特徴量抽出
+        """Analyze a single race (EV recommendation and axis horse format)."""
+        # Extract features
         df = self.extract_features_for_race(race_code)
         if df is None or df.empty:
             return None
 
-        # 予想結果から馬を取得
+        # Get horses from prediction result
         ranked_horses = prediction.get("prediction_result", {}).get("ranked_horses", [])
         if not ranked_horses:
             return None
 
-        # EV推奨馬を特定（EV >= 1.5）
+        # Identify EV recommended horses (EV >= 1.5)
         ev_recommended = []
         for h in ranked_horses:
             win_prob = h.get("win_probability", 0)
@@ -336,22 +336,22 @@ class ShapAnalyzer:
                 if win_ev >= 1.5:
                     ev_recommended.append(h)
 
-        # 軸馬を特定（複勝確率最高）
+        # Identify axis horse (highest place probability)
         axis_horse = (
             max(ranked_horses, key=lambda h: h.get("place_probability", 0))
             if ranked_horses
             else None
         )
 
-        # 特徴量のみ抽出
+        # Extract features only
         X = df[self.feature_names].fillna(0)
 
-        # SHAP値計算
+        # Calculate SHAP values
         shap_values = self.calculate_shap_values(X)
         if shap_values is None:
             return None
 
-        # 軸馬の分析
+        # Axis horse analysis
         axis_umaban = str(axis_horse.get("horse_number", "")).zfill(2) if axis_horse else None
         axis_analysis = None
         if axis_umaban and axis_horse:
@@ -372,7 +372,7 @@ class ShapAnalyzer:
                     "feature_contributions": axis_contributions,
                 }
 
-        # EV推奨馬の分析
+        # EV recommended horses analysis
         ev_analyses = []
         for h in ev_recommended:
             h_umaban = str(h.get("horse_number", "")).zfill(2)
@@ -407,7 +407,7 @@ class ShapAnalyzer:
         }
 
     def analyze_dates(self, target_dates: list[date]) -> dict:
-        """複数日のレースを分析（EV推奨・軸馬形式）"""
+        """Analyze races across multiple dates (EV recommendation and axis horse format)."""
         all_analyses = []
 
         for target_date in target_dates:
@@ -426,7 +426,7 @@ class ShapAnalyzer:
         first_date = min(target_dates)
         last_date = max(target_dates)
 
-        # 軸馬の的中/外れで分類
+        # Classify by axis horse hit/miss
         axis_places = [
             a for a in all_analyses if a.get("axis_analysis") and a["axis_analysis"].get("is_place")
         ]
@@ -436,7 +436,7 @@ class ShapAnalyzer:
             if a.get("axis_analysis") and not a["axis_analysis"].get("is_place")
         ]
 
-        # EV推奨馬の的中/外れで分類
+        # Classify EV recommended horses by hit/miss
         ev_hits = []
         ev_misses = []
         for a in all_analyses:
@@ -446,7 +446,7 @@ class ShapAnalyzer:
                 elif not ev.get("is_place"):
                     ev_misses.append({"feature_contributions": ev["feature_contributions"]})
 
-        # 軸馬の特徴量寄与度を集計
+        # Aggregate axis horse feature contributions
         axis_place_contributions = self._aggregate_contributions(
             [
                 {"feature_contributions": a["axis_analysis"]["feature_contributions"]}
@@ -460,11 +460,11 @@ class ShapAnalyzer:
             ]
         )
 
-        # EV推奨馬の特徴量寄与度を集計
+        # Aggregate EV recommended horse feature contributions
         ev_hit_contributions = self._aggregate_contributions(ev_hits)
         ev_miss_contributions = self._aggregate_contributions(ev_misses)
 
-        # 差分を計算（的中時 - 外れ時）
+        # Calculate difference (hit - miss)
         axis_diff = {}
         all_features = set(axis_place_contributions.keys()) | set(axis_miss_contributions.keys())
         for fname in all_features:
@@ -479,11 +479,11 @@ class ShapAnalyzer:
             miss_val = ev_miss_contributions.get(fname, 0)
             ev_diff[fname] = hit_val - miss_val
 
-        # 重要な差分をソート
+        # Sort by importance
         sorted_axis_diff = sorted(axis_diff.items(), key=lambda x: abs(x[1]), reverse=True)
         sorted_ev_diff = sorted(ev_diff.items(), key=lambda x: abs(x[1]), reverse=True)
 
-        # EV推奨馬の成績集計
+        # Aggregate EV recommended horse performance
         total_ev_count = sum(len(a.get("ev_analyses", [])) for a in all_analyses)
         ev_tansho_hits = sum(
             1 for a in all_analyses for ev in a.get("ev_analyses", []) if ev.get("is_hit")
@@ -496,14 +496,14 @@ class ShapAnalyzer:
             "status": "success",
             "period": f"{first_date} - {last_date}",
             "total_races": len(all_analyses),
-            # 軸馬成績
+            # Axis horse performance
             "axis_place_count": len(axis_places),
             "axis_miss_count": len(axis_misses),
             "axis_place_rate": len(axis_places) / len(all_analyses) * 100 if all_analyses else 0,
             "axis_place_contributions": axis_place_contributions,
             "axis_miss_contributions": axis_miss_contributions,
             "axis_diff_contributions": dict(sorted_axis_diff[:20]),
-            # EV推奨成績
+            # EV recommendation performance
             "ev_rec_count": total_ev_count,
             "ev_tansho_hits": ev_tansho_hits,
             "ev_fukusho_hits": ev_fukusho_hits,
@@ -516,7 +516,7 @@ class ShapAnalyzer:
         }
 
     def analyze_weekend(self, saturday: date, sunday: date) -> dict:
-        """週末のレースを分析（後方互換性のためのラッパー）"""
+        """Analyze weekend races (wrapper for backward compatibility)."""
         return self.analyze_dates([saturday, sunday])
 
     def calculate_feature_adjustments(
@@ -544,17 +544,17 @@ class ShapAnalyzer:
         for fname in self.feature_names:
             diff_val = diff.get(fname, 0)
 
-            # 差分が閾値以上の場合のみ調整
+            # Only adjust if difference exceeds threshold
             if abs(diff_val) < threshold:
                 adjustments[fname] = 1.0
                 continue
 
-            # 外れ時に高い（diff < 0）→ 抑制（係数 < 1.0）
-            # 的中時に高い（diff > 0）→ 強化（係数 > 1.0）
-            # スケール: diff_val * 0.5 で最大±50%調整
+            # High when miss (diff < 0) -> suppress (coefficient < 1.0)
+            # High when hit (diff > 0) -> boost (coefficient > 1.0)
+            # Scale: diff_val * 0.5 for max +/-50% adjustment
             adjustment = 1.0 + (diff_val * 0.5)
 
-            # 0.5〜1.5の範囲に制限
+            # Limit to range 0.5-1.5
             adjustment = max(0.5, min(1.5, adjustment))
             adjustments[fname] = round(adjustment, 4)
 
@@ -563,7 +563,7 @@ class ShapAnalyzer:
     def save_adjustments_to_db(
         self, adjustments: dict[str, float], analysis_date: date | None = None
     ) -> bool:
-        """特徴量調整係数をDBに保存"""
+        """Save feature adjustment coefficients to DB."""
         if not adjustments:
             return False
 
@@ -576,7 +576,7 @@ class ShapAnalyzer:
         try:
             cur = conn.cursor()
 
-            # feature_adjustmentsテーブルに保存
+            # Save to feature_adjustments table
             cur.execute(
                 """
                 INSERT INTO feature_adjustments (
@@ -590,7 +590,7 @@ class ShapAnalyzer:
                 (analysis_date, json.dumps(adjustments)),
             )
 
-            # 古い調整係数を非アクティブ化（直近3件のみアクティブ）
+            # Deactivate old adjustments (keep only latest 3 active)
             cur.execute(
                 """
                 UPDATE feature_adjustments
@@ -603,11 +603,11 @@ class ShapAnalyzer:
             )
 
             conn.commit()
-            logger.info(f"特徴量調整係数をDBに保存: {len(adjustments)}件")
+            logger.info(f"Feature adjustments saved to DB: {len(adjustments)} items")
             return True
 
         except Exception as e:
-            logger.error(f"特徴量調整係数保存エラー: {e}")
+            logger.error(f"Feature adjustment save error: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -617,14 +617,14 @@ class ShapAnalyzer:
 
     @staticmethod
     def load_adjustments_from_db() -> dict[str, float]:
-        """最新の特徴量調整係数をDBから読み込み"""
+        """Load latest feature adjustment coefficients from DB."""
         db = get_db()
         conn = db.get_connection()
 
         try:
             cur = conn.cursor()
 
-            # 最新のアクティブな調整係数を取得
+            # Get latest active adjustment coefficients
             cur.execute(
                 """
                 SELECT adjustments FROM feature_adjustments
@@ -641,20 +641,20 @@ class ShapAnalyzer:
                 adjustments = row[0]
                 if isinstance(adjustments, str):
                     adjustments = json.loads(adjustments)
-                logger.info(f"特徴量調整係数を読み込み: {len(adjustments)}件")
+                logger.info(f"Feature adjustments loaded: {len(adjustments)} items")
                 return adjustments
 
             return {}
 
         except Exception as e:
-            logger.error(f"特徴量調整係数読み込みエラー: {e}")
+            logger.error(f"Feature adjustment load error: {e}")
             return {}
         finally:
             if conn:
                 conn.close()
 
     def _aggregate_contributions(self, analyses: list[dict]) -> dict[str, float]:
-        """特徴量寄与度を集計"""
+        """Aggregate feature contributions."""
         if not analyses:
             return {}
 
@@ -665,13 +665,13 @@ class ShapAnalyzer:
                     aggregated[fname] = []
                 aggregated[fname].append(value)
 
-        # 平均を計算
+        # Calculate mean
         return {fname: float(np.mean(values)) for fname, values in aggregated.items()}
 
     def generate_report(self, analysis: dict) -> str:
-        """分析レポートを生成（EV推奨・軸馬形式）"""
+        """Generate analysis report (EV recommendation and axis horse format)."""
         if analysis.get("status") != "success":
-            return "分析データがありません"
+            return "No analysis data available"
 
         lines = [
             "📊 **SHAP特徴量分析レポート**",
@@ -680,7 +680,7 @@ class ShapAnalyzer:
             "",
         ]
 
-        # 軸馬成績
+        # Axis horse performance
         lines.append("**【軸馬成績】** (複勝確率1位)")
         axis_place = analysis.get("axis_place_count", 0)
         axis_total = axis_place + analysis.get("axis_miss_count", 0)
@@ -688,7 +688,7 @@ class ShapAnalyzer:
             f"  複勝的中: {axis_place}/{axis_total}R ({analysis.get('axis_place_rate', 0):.1f}%)"
         )
 
-        # 軸馬の特徴量差分
+        # Axis horse feature differences
         axis_diff = analysis.get("axis_diff_contributions", {})
         if axis_diff:
             lines.append("")
@@ -698,7 +698,7 @@ class ShapAnalyzer:
                 sign = "+" if value > 0 else ""
                 lines.append(f"  {i+1}. {fname}: {sign}{value:.4f}")
 
-        # EV推奨成績
+        # EV recommendation performance
         lines.append("")
         ev_count = analysis.get("ev_rec_count", 0)
         if ev_count > 0:
@@ -711,7 +711,7 @@ class ShapAnalyzer:
                 f"  複勝的中: {analysis.get('ev_fukusho_hits', 0)} ({analysis.get('ev_fukusho_rate', 0):.1f}%)"
             )
 
-            # EV推奨の特徴量差分
+            # EV recommendation feature differences
             ev_diff = analysis.get("ev_diff_contributions", {})
             if ev_diff:
                 lines.append("")
@@ -726,7 +726,7 @@ class ShapAnalyzer:
         return "\n".join(lines)
 
     def send_discord_notification(self, report: str):
-        """Discord通知を送信"""
+        """Send Discord notification."""
         import os
 
         import requests
@@ -735,27 +735,27 @@ class ShapAnalyzer:
         channel_id = os.getenv("DISCORD_NOTIFICATION_CHANNEL_ID")
 
         if not bot_token or not channel_id:
-            logger.warning("Discord通知設定がありません")
+            logger.warning("Discord notification settings not configured")
             return
 
         url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
         headers = {"Authorization": f"Bot {bot_token}", "Content-Type": "application/json"}
 
         try:
-            # 2000文字制限対応
+            # Handle 2000 character limit
             if len(report) > 1900:
                 report = report[:1900] + "\n..."
 
             response = requests.post(url, headers=headers, json={"content": report}, timeout=10)
             if response.status_code in (200, 201):
-                logger.info("SHAP分析Discord通知送信完了")
+                logger.info("SHAP analysis Discord notification sent")
             else:
-                logger.warning(f"Discord通知失敗: {response.status_code}")
+                logger.warning(f"Discord notification failed: {response.status_code}")
         except Exception as e:
-            logger.error(f"Discord通知エラー: {e}")
+            logger.error(f"Discord notification error: {e}")
 
     def save_analysis_to_db(self, analysis: dict) -> bool:
-        """分析結果をDBに保存"""
+        """Save analysis results to DB."""
         if analysis.get("status") != "success":
             return False
 
@@ -765,7 +765,7 @@ class ShapAnalyzer:
         try:
             cur = conn.cursor()
 
-            # shap_analysisテーブルに保存
+            # Save to shap_analysis table
             cur.execute(
                 """
                 INSERT INTO shap_analysis (
@@ -804,11 +804,11 @@ class ShapAnalyzer:
             )
 
             conn.commit()
-            logger.info("SHAP分析結果をDBに保存")
+            logger.info("SHAP analysis results saved to DB")
             return True
 
         except Exception as e:
-            logger.error(f"SHAP分析DB保存エラー: {e}")
+            logger.error(f"SHAP analysis DB save error: {e}")
             if conn:
                 conn.rollback()
             return False
@@ -818,59 +818,59 @@ class ShapAnalyzer:
 
 
 def analyze_last_weekend():
-    """先週末の分析を実行（予想データがある日を自動検出）"""
+    """Execute analysis for last weekend (auto-detect dates with prediction data)."""
     if not SHAP_AVAILABLE:
-        logger.error("SHAPライブラリがインストールされていません")
-        print("SHAPライブラリをインストールしてください: pip install shap")
+        logger.error("SHAP library not installed")
+        print("Please install SHAP library: pip install shap")
         return
 
     analyzer = ShapAnalyzer()
 
-    # 予想データがある直近の日を取得（最大7日前まで）
+    # Get recent dates with prediction data (up to 7 days back)
     race_dates = analyzer.get_recent_race_dates(days_back=7)
 
     if not race_dates:
-        print("直近7日間に予想データがありません")
+        print("No prediction data in the last 7 days")
         return
 
-    # 直近2日分を分析対象とする
+    # Analyze last 2 days
     target_dates = sorted(race_dates)[-2:] if len(race_dates) >= 2 else race_dates
     first_date = target_dates[0]
     last_date = target_dates[-1]
 
-    print(f"\n=== SHAP特徴量分析 ({first_date} - {last_date}) ===\n")
-    print(f"対象日: {', '.join(str(d) for d in target_dates)}")
+    print(f"\n=== SHAP Feature Analysis ({first_date} - {last_date}) ===\n")
+    print(f"Target dates: {', '.join(str(d) for d in target_dates)}")
 
     analysis = analyzer.analyze_dates(target_dates)
 
     if analysis["status"] == "success":
-        # レポート生成
+        # Generate report
         report = analyzer.generate_report(analysis)
         print(report)
 
-        # Discord通知
+        # Discord notification
         analyzer.send_discord_notification(report)
 
-        # DB保存
+        # Save to DB
         analyzer.save_analysis_to_db(analysis)
     else:
-        print("分析データがありません")
+        print("No analysis data available")
 
 
 def main():
-    """メイン実行"""
+    """Main execution."""
     import argparse
 
-    parser = argparse.ArgumentParser(description="SHAP特徴量分析")
-    parser.add_argument("--date", "-d", help="分析日 (YYYY-MM-DD)")
-    parser.add_argument("--weekend", "-w", action="store_true", help="先週末を分析")
+    parser = argparse.ArgumentParser(description="SHAP feature analysis")
+    parser.add_argument("--date", "-d", help="Analysis date (YYYY-MM-DD)")
+    parser.add_argument("--weekend", "-w", action="store_true", help="Analyze last weekend")
 
     args = parser.parse_args()
 
     if args.weekend or not args.date:
         analyze_last_weekend()
     else:
-        # 特定日の分析
+        # Analyze specific date
         target_date = datetime.strptime(args.date, "%Y-%m-%d").date()
         print(f"\n=== SHAP特徴量分析 ({target_date}) ===\n")
 
@@ -886,14 +886,14 @@ def main():
                 analyses.append(analysis)
 
         if analyses:
-            # 簡易レポート
+            # Simple report
             hits = [a for a in analyses if a["is_hit"]]
             places = [a for a in analyses if a["is_place"]]
-            print(f"分析レース数: {len(analyses)}")
-            print(f"単勝的中: {len(hits)}R ({len(hits)/len(analyses)*100:.1f}%)")
-            print(f"複勝圏: {len(places)}R ({len(places)/len(analyses)*100:.1f}%)")
+            print(f"Races analyzed: {len(analyses)}")
+            print(f"Win hits: {len(hits)}R ({len(hits)/len(analyses)*100:.1f}%)")
+            print(f"Place hits: {len(places)}R ({len(places)/len(analyses)*100:.1f}%)")
         else:
-            print("分析データがありません")
+            print("No analysis data available")
 
 
 if __name__ == "__main__":

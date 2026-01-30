@@ -1,7 +1,8 @@
 """
-オッズ情報取得クエリモジュール
+Odds Information Query Module.
 
-単勝・複勝・馬連・3連単などの各種オッズデータを取得するクエリ群
+Query functions for retrieving various odds data including win, place,
+quinella, trifecta, and other betting types.
 """
 
 import logging
@@ -25,17 +26,17 @@ from src.db.table_names import (
 
 logger = logging.getLogger(__name__)
 
-# データ区分定数
-DATA_KUBUN_SAISYU_ODDS = "3"  # 最終オッズ
+# Data category constants
+DATA_KUBUN_SAISYU_ODDS = "3"  # Final odds
 
 
 async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
     """
-    単勝・複勝オッズを取得
+    Get win and place odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
         {
@@ -43,7 +44,7 @@ async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
             "place": [{"umaban": 1, "odds_min": 1.5, "odds_max": 2.0}, ...]
         }
     """
-    # 単勝オッズ取得
+    # Get win odds
     sql_win = f"""
         SELECT
             {COL_UMABAN},
@@ -55,7 +56,7 @@ async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
         ORDER BY {COL_UMABAN}
     """
 
-    # 複勝オッズ取得
+    # Get place odds
     sql_place = f"""
         SELECT
             {COL_UMABAN},
@@ -69,7 +70,7 @@ async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
     """
 
     try:
-        # 単勝オッズ
+        # Win odds
         win_rows = await conn.fetch(sql_win, race_id, DATA_KUBUN_SAISYU_ODDS)
         win_odds = []
         for row in win_rows:
@@ -77,12 +78,12 @@ async def get_odds_win_place(conn: Connection, race_id: str) -> dict[str, Any]:
                 win_odds.append(
                     {
                         "umaban": row[COL_UMABAN],
-                        "odds": float(row["odds"]) / 10.0,  # JRA-VANは10倍値で格納
+                        "odds": float(row["odds"]) / 10.0,  # JRA-VAN stores 10x values
                         "ninki": row["ninki"],
                     }
                 )
 
-        # 複勝オッズ
+        # Place odds
         place_rows = await conn.fetch(sql_place, race_id, DATA_KUBUN_SAISYU_ODDS)
         place_odds = []
         for row in place_rows:
@@ -106,12 +107,12 @@ async def get_odds_quinella(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    馬連オッズを取得
+    Get quinella odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
         [{"kumi": "3-7", "umaban1": 3, "umaban2": 7, "odds": 18.5, "ninki": 1}, ...]
@@ -157,15 +158,15 @@ async def get_odds_exacta(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    馬単オッズを取得
+    Get exacta odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
-        [{"kumi": "3→7", "umaban1": 3, "umaban2": 7, "odds": 45.2, "ninki": 1}, ...]
+        [{"kumi": "3->7", "umaban1": 3, "umaban2": 7, "odds": 45.2, "ninki": 1}, ...]
     """
     sql = f"""
         SELECT
@@ -208,12 +209,12 @@ async def get_odds_wide(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    ワイドオッズを取得
+    Get wide odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
         [{"kumi": "3-7", "umaban1": 3, "umaban2": 7, "odds_min": 5.0, "odds_max": 7.5, "ninki": 1}, ...]
@@ -261,12 +262,12 @@ async def get_odds_trio(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    3連複オッズを取得
+    Get trio odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
         [{"kumi": "3-7-12", "umaban1": 3, "umaban2": 7, "umaban3": 12, "odds": 85.0, "ninki": 1}, ...]
@@ -315,15 +316,15 @@ async def get_odds_trifecta(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    3連単オッズを取得
+    Get trifecta odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
-        [{"kumi": "3→7→12", "umaban1": 3, "umaban2": 7, "umaban3": 12, "odds": 450.0, "ninki": 1}, ...]
+        [{"kumi": "3->7->12", "umaban1": 3, "umaban2": 7, "umaban3": 12, "odds": 450.0, "ninki": 1}, ...]
     """
     sql = f"""
         SELECT
@@ -369,12 +370,12 @@ async def get_odds_bracket_quinella(
     conn: Connection, race_id: str, limit: int | None = None
 ) -> list[dict[str, Any]]:
     """
-    枠連オッズを取得
+    Get bracket quinella odds.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        limit: 取得件数制限（オプション、人気順）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        limit: Maximum number of results (optional, sorted by popularity).
 
     Returns:
         [{"kumi": "1-3", "wakuban1": 1, "wakuban2": 3, "odds": 12.5, "ninki": 1}, ...]
@@ -420,12 +421,12 @@ async def get_race_odds(
     conn: Connection, race_id: str, ticket_types: list[str] | None = None
 ) -> dict[str, Any]:
     """
-    レースの全オッズ情報を取得
+    Get all odds information for a race.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
-        ticket_types: 取得する券種リスト（オプション、Noneの場合は全券種）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
+        ticket_types: List of ticket types to retrieve (optional, None for all types).
                      ["win", "place", "quinella", "exacta", "wide", "trio", "trifecta", "bracket"]
 
     Returns:
@@ -442,12 +443,12 @@ async def get_race_odds(
     """
     result = {}
 
-    # デフォルトは全券種
+    # Default to all ticket types
     if ticket_types is None:
         ticket_types = ["win", "place", "quinella", "exacta", "wide", "trio", "trifecta", "bracket"]
 
     try:
-        # 単勝・複勝は同時取得
+        # Win and place odds are retrieved together
         if "win" in ticket_types or "place" in ticket_types:
             win_place = await get_odds_win_place(conn, race_id)
             if "win" in ticket_types:
@@ -455,32 +456,32 @@ async def get_race_odds(
             if "place" in ticket_types:
                 result["place"] = win_place["place"]
 
-        # 馬連
+        # Quinella
         if "quinella" in ticket_types:
             result["quinella"] = await get_odds_quinella(conn, race_id)
 
-        # 馬単
+        # Exacta
         if "exacta" in ticket_types:
             result["exacta"] = await get_odds_exacta(conn, race_id)
 
-        # ワイド
+        # Wide
         if "wide" in ticket_types:
             result["wide"] = await get_odds_wide(conn, race_id)
 
-        # 3連複
+        # Trio
         if "trio" in ticket_types:
             result["trio"] = await get_odds_trio(conn, race_id)
 
-        # 3連単
+        # Trifecta
         if "trifecta" in ticket_types:
             result["trifecta"] = await get_odds_trifecta(conn, race_id)
 
-        # 枠連
+        # Bracket quinella
         if "bracket" in ticket_types:
             result["bracket"] = await get_odds_bracket_quinella(conn, race_id)
 
         return result
     except Exception as e:
-        # オッズテーブルが存在しない場合は空の辞書を返す
+        # Return empty dict if odds table doesn't exist
         logger.warning(f"Odds not available: race_id={race_id}, error={e}")
         return {}

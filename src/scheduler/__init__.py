@@ -1,5 +1,5 @@
 """
-スケジューラモジュール
+Scheduler Module
 
-開催前日に自動で予想を実行
+Automatically executes predictions the day before race day.
 """

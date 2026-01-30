@@ -1,5 +1,7 @@
 """
-騎手・調教師情報取得クエリモジュール
+Jockey and Trainer Information Query Module.
+
+Query functions for retrieving jockey and trainer information and statistics.
 """
 
 import logging
@@ -32,15 +34,15 @@ async def search_jockeys_by_name(
     conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
-    騎手名で検索
+    Search jockeys by name.
 
     Args:
-        conn: データベース接続
-        name: 騎手名（部分一致）
-        limit: 取得件数上限
+        conn: Database connection.
+        name: Jockey name (partial match).
+        limit: Maximum number of results.
 
     Returns:
-        騎手情報のリスト
+        List of jockey information.
     """
     sql = f"""
         SELECT
@@ -70,21 +72,21 @@ async def get_jockey_stats(
     conn: Connection, kishu_code: str, years_back: int = ML_TRAINING_YEARS_BACK
 ) -> dict[str, Any] | None:
     """
-    騎手の詳細成績を取得
+    Get detailed jockey statistics.
 
     Args:
-        conn: データベース接続
-        kishu_code: 騎手コード
-        years_back: 何年前までのデータを取得するか
+        conn: Database connection.
+        kishu_code: Jockey code.
+        years_back: Number of years back to retrieve data from.
 
     Returns:
-        騎手の詳細成績
+        Jockey's detailed statistics.
     """
     from datetime import date
 
     cutoff_year = str(date.today().year - years_back)
 
-    # 基本情報取得
+    # Get basic information
     basic_sql = f"""
         SELECT
             {COL_KISYUCODE} as kishu_code,
@@ -105,7 +107,7 @@ async def get_jockey_stats(
         if not basic_info:
             return None
 
-        # 通算成績集計
+        # Aggregate overall statistics
         stats_sql = f"""
             SELECT
                 COUNT(*) as total_races,
@@ -113,11 +115,11 @@ async def get_jockey_stats(
                 SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 2 THEN 1 ELSE 0 END) as top2,
                 SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 3 THEN 1 ELSE 0 END) as top3,
 
-                -- 芝成績
+                -- Turf statistics
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' THEN 1 END) as turf_races,
                 SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as turf_wins,
 
-                -- ダート成績
+                -- Dirt statistics
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' THEN 1 END) as dirt_races,
                 SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as dirt_wins
             FROM {TABLE_UMA_RACE} se
@@ -129,7 +131,7 @@ async def get_jockey_stats(
 
         stats = await conn.fetchrow(stats_sql, kishu_code, DATA_KUBUN_KAKUTEI, cutoff_year)
 
-        # 距離別成績
+        # Statistics by distance
         distance_sql = f"""
             SELECT
                 CASE
@@ -150,7 +152,7 @@ async def get_jockey_stats(
 
         distance_stats = await conn.fetch(distance_sql, kishu_code, DATA_KUBUN_KAKUTEI, cutoff_year)
 
-        # 競馬場別成績
+        # Statistics by racecourse
         venue_sql = f"""
             SELECT
                 r.{COL_JYOCD} as venue_code,
@@ -167,7 +169,7 @@ async def get_jockey_stats(
 
         venue_stats = await conn.fetch(venue_sql, kishu_code, DATA_KUBUN_KAKUTEI, cutoff_year)
 
-        # 結果をまとめる
+        # Compile results
         return {
             "basic_info": dict(basic_info),
             "overall_stats": dict(stats),
@@ -184,15 +186,15 @@ async def search_trainers_by_name(
     conn: Connection, name: str, limit: int = 10
 ) -> list[dict[str, Any]]:
     """
-    調教師名で検索
+    Search trainers by name.
 
     Args:
-        conn: データベース接続
-        name: 調教師名（部分一致）
-        limit: 取得件数上限
+        conn: Database connection.
+        name: Trainer name (partial match).
+        limit: Maximum number of results.
 
     Returns:
-        調教師情報のリスト
+        List of trainer information.
     """
     sql = f"""
         SELECT
@@ -221,21 +223,21 @@ async def get_trainer_stats(
     conn: Connection, chokyoshi_code: str, years_back: int = ML_TRAINING_YEARS_BACK
 ) -> dict[str, Any] | None:
     """
-    調教師の詳細成績を取得
+    Get detailed trainer statistics.
 
     Args:
-        conn: データベース接続
-        chokyoshi_code: 調教師コード
-        years_back: 何年前までのデータを取得するか
+        conn: Database connection.
+        chokyoshi_code: Trainer code.
+        years_back: Number of years back to retrieve data from.
 
     Returns:
-        調教師の詳細成績
+        Trainer's detailed statistics.
     """
     from datetime import date
 
     cutoff_year = str(date.today().year - years_back)
 
-    # 基本情報取得
+    # Get basic information
     basic_sql = f"""
         SELECT
             {COL_CHOKYOSICODE} as chokyoshi_code,
@@ -255,7 +257,7 @@ async def get_trainer_stats(
         if not basic_info:
             return None
 
-        # 通算成績集計
+        # Aggregate overall statistics
         stats_sql = f"""
             SELECT
                 COUNT(*) as total_races,
@@ -263,11 +265,11 @@ async def get_trainer_stats(
                 SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 2 THEN 1 ELSE 0 END) as top2,
                 SUM(CASE WHEN {COL_KAKUTEI_CHAKUJUN}::integer <= 3 THEN 1 ELSE 0 END) as top3,
 
-                -- 芝成績
+                -- Turf statistics
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' THEN 1 END) as turf_races,
                 SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '1%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as turf_wins,
 
-                -- ダート成績
+                -- Dirt statistics
                 COUNT(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' THEN 1 END) as dirt_races,
                 SUM(CASE WHEN r.{COL_TRACK_CD} LIKE '2%' AND {COL_KAKUTEI_CHAKUJUN} = '1' THEN 1 ELSE 0 END) as dirt_wins
             FROM {TABLE_UMA_RACE} se
@@ -279,7 +281,7 @@ async def get_trainer_stats(
 
         stats = await conn.fetchrow(stats_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year)
 
-        # 距離別成績
+        # Statistics by distance
         distance_sql = f"""
             SELECT
                 CASE
@@ -302,7 +304,7 @@ async def get_trainer_stats(
             distance_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year
         )
 
-        # 競馬場別成績
+        # Statistics by racecourse
         venue_sql = f"""
             SELECT
                 r.{COL_JYOCD} as venue_code,
@@ -319,7 +321,7 @@ async def get_trainer_stats(
 
         venue_stats = await conn.fetch(venue_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year)
 
-        # 主戦騎手（最も騎乗回数が多い騎手）
+        # Top jockeys (most frequently ridden jockeys)
         top_jockeys_sql = f"""
             SELECT
                 se.{COL_KISYUCODE} as kishu_code,
@@ -340,7 +342,7 @@ async def get_trainer_stats(
             top_jockeys_sql, chokyoshi_code, DATA_KUBUN_KAKUTEI, cutoff_year
         )
 
-        # 結果をまとめる
+        # Compile results
         return {
             "basic_info": dict(basic_info),
             "overall_stats": dict(stats),

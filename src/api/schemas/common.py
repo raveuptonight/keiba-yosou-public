@@ -1,5 +1,5 @@
 """
-共通スキーマ（エラーレスポンス等）
+Common schemas (error responses, etc.).
 """
 
 from datetime import datetime
@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class PrizeMoneyResponse(BaseModel):
-    """賞金情報"""
+    """Prize money information."""
 
     first: int = Field(..., description="1着賞金（円）")
     second: int = Field(..., description="2着賞金（円）")
@@ -19,7 +19,7 @@ class PrizeMoneyResponse(BaseModel):
 
 
 class ErrorDetail(BaseModel):
-    """エラーレスポンス詳細"""
+    """Error response detail."""
 
     code: str = Field(..., description="エラーコード")
     message: str = Field(..., description="エラーメッセージ")
@@ -27,13 +27,13 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
-    """エラーレスポンス"""
+    """Error response."""
 
     error: ErrorDetail
 
 
 class HealthCheckResponse(BaseModel):
-    """ヘルスチェックレスポンス"""
+    """Health check response."""
 
     status: str = Field(..., description="ステータス (ok/ng)")
     timestamp: datetime = Field(..., description="チェック実行日時")

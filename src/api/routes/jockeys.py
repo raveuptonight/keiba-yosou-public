@@ -1,5 +1,5 @@
 """
-騎手・調教師情報エンドポイント
+Jockey and trainer information endpoints.
 """
 
 import logging
@@ -34,13 +34,13 @@ router = APIRouter()
 
 
 def _get_affiliation_name(tozai_code: str) -> str:
-    """所属コードから名称を取得"""
+    """Get affiliation name from tozai code."""
     affiliation_map = {"1": "美浦", "2": "栗東"}
     return affiliation_map.get(tozai_code, "不明")
 
 
 def _get_venue_name(venue_code: str) -> str:
-    """競馬場コードから名称を取得"""
+    """Get venue name from venue code."""
     venue_map = {
         "01": "札幌",
         "02": "函館",
@@ -57,7 +57,7 @@ def _get_venue_name(venue_code: str) -> str:
 
 
 def _get_distance_category_name(category: str) -> str:
-    """距離カテゴリから名称を取得"""
+    """Get distance category display name."""
     category_map = {
         "sprint": "短距離（〜1400m）",
         "mile": "マイル（1401-1800m）",
@@ -79,14 +79,14 @@ async def search_jockeys(
     limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[JockeySearchResult]:
     """
-    騎手名で検索
+    Search jockeys by name.
 
     Args:
-        name: 検索する騎手名
-        limit: 取得件数上限
+        name: Jockey name to search.
+        limit: Maximum number of results.
 
     Returns:
-        List[JockeySearchResult]: 検索結果リスト
+        List[JockeySearchResult]: Search result list.
     """
     logger.info(f"GET /jockeys/search: name={name}, limit={limit}")
 
@@ -123,16 +123,16 @@ async def get_jockey(
     kishu_code: str = Path(..., min_length=5, max_length=5, description="騎手コード（5桁）")
 ) -> JockeyStats:
     """
-    騎手の詳細統計を取得
+    Get jockey detailed statistics.
 
     Args:
-        kishu_code: 騎手コード
+        kishu_code: Jockey code.
 
     Returns:
-        JockeyStats: 騎手詳細統計
+        JockeyStats: Jockey detailed statistics.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /jockeys/{kishu_code}")
 
@@ -148,7 +148,7 @@ async def get_jockey(
             distance_data = data["distance_stats"]
             venue_data = data["venue_stats"]
 
-            # 勝率計算
+            # Calculate win rates
             total_races = overall["total_races"] or 0
             wins = overall["wins"] or 0
             top2 = overall["top2"] or 0
@@ -158,7 +158,7 @@ async def get_jockey(
             top2_rate = top2 / total_races if total_races > 0 else 0.0
             top3_rate = top3 / total_races if total_races > 0 else 0.0
 
-            # 芝/ダート勝率
+            # Turf/dirt win rates
             turf_races = overall["turf_races"] or 0
             turf_wins = overall["turf_wins"] or 0
             dirt_races = overall["dirt_races"] or 0
@@ -167,7 +167,7 @@ async def get_jockey(
             turf_win_rate = turf_wins / turf_races if turf_races > 0 else 0.0
             dirt_win_rate = dirt_wins / dirt_races if dirt_races > 0 else 0.0
 
-            # レスポンス作成
+            # Create response
             response = JockeyStats(
                 basic_info=JockeyBasicInfo(
                     kishu_code=basic_info["kishu_code"],
@@ -235,14 +235,14 @@ async def search_trainers(
     limit: int = Query(10, ge=1, le=50, description="取得件数上限（デフォルト: 10）"),
 ) -> list[TrainerSearchResult]:
     """
-    調教師名で検索
+    Search trainers by name.
 
     Args:
-        name: 検索する調教師名
-        limit: 取得件数上限
+        name: Trainer name to search.
+        limit: Maximum number of results.
 
     Returns:
-        List[TrainerSearchResult]: 検索結果リスト
+        List[TrainerSearchResult]: Search result list.
     """
     logger.info(f"GET /trainers/search: name={name}, limit={limit}")
 
@@ -279,16 +279,16 @@ async def get_trainer(
     chokyoshi_code: str = Path(..., min_length=5, max_length=5, description="調教師コード（5桁）")
 ) -> TrainerStats:
     """
-    調教師の詳細統計を取得
+    Get trainer detailed statistics.
 
     Args:
-        chokyoshi_code: 調教師コード
+        chokyoshi_code: Trainer code.
 
     Returns:
-        TrainerStats: 調教師詳細統計
+        TrainerStats: Trainer detailed statistics.
 
     Raises:
-        DatabaseErrorException: DB接続エラー
+        DatabaseErrorException: Database connection error.
     """
     logger.info(f"GET /trainers/{chokyoshi_code}")
 
@@ -305,7 +305,7 @@ async def get_trainer(
             venue_data = data["venue_stats"]
             top_jockeys_data = data["top_jockeys"]
 
-            # 勝率計算
+            # Calculate win rates
             total_races = overall["total_races"] or 0
             wins = overall["wins"] or 0
             top2 = overall["top2"] or 0
@@ -315,7 +315,7 @@ async def get_trainer(
             top2_rate = top2 / total_races if total_races > 0 else 0.0
             top3_rate = top3 / total_races if total_races > 0 else 0.0
 
-            # 芝/ダート勝率
+            # Turf/dirt win rates
             turf_races = overall["turf_races"] or 0
             turf_wins = overall["turf_wins"] or 0
             dirt_races = overall["dirt_races"] or 0
@@ -324,7 +324,7 @@ async def get_trainer(
             turf_win_rate = turf_wins / turf_races if turf_races > 0 else 0.0
             dirt_win_rate = dirt_wins / dirt_races if dirt_races > 0 else 0.0
 
-            # レスポンス作成
+            # Create response
             response = TrainerStats(
                 basic_info=TrainerBasicInfo(
                     chokyoshi_code=basic_info["chokyoshi_code"],

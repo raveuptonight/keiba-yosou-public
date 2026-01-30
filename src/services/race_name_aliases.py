@@ -1,13 +1,13 @@
 """
-レース名エイリアス（別名）マッピング
+Race Name Aliases Mapping
 
-ユーザーが一般的な通称で検索できるように、
-正式名称へのマッピングを提供
+Provides mapping from common nicknames to official names
+so users can search using colloquial terms.
 """
 
-# レース名エイリアス（通称 → 正式名称の一部）
+# Race name aliases (nickname -> official name patterns)
 RACE_NAME_ALIASES: dict[str, list[str]] = {
-    # G1レース
+    # G1 races
     "日本ダービー": ["東京優駿"],
     "ダービー": ["東京優駿", "ダービー"],
     "皐月賞": ["皐月賞"],
@@ -32,22 +32,22 @@ RACE_NAME_ALIASES: dict[str, list[str]] = {
     "高松宮記念": ["高松宮記念"],
     "大阪杯": ["大阪杯"],
     "ヴィクトリアマイル": ["ヴィクトリアマイル"],
-    # 2歳G1
+    # 2-year-old G1
     "朝日杯": ["朝日杯フューチュリティステークス", "朝日杯ＦＳ"],
     "朝日杯FS": ["朝日杯フューチュリティステークス", "朝日杯ＦＳ"],
     "阪神ジュベナイルフィリーズ": ["阪神ジュベナイルフィリーズ", "阪神ＪＦ"],
     "阪神JF": ["阪神ジュベナイルフィリーズ", "阪神ＪＦ"],
     "ホープフルステークス": ["ホープフルステークス", "ホープフルＳ"],
     "ホープフルS": ["ホープフルステークス", "ホープフルＳ"],
-    # 牝馬G1
+    # Fillies G1
     "桜花": ["桜花賞"],
     "秋華": ["秋華賞"],
-    # その他主要レース（G2/G3含む）
+    # Other major races (including G2/G3)
     "NHKマイル": ["ＮＨＫマイルカップ", "ＮＨKマイルＣ"],
     "NHKマイルC": ["ＮＨＫマイルカップ", "ＮＨKマイルＣ"],
     "チャンピオンズカップ": ["チャンピオンズカップ", "チャンピオンズＣ"],
     "チャンピオンズC": ["チャンピオンズカップ", "チャンピオンズＣ"],
-    # G2レース
+    # G2 races
     "オールカマー": ["オールカマー", "産経賞オールカマー"],
     "京都記念": ["京都記念"],
     "阪神大賞典": ["阪神大賞典"],
@@ -72,37 +72,37 @@ RACE_NAME_ALIASES: dict[str, list[str]] = {
 
 def expand_race_name_query(query: str) -> list[str]:
     """
-    レース名クエリをエイリアスで展開
+    Expand race name query using aliases.
 
     Args:
-        query: ユーザーが入力したレース名
+        query: Race name entered by user
 
     Returns:
-        検索すべきレース名のリスト（元のクエリ + エイリアス）
+        List of race names to search (original query + aliases)
     """
     query_lower = query.lower().strip()
 
-    # エイリアスマッピングを確認
-    search_terms = [query]  # 元のクエリも含める
+    # Check alias mapping
+    search_terms = [query]  # Include original query
 
     for alias, official_names in RACE_NAME_ALIASES.items():
         if alias.lower() == query_lower or alias.lower() in query_lower:
             search_terms.extend(official_names)
             break
 
-    # 重複を削除
+    # Remove duplicates
     return list(set(search_terms))
 
 
 def get_primary_search_term(query: str) -> str:
     """
-    最優先の検索語を取得
+    Get the primary search term.
 
     Args:
-        query: ユーザーが入力したレース名
+        query: Race name entered by user
 
     Returns:
-        最優先で検索すべき語（エイリアスがあればその最初の正式名称、なければ元のクエリ）
+        Primary search term (first official name if alias exists, otherwise original query)
     """
     query_lower = query.lower().strip()
 

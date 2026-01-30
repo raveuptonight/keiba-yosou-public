@@ -1,5 +1,5 @@
 """
-デバッグ用エンドポイント（本番では削除）
+Debug endpoints (remove in production).
 """
 
 import logging
@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/debug/schema/{table_name}")
 async def get_table_schema(table_name: str):
-    """テーブルスキーマを取得（デバッグ用）"""
+    """Get table schema (for debugging)."""
     async with get_connection() as conn:
         # Get table schema
         rows = await conn.fetch(

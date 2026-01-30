@@ -1,11 +1,11 @@
 """
-データベースクエリモジュール
+Database Query Module.
 
-各クエリモジュールの主要関数をエクスポート
+Exports main functions from each query module.
 """
 
-# レース情報取得クエリ
-# 馬情報取得クエリ
+# Race information queries
+# Horse information queries
 from src.db.queries.horse_queries import (
     check_horse_exists,
     get_horse_detail,
@@ -17,7 +17,7 @@ from src.db.queries.horse_queries import (
     get_horses_training,
 )
 
-# オッズ情報取得クエリ
+# Odds information queries
 from src.db.queries.odds_queries import (
     get_odds_bracket_quinella,
     get_odds_exacta,
@@ -29,7 +29,7 @@ from src.db.queries.odds_queries import (
     get_race_odds,
 )
 
-# 予想データ集約クエリ
+# Prediction data aggregation queries
 from src.db.queries.prediction_data import (
     get_multiple_races_prediction_data,
     get_prediction_data_summary,

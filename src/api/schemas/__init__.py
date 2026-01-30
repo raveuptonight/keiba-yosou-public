@@ -1,8 +1,8 @@
 """
-API スキーマモジュール
+API schema module.
 """
 
-# 共通スキーマ
+# Common schemas
 from src.api.schemas.common import (
     ErrorDetail,
     ErrorResponse,
@@ -10,7 +10,7 @@ from src.api.schemas.common import (
     PrizeMoneyResponse,
 )
 
-# 馬情報関連スキーマ
+# Horse information schemas
 from src.api.schemas.horse import (
     HorseDetail,
     Pedigree,
@@ -18,14 +18,14 @@ from src.api.schemas.horse import (
     Trainer,
 )
 
-# オッズ関連スキーマ
+# Odds-related schemas
 from src.api.schemas.odds import (
     CombinationOdds,
     OddsResponse,
     SingleOdds,
 )
 
-# 予想関連スキーマ（確率ベース・ランキング形式）
+# Prediction schemas (probability-based ranking format)
 from src.api.schemas.prediction import (
     HorseRankingEntry,
     PositionDistribution,
@@ -36,7 +36,7 @@ from src.api.schemas.prediction import (
     PredictionResult,
 )
 
-# レース関連スキーマ
+# Race-related schemas
 from src.api.schemas.race import (
     RaceBase,
     RaceDetail,
@@ -44,7 +44,7 @@ from src.api.schemas.race import (
     RaceListResponse,
 )
 
-# 統計関連スキーマ
+# Statistics schemas
 from src.api.schemas.stats import (
     DistanceStats,
     JockeyStatsResponse,
@@ -55,17 +55,17 @@ from src.api.schemas.stats import (
 )
 
 __all__ = [
-    # 共通スキーマ
+    # Common schemas
     "PrizeMoneyResponse",
     "ErrorDetail",
     "ErrorResponse",
     "HealthCheckResponse",
-    # レース関連
+    # Race-related
     "RaceBase",
     "RaceEntry",
     "RaceDetail",
     "RaceListResponse",
-    # 予想関連（確率ベース・ランキング形式）
+    # Prediction (probability-based ranking format)
     "PositionDistribution",
     "HorseRankingEntry",
     "PredictionResult",
@@ -73,19 +73,19 @@ __all__ = [
     "PredictionResponse",
     "PredictionHistoryItem",
     "PredictionHistoryResponse",
-    # 馬情報関連
+    # Horse information
     "Trainer",
     "Pedigree",
     "RecentRace",
     "HorseDetail",
-    # 統計関連
+    # Statistics
     "StatsBase",
     "VenueStats",
     "DistanceStats",
     "JockeyStatsResponse",
     "TrainerStatsResponse",
     "ROIHistory",
-    # オッズ関連
+    # Odds-related
     "SingleOdds",
     "CombinationOdds",
     "OddsResponse",

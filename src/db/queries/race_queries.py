@@ -1,7 +1,8 @@
 """
-レース情報取得クエリモジュール
+Race Information Query Module.
 
-レースの基本情報、出走馬一覧、今日のレース一覧などを取得するクエリ群
+Query functions for retrieving race basic information, race entries,
+and race lists for a given date.
 """
 
 import logging
@@ -56,13 +57,13 @@ from src.db.table_names import (
 logger = logging.getLogger(__name__)
 
 
-# 年齢別競走条件コードから統合した値を取得するSQL式
+# SQL expression to get unified race condition code from age-specific columns
 def get_kyoso_joken_code_expr() -> str:
     """
-    年齢別の競走条件コードカラムから、最初の非'000'値を取得するSQL式
+    Get SQL expression for the first non-'000' value from age-specific race condition code columns.
 
     Returns:
-        COALESCE式の文字列（AS kyoso_joken_code付き）
+        COALESCE expression string with AS kyoso_joken_code alias.
     """
     return f"""COALESCE(
         NULLIF({COL_KYOSO_JOKEN_2SAI}, '000'),
@@ -75,17 +76,18 @@ def get_kyoso_joken_code_expr() -> str:
 
 async def get_race_info(conn: Connection, race_id: str) -> dict[str, Any] | None:
     """
-    レース基本情報を取得
+    Get race basic information.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        レース情報のdict、見つからない場合はNone
+        Race information dict, or None if not found.
     """
-    # 登録済みのレースをすべて取得（未来のレースも含む）
-    # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前, 7=確定
+    # Get all registered races (including future races)
+    # data_kubun: 1=registered, 2=preliminary, 3=post_position_confirmed,
+    # 4=race_card, 5=in_progress, 6=before_finalized, 7=finalized
     sql = f"""
         SELECT
             {COL_RACE_ID},
@@ -123,20 +125,20 @@ async def get_race_info(conn: Connection, race_id: str) -> dict[str, Any] | None
 
 async def get_race_entries(conn: Connection, race_id: str) -> list[dict[str, Any]]:
     """
-    レースの出走馬一覧を取得（血統・前走情報含む）
+    Get race entries list including pedigree and last race information.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        出走馬情報のリスト（馬番順）
+        List of horse entry information sorted by horse number.
     """
-    # 出走馬情報は登録済みのレースをすべて取得（未来のレースも含む）
-    # 前走情報は確定データのみ取得
+    # Get all registered race entries (including future races)
+    # Last race information is retrieved from finalized data only
     sql = f"""
         WITH last_race AS (
-            -- 各馬の前走情報を取得（確定データのみ）
+            -- Get last race info for each horse (finalized data only)
             SELECT DISTINCT ON (se2.{COL_KETTONUM})
                 se2.{COL_KETTONUM},
                 se2.{COL_JYOCD} AS last_venue_code,
@@ -193,22 +195,22 @@ async def get_races_by_date(
     grade_filter: str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    指定日のレース一覧を取得
+    Get race list for a specified date.
 
     Args:
-        conn: データベース接続
-        target_date: 対象日（date型）
-        venue_code: 競馬場コード（オプション）
-        grade_filter: グレードフィルタ（オプション）
+        conn: Database connection.
+        target_date: Target date (date type).
+        venue_code: Racecourse code (optional).
+        grade_filter: Grade filter (optional).
 
     Returns:
-        レース情報のリスト（レース番号順）
+        List of race information sorted by race number.
     """
     year = str(target_date.year)
     monthday = target_date.strftime("%m%d")
     today = date.today()
 
-    # 基本SQL
+    # Base SQL
     sql = f"""
         SELECT
             {COL_RACE_ID},
@@ -234,22 +236,22 @@ async def get_races_by_date(
     params = [year, monthday]
     param_idx = 3
 
-    # 過去のレースは確定データのみ、未来のレースは登録済みデータを取得
+    # Past races: finalized data only; Future races: all registered data
     if target_date < today:
         sql += f" AND {COL_DATA_KUBUN} = ${param_idx}"
         params.append(DATA_KUBUN_KAKUTEI)
         param_idx += 1
     else:
-        # 未来のレース: 登録('1'), 速報('2'), 枠順確定('3'), 出馬表('4'), 開催中('5'), 確定前('6')
+        # Future races: registered('1'), preliminary('2'), post_confirmed('3'), race_card('4'), in_progress('5'), before_final('6')
         sql += f" AND {COL_DATA_KUBUN} IN ('1', '2', '3', '4', '5', '6', '7')"
 
-    # 競馬場フィルタ
+    # Racecourse filter
     if venue_code:
         sql += f" AND {COL_JYOCD} = ${param_idx}"
         params.append(venue_code)
         param_idx += 1
 
-    # グレードフィルタ
+    # Grade filter
     if grade_filter:
         sql += f" AND {COL_GRADE_CD} = ${param_idx}"
         params.append(grade_filter)
@@ -269,15 +271,15 @@ async def get_races_today(
     conn: Connection, venue_code: str | None = None, grade_filter: str | None = None
 ) -> list[dict[str, Any]]:
     """
-    今日のレース一覧を取得
+    Get today's race list.
 
     Args:
-        conn: データベース接続
-        venue_code: 競馬場コード（オプション）
-        grade_filter: グレードフィルタ（オプション）
+        conn: Database connection.
+        venue_code: Racecourse code (optional).
+        grade_filter: Grade filter (optional).
 
     Returns:
-        レース情報のリスト（レース番号順）
+        List of race information sorted by race number.
     """
     today = date.today()
     return await get_races_by_date(conn, today, venue_code, grade_filter)
@@ -285,16 +287,16 @@ async def get_races_today(
 
 async def get_race_entry_count(conn: Connection, race_id: str) -> int:
     """
-    レースの出走頭数を取得
+    Get the number of entries in a race.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        出走頭数
+        Number of race entries.
     """
-    # 登録済みのレースをすべて取得（未来のレースも含む）
+    # Get all registered races (including future races)
     sql = f"""
         SELECT COUNT(*) as entry_count
         FROM {TABLE_UMA_RACE}
@@ -314,28 +316,28 @@ async def get_upcoming_races(
     conn: Connection, days_ahead: int = 7, grade_filter: str | None = None
 ) -> list[dict[str, Any]]:
     """
-    今後N日間のレース一覧を取得
+    Get race list for the upcoming N days.
 
     Args:
-        conn: データベース接続
-        days_ahead: 何日先まで取得するか（デフォルト: 7日）
-        grade_filter: グレードフィルタ（オプション）
+        conn: Database connection.
+        days_ahead: Number of days ahead to retrieve (default: 7 days).
+        grade_filter: Grade filter (optional).
 
     Returns:
-        レース情報のリスト（開催日・レース番号順）
+        List of race information sorted by race date and race number.
     """
     today = date.today()
     year = str(today.year)
     start_monthday = today.strftime("%m%d")
 
-    # 終了日を計算
+    # Calculate end date
     from datetime import timedelta
 
     end_date = today + timedelta(days=days_ahead)
     end_monthday = end_date.strftime("%m%d")
 
-    # 未来のレースは data_kubun が '1'(登録) や '2'(速報) の場合があるため
-    # 確定('7')に限定せず、登録済みのレースを全て取得
+    # Future races may have data_kubun '1'(registered) or '2'(preliminary)
+    # so retrieve all registered races, not limited to finalized('7')
     sql = f"""
         SELECT
             {COL_RACE_ID},
@@ -358,7 +360,7 @@ async def get_upcoming_races(
 
     params = [year, start_monthday, end_monthday]
 
-    # グレードフィルタ
+    # Grade filter
     if grade_filter:
         sql += f" AND {COL_GRADE_CD} = $4"
         params.append(grade_filter)
@@ -375,21 +377,21 @@ async def get_upcoming_races(
 
 async def get_race_detail(conn: Connection, race_id: str) -> dict[str, Any] | None:
     """
-    レース詳細情報を取得（レース情報+出走馬一覧）
+    Get race detail information (race info + entry list).
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        レース詳細情報のdict（race + entries）、見つからない場合はNone
+        Race detail dict (race + entries), or None if not found.
     """
-    # レース基本情報
+    # Race basic information
     race_info = await get_race_info(conn, race_id)
     if not race_info:
         return None
 
-    # 出走馬一覧
+    # Entry list
     entries = await get_race_entries(conn, race_id)
 
     return {"race": race_info, "entries": entries, "entry_count": len(entries)}
@@ -397,17 +399,18 @@ async def get_race_detail(conn: Connection, race_id: str) -> dict[str, Any] | No
 
 async def check_race_exists(conn: Connection, race_id: str) -> bool:
     """
-    レースが存在するかチェック
+    Check if a race exists.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        存在する場合True、しない場合False
+        True if race exists, False otherwise.
     """
-    # 登録済みのレースをすべてチェック（未来のレースも含む）
-    # data_kubun: 1=登録, 2=速報, 3=枠順確定, 4=出馬表, 5=開催中, 6=確定前, 7=確定
+    # Check all registered races (including future races)
+    # data_kubun: 1=registered, 2=preliminary, 3=post_position_confirmed,
+    # 4=race_card, 5=in_progress, 6=before_finalized, 7=finalized
     sql = f"""
         SELECT EXISTS(
             SELECT 1 FROM {TABLE_RACE}
@@ -428,20 +431,20 @@ async def get_horse_head_to_head(
     conn: Connection, kettonums: list[str], limit: int = 20
 ) -> list[dict[str, Any]]:
     """
-    複数の馬の過去の対戦成績を取得
+    Get head-to-head race history for multiple horses.
 
     Args:
-        conn: データベース接続
-        kettonums: 血統登録番号のリスト
-        limit: 取得する過去レース数の上限
+        conn: Database connection.
+        kettonums: List of pedigree registration numbers.
+        limit: Maximum number of past races to retrieve.
 
     Returns:
-        過去の対戦レースのリスト（各レースで対象馬の着順を含む）
+        List of past races where target horses competed (with finishing positions).
     """
     if len(kettonums) < 2:
         return []
 
-    # 対象馬が2頭以上出走したレースを検索
+    # Search for races where 2 or more target horses competed
     sql = f"""
         WITH target_horses AS (
             SELECT {COL_RACE_ID}, {COL_KETTONUM}, {COL_UMABAN}, kakutei_chakujun, {COL_BAMEI}
@@ -484,7 +487,7 @@ async def get_horse_head_to_head(
     try:
         rows = await conn.fetch(sql, kettonums, DATA_KUBUN_KAKUTEI, limit * len(kettonums))
 
-        # レースごとにグループ化
+        # Group by race
         races_dict: dict[str, dict[str, Any]] = {}
         for row in rows:
             race_id = row[COL_RACE_ID]
@@ -508,7 +511,7 @@ async def get_horse_head_to_head(
                 }
             )
 
-        # リストに変換してソート（レース日付の新しい順）
+        # Convert to list and sort (newest race date first)
         result = list(races_dict.values())
         result.sort(key=lambda x: x["race_date"], reverse=True)
 
@@ -528,17 +531,17 @@ async def search_races_by_name_db(
     limit: int = 20,
 ) -> list[dict[str, Any]]:
     """
-    レース名で検索（データベースから直接、エイリアス対応）
+    Search races by name directly from database with alias support.
 
     Args:
-        conn: データベース接続
-        race_name_query: レース名検索クエリ（部分一致）
-        days_before: 過去何日前まで検索するか
-        days_after: 未来何日先まで検索するか
-        limit: 最大取得件数
+        conn: Database connection.
+        race_name_query: Race name search query (partial match).
+        days_before: Number of days to search in the past.
+        days_after: Number of days to search in the future.
+        limit: Maximum number of results.
 
     Returns:
-        マッチしたレースのリスト
+        List of matching races.
     """
     from src.services.race_name_aliases import expand_race_name_query
 
@@ -577,14 +580,14 @@ async def search_races_by_name_db(
     """
 
     try:
-        # エイリアス展開（例: "日本ダービー" → ["日本ダービー", "東京優駿"]）
+        # Expand aliases (e.g., "Japan Derby" -> ["Japan Derby", "Tokyo Yushun"])
         search_terms = expand_race_name_query(race_name_query)
         logger.info(f"Expanded search terms: {search_terms}")
 
         all_results = []
         seen_race_ids = set()
 
-        # 各検索語で検索（重複排除）
+        # Search each term (with deduplication)
         for term in search_terms:
             search_pattern = f"%{term}%"
             logger.debug(f"Searching races with pattern: {search_pattern}")
@@ -607,10 +610,10 @@ async def search_races_by_name_db(
                 seen_race_ids.add(race_id)
                 all_results.append(row)
 
-        # 日付順にソート（新しい順）
+        # Sort by date (newest first)
         all_results.sort(key=lambda r: (r[COL_KAISAI_YEAR], r[COL_KAISAI_MONTHDAY]), reverse=True)
 
-        # limit適用
+        # Apply limit
         all_results = all_results[:limit]
 
         results = []

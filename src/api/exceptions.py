@@ -1,12 +1,12 @@
 """
-APIカスタム例外クラス
+API custom exception classes.
 """
 
 from fastapi import HTTPException, status
 
 
 class RaceNotFoundException(HTTPException):
-    """レースが見つからない場合の例外"""
+    """Exception raised when a race is not found."""
 
     def __init__(self, race_id: str):
         super().__init__(
@@ -20,7 +20,7 @@ class RaceNotFoundException(HTTPException):
 
 
 class HorseNotFoundException(HTTPException):
-    """馬が見つからない場合の例外"""
+    """Exception raised when a horse is not found."""
 
     def __init__(self, kettonum: str):
         super().__init__(
@@ -34,7 +34,7 @@ class HorseNotFoundException(HTTPException):
 
 
 class PredictionNotFoundException(HTTPException):
-    """予想結果が見つからない場合の例外"""
+    """Exception raised when a prediction result is not found."""
 
     def __init__(self, prediction_id: str):
         super().__init__(
@@ -48,7 +48,7 @@ class PredictionNotFoundException(HTTPException):
 
 
 class PredictionTimeoutException(HTTPException):
-    """予想生成タイムアウトの例外"""
+    """Exception raised when prediction generation times out."""
 
     def __init__(self):
         super().__init__(
@@ -62,7 +62,7 @@ class PredictionTimeoutException(HTTPException):
 
 
 class DatabaseErrorException(HTTPException):
-    """データベースエラーの例外"""
+    """Exception raised when a database error occurs."""
 
     def __init__(self, message: str):
         super().__init__(
@@ -76,7 +76,7 @@ class DatabaseErrorException(HTTPException):
 
 
 class InvalidRequestException(HTTPException):
-    """不正なリクエストの例外"""
+    """Exception raised when the request is invalid."""
 
     def __init__(self, message: str):
         super().__init__(

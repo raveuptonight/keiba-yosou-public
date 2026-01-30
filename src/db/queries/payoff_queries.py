@@ -1,7 +1,7 @@
 """
-払戻金情報取得クエリモジュール
+Payoff Information Query Module.
 
-レース結果の払戻金（配当）を取得するクエリ群
+Query functions for retrieving race result payoffs (dividends).
 """
 
 import logging
@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
     """
-    レースの払戻金（配当）を全券種取得
+    Get all payoffs (dividends) for a race by ticket type.
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
         {
@@ -69,11 +69,11 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
     """
 
     try:
-        # まず確定データ（data_kubun=7）を試し、なければ速報データ（data_kubun=2）を取得
+        # First try finalized data (data_kubun=7), then preliminary data (data_kubun=2)
         row = await conn.fetchrow(sql, race_id, DATA_KUBUN_KAKUTEI)
 
         if not row:
-            # 確定データがない場合、速報データを取得
+            # If finalized data is not available, get preliminary data
             row = await conn.fetchrow(sql, race_id, "2")
 
         if not row:
@@ -81,7 +81,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
 
         result: dict[str, Any] = {}
 
-        # 単勝
+        # Win
         if row["tansho1_umaban"]:
             result["win"] = {
                 "kumi": row["tansho1_umaban"].strip(),
@@ -91,7 +91,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
                 "ninki": int(row["tansho1_ninkijun"]) if row["tansho1_ninkijun"] else 0,
             }
 
-        # 複勝
+        # Place
         place_list = []
         for i in range(1, 4):
             umaban_col = f"fukusho{i}_umaban"
@@ -108,7 +108,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
         if place_list:
             result["place"] = place_list
 
-        # 枠連
+        # Bracket quinella
         if row["wakuren1_kumiban1"] and row["wakuren1_kumiban2"]:
             kumi = f"{row['wakuren1_kumiban1'].strip()}-{row['wakuren1_kumiban2'].strip()}"
             result["bracket_quinella"] = {
@@ -119,7 +119,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
                 "ninki": int(row["wakuren1_ninkijun"]) if row["wakuren1_ninkijun"] else 0,
             }
 
-        # 馬連
+        # Quinella
         if row["umaren1_kumiban1"] and row["umaren1_kumiban2"]:
             kumi = f"{row['umaren1_kumiban1'].strip()}-{row['umaren1_kumiban2'].strip()}"
             result["quinella"] = {
@@ -130,7 +130,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
                 "ninki": int(row["umaren1_ninkijun"]) if row["umaren1_ninkijun"] else 0,
             }
 
-        # 馬単
+        # Exacta
         if row["umatan1_kumiban1"] and row["umatan1_kumiban2"]:
             kumi = f"{row['umatan1_kumiban1'].strip()}→{row['umatan1_kumiban2'].strip()}"
             result["exacta"] = {
@@ -141,7 +141,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
                 "ninki": int(row["umatan1_ninkijun"]) if row["umatan1_ninkijun"] else 0,
             }
 
-        # ワイド
+        # Wide
         wide_list = []
         for i in range(1, 4):
             kumi1_col = f"wide{i}_kumiban1"
@@ -160,7 +160,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
         if wide_list:
             result["wide"] = wide_list
 
-        # 3連複
+        # Trio
         if (
             row["sanrenpuku1_kumiban1"]
             and row["sanrenpuku1_kumiban2"]
@@ -177,7 +177,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
                 "ninki": int(row["sanrenpuku1_ninkijun"]) if row["sanrenpuku1_ninkijun"] else 0,
             }
 
-        # 3連単
+        # Trifecta
         if row["sanrentan1_kumiban1"] and row["sanrentan1_kumiban2"] and row["sanrentan1_kumiban3"]:
             kumi = f"{row['sanrentan1_kumiban1'].strip()}→{row['sanrentan1_kumiban2'].strip()}→{row['sanrentan1_kumiban3'].strip()}"
             result["trifecta"] = {
@@ -199,11 +199,11 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
 
 async def get_race_results(conn: Connection, race_id: str) -> list[dict[str, Any]]:
     """
-    レースの結果（着順付き出走馬一覧）を取得
+    Get race results (entry list with finishing positions).
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
         [
@@ -250,7 +250,7 @@ async def get_race_results(conn: Connection, race_id: str) -> list[dict[str, Any
 
         results = []
         for row in rows:
-            # 着順をintに変換（文字列型のため）
+            # Convert finishing position to int (stored as string)
             try:
                 chakujun = int(row[COL_KAKUTEI_CHAKUJUN]) if row[COL_KAKUTEI_CHAKUJUN] else 0
             except (ValueError, TypeError):
@@ -279,14 +279,14 @@ async def get_race_results(conn: Connection, race_id: str) -> list[dict[str, Any
 
 async def get_race_lap_times(conn: Connection, race_id: str) -> list[str]:
     """
-    レースのラップタイム（200m毎）を取得
+    Get race lap times (per 200m).
 
     Args:
-        conn: データベース接続
-        race_id: レースID（16桁）
+        conn: Database connection.
+        race_id: Race ID (16 digits).
 
     Returns:
-        ラップタイムのリスト（例: ["123", "115", "118", ...]）
+        List of lap times (e.g., ["123", "115", "118", ...]).
     """
     from src.db.table_names import TABLE_RACE
 
@@ -308,17 +308,17 @@ async def get_race_lap_times(conn: Connection, race_id: str) -> list[str]:
         if not row:
             return []
 
-        # ラップタイムを収集（空でないものだけ）
+        # Collect lap times (non-empty values only)
         lap_times = []
         for i in range(1, 26):
             lap_col = f"lap_time{i}"
             if row.get(lap_col) and row[lap_col].strip() not in ("", "0", "00", "000"):
                 lap_times.append(row[lap_col].strip())
             else:
-                break  # 空のラップがあったらそこで終了
+                break  # Stop at the first empty lap
 
         return lap_times
 
     except Exception as e:
         logger.error(f"Failed to get race lap times: race_id={race_id}, error={e}")
-        return []  # エラー時は空リストを返す
+        return []  # Return empty list on error
