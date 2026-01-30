@@ -14,7 +14,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from src.scheduler.retrain.evaluator import compare_models
-from src.scheduler.retrain.manager import deploy_new_model
+from src.scheduler.retrain.manager import deploy_new_model, git_commit_and_push_model
 from src.scheduler.retrain.notifier import send_retrain_notification
 from src.scheduler.retrain.trainer import train_new_model
 
@@ -46,7 +46,11 @@ class WeeklyRetrain:
         self.current_model_path = self.model_dir / "ensemble_model_latest.pkl"
 
     def run_weekly_job(
-        self, force_deploy: bool = False, notify: bool = True, years: int = 3
+        self,
+        force_deploy: bool = False,
+        notify: bool = True,
+        years: int = 3,
+        git_push: bool = True,
     ) -> dict:
         """
         Run weekly retraining job.
@@ -55,6 +59,7 @@ class WeeklyRetrain:
             force_deploy: Deploy even without improvement
             notify: Send Discord notification
             years: Number of years for training data
+            git_push: Commit and push model to git repository
 
         Returns:
             Job result dictionary
@@ -104,6 +109,19 @@ class WeeklyRetrain:
             result["comparison"] = {"note": "initial_deployment"}
             logger.info("Initial deployment complete")
 
+        # 2.5. Git commit and push (if deployed)
+        if result["deployed"] and git_push:
+            git_result = git_commit_and_push_model(
+                self.current_model_path,
+                metrics=training_result,
+                push=True,
+            )
+            result["git_pushed"] = git_result
+            if git_result:
+                logger.info("Model committed and pushed to git repository")
+            else:
+                logger.warning("Git push failed (model still deployed locally)")
+
         # 3. Send notification
         if notify:
             send_retrain_notification(result)
@@ -128,12 +146,16 @@ def main():
     parser.add_argument(
         "--years", "-y", type=int, default=3, help="Years of training data (default: 3)"
     )
+    parser.add_argument("--no-git", action="store_true", help="Skip git commit/push")
 
     args = parser.parse_args()
 
     retrain = WeeklyRetrain()
     result = retrain.run_weekly_job(
-        force_deploy=args.force, notify=not args.no_notify, years=args.years
+        force_deploy=args.force,
+        notify=not args.no_notify,
+        years=args.years,
+        git_push=not args.no_git,
     )
 
     print("\n=== Retrain Result ===")
