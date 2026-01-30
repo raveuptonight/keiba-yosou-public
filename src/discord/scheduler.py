@@ -57,11 +57,16 @@ class PredictionScheduler(commands.Cog):
 
     async def _handle_weekend_result_select(self, interaction: discord.Interaction):
         """Handle weekend result date selection interaction."""
-        values = interaction.data.get("values", [])
+        if interaction.data is None:
+            return
+        data = interaction.data
+        values = data.get("values", []) if hasattr(data, "get") else []  # type: ignore[union-attr]
         if not values:
             return
 
-        selected_date = values[0]
+        selected_date = values[0] if isinstance(values, list) else None
+        if selected_date is None:
+            return
         logger.info(f"Weekend result detail request: date={selected_date}, user={interaction.user}")
 
         await interaction.response.defer(ephemeral=True)
@@ -166,7 +171,9 @@ class PredictionScheduler(commands.Cog):
         if interaction.type != discord.InteractionType.component:
             return
 
-        custom_id = interaction.data.get("custom_id")
+        if interaction.data is None:
+            return
+        custom_id = interaction.data.get("custom_id") if hasattr(interaction.data, "get") else None  # type: ignore[union-attr]
 
         # Weekend result date selection
         if custom_id == "weekend_result_select":
@@ -192,6 +199,10 @@ class PredictionScheduler(commands.Cog):
         channel = self.bot.get_channel(self.notification_channel_id)
         if not channel:
             logger.error(f"Notification channel not found: {self.notification_channel_id}")
+            return None
+
+        if not isinstance(channel, discord.TextChannel):
+            logger.error(f"Channel is not a TextChannel: {type(channel)}")
             return None
 
         return channel
@@ -221,7 +232,7 @@ class PredictionScheduler(commands.Cog):
                 race_id = race.get("race_id")
                 race_time_str = race.get("race_time")  # "15:25" format
 
-                if not race_time_str:
+                if not race_id or not race_time_str:
                     continue
 
                 # Parse race time (supports "HH:MM" or "HHMM" format)
@@ -319,7 +330,7 @@ class PredictionScheduler(commands.Cog):
 
     async def _execute_prediction(
         self, race_id: str, is_final: bool = False, send_notification: bool = True
-    ) -> dict | None:
+    ) -> dict | bool | None:
         """
         Execute prediction.
 

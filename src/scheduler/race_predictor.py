@@ -47,13 +47,13 @@ class RacePredictor:
         self.win_calibrator = None
         self.place_calibrator = None
         # 特徴量
-        self.feature_names = None
+        self.feature_names: list[str] | None = None
         self.has_classifiers = False
         self.has_catboost = False  # CatBoost有無フラグ
         # アンサンブル重み
-        self.ensemble_weights = None
+        self.ensemble_weights: dict[str, float] | None = None
         # 特徴量調整係数
-        self.feature_adjustments = {}
+        self.feature_adjustments: dict[str, float] = {}
         self._load_model()
         if use_adjustments:
             self._load_feature_adjustments()
@@ -138,7 +138,7 @@ class RacePredictor:
 
         return X_adjusted
 
-    def get_upcoming_races(self, target_date: date = None) -> list[dict]:
+    def get_upcoming_races(self, target_date: date | None = None) -> list[dict]:
         """指定日の出馬表を取得"""
         if target_date is None:
             target_date = date.today() + timedelta(days=1)
@@ -366,6 +366,11 @@ class RacePredictor:
             # 特徴量調整係数を適用
             X = self._apply_feature_adjustments(X)
 
+            # Model availability assertions for type checking
+            assert self.xgb_model is not None, "XGBoost model not loaded"
+            assert self.lgb_model is not None, "LightGBM model not loaded"
+            assert self.ensemble_weights is not None, "Ensemble weights not loaded"
+
             # 回帰予測（着順スコア）
             xgb_pred = self.xgb_model.predict(X)
             lgb_pred = self.lgb_model.predict(X)
@@ -385,6 +390,8 @@ class RacePredictor:
 
             # 分類モデルによる確率予測
             if self.has_classifiers:
+                assert self.xgb_win is not None, "XGBoost win classifier not loaded"
+                assert self.lgb_win is not None, "LightGBM win classifier not loaded"
                 # 勝利確率
                 xgb_win_prob = self.xgb_win.predict_proba(X)[:, 1]
                 lgb_win_prob = self.lgb_win.predict_proba(X)[:, 1]
@@ -403,6 +410,8 @@ class RacePredictor:
                     win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
 
                 # 複勝確率
+                assert self.xgb_place is not None, "XGBoost place classifier not loaded"
+                assert self.lgb_place is not None, "LightGBM place classifier not loaded"
                 xgb_place_prob = self.xgb_place.predict_proba(X)[:, 1]
                 lgb_place_prob = self.lgb_place.predict_proba(X)[:, 1]
 
@@ -465,7 +474,7 @@ class RacePredictor:
         finally:
             conn.close()
 
-    def run_predictions(self, target_date: date = None) -> dict[str, Any]:
+    def run_predictions(self, target_date: date | None = None) -> dict[str, Any]:
         """指定日の全レース予想を実行"""
         if target_date is None:
             target_date = date.today() + timedelta(days=1)
@@ -481,7 +490,7 @@ class RacePredictor:
 
         logger.info(f"{len(races)}レースの出馬表を確認")
 
-        results = {
+        results: dict[str, Any] = {
             "date": str(target_date),
             "status": "success",
             "generated_at": datetime.now().isoformat(),

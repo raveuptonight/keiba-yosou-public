@@ -114,9 +114,9 @@ class EnhancedFeatureExtractor:
     def get_sire_stats(
         self,
         sire_id: str,
-        distance: int = None,
-        baba_code: str = None,
-        venue_code: str = None,
+        distance: int | None = None,
+        baba_code: str | None = None,
+        venue_code: str | None = None,
         is_turf: bool = True,
     ) -> dict[str, float]:
         """
@@ -142,7 +142,7 @@ class EnhancedFeatureExtractor:
 
         # Build conditions
         conditions = ["k.ketto1_hanshoku_toroku_bango = %s"]
-        params = [sire_id]
+        params: list[Any] = [sire_id]
 
         # Turf/Dirt condition
         track_prefix = "1" if is_turf else "2"
@@ -208,7 +208,7 @@ class EnhancedFeatureExtractor:
 
     def extract_pedigree_features(self, kettonum: str, race_info: dict) -> dict[str, Any]:
         """Extract pedigree-related features."""
-        features = {}
+        features: dict[str, Any] = {}
 
         # Get pedigree info
         pedigree = self.get_pedigree_info(kettonum)
@@ -353,10 +353,14 @@ class EnhancedFeatureExtractor:
             return 9
 
     def extract_zenso_features(
-        self, kettonum: str, current_race_code: str, race_info: dict, current_ninki: int = None
+        self,
+        kettonum: str,
+        current_race_code: str,
+        race_info: dict,
+        current_ninki: int | None = None,
     ) -> dict[str, Any]:
         """Extract last race info features."""
-        features = {}
+        features: dict[str, Any] = {}
         past_races = self.get_past_races_detailed(kettonum, current_race_code, limit=5)
 
         # Default values when no past races
@@ -516,10 +520,10 @@ class EnhancedFeatureExtractor:
             return {"win_rate": 0.0, "place_rate": 0.0, "runs": 0}
 
     def extract_venue_features(
-        self, kettonum: str, race_info: dict, past_races: list[dict] = None
+        self, kettonum: str, race_info: dict, past_races: list[dict] | None = None
     ) -> dict[str, Any]:
         """Extract venue-related features."""
-        features = {}
+        features: dict[str, Any] = {}
 
         venue_code = race_info.get("keibajo_code", "")
         track_code = race_info.get("track_code", "")
@@ -587,7 +591,7 @@ class EnhancedFeatureExtractor:
         self, entry: dict, all_entries: list[dict], running_styles: dict[str, int]
     ) -> dict[str, Any]:
         """Extract enhanced pace features."""
-        features = {}
+        features: dict[str, Any] = {}
 
         umaban = self._safe_int(entry.get("umaban"), 0)
         my_style = running_styles.get(entry.get("ketto_toroku_bango", ""), 2)
@@ -672,7 +676,7 @@ class EnhancedFeatureExtractor:
 
     def extract_trend_features(self, kishu_code: str, past_races: list[dict]) -> dict[str, Any]:
         """Extract trend features."""
-        features = {}
+        features: dict[str, Any] = {}
 
         # Jockey's last 2 weeks performance
         jockey_form = self.get_jockey_recent_form(kishu_code, days=14)
@@ -688,7 +692,7 @@ class EnhancedFeatureExtractor:
 
     def extract_seasonal_features(self, race_info: dict, horse_age: int) -> dict[str, Any]:
         """Extract season/timing features."""
-        features = {}
+        features: dict[str, Any] = {}
 
         # Month (1-12)
         gappi = race_info.get("kaisai_gappi", "0101")
@@ -732,10 +736,10 @@ class EnhancedFeatureExtractor:
         race_info: dict,
         all_entries: list[dict],
         running_styles: dict[str, int],
-        current_ninki: int = None,
+        current_ninki: int | None = None,
     ) -> dict[str, Any]:
         """Extract all enhanced features."""
-        features = {}
+        features: dict[str, Any] = {}
         kettonum = entry.get("ketto_toroku_bango", "")
         kishu_code = entry.get("kishu_code", "")
         horse_age = self._safe_int(entry.get("barei"), 4)

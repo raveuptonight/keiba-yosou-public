@@ -7,6 +7,7 @@ Functions for sending prediction result notifications to Discord.
 import logging
 import os
 from datetime import date
+from typing import Any
 
 import requests
 
@@ -110,15 +111,15 @@ def send_weekend_notification(
     saturday: date,
     sunday: date,
     stats: dict,
-    ranking_stats: dict = None,
-    return_rates: dict = None,
-    popularity_stats: dict = None,
-    confidence_stats: dict = None,
-    by_track: dict = None,
-    daily_data: dict = None,
+    ranking_stats: dict | None = None,
+    return_rates: dict | None = None,
+    popularity_stats: dict | None = None,
+    confidence_stats: dict | None = None,
+    by_track: dict | None = None,
+    daily_data: dict | None = None,
     cumulative: dict | None = None,
-    ev_stats: dict = None,
-    axis_stats: dict = None,
+    ev_stats: dict | None = None,
+    axis_stats: dict | None = None,
 ):
     """
     Send weekend total Discord notification (EV recommendation and axis horse format).
@@ -211,7 +212,7 @@ def send_weekend_notification(
     headers = {"Authorization": f"Bot {bot_token}", "Content-Type": "application/json"}
 
     # Request body
-    payload = {"content": message}
+    payload: dict[str, Any] = {"content": message}
 
     # Add select menu if daily data exists
     if daily_data and len(daily_data) > 0:

@@ -9,6 +9,7 @@ Contains batch query methods for:
 """
 
 import logging
+from typing import Any
 
 from .utils import grade_to_rank, safe_int
 
@@ -19,7 +20,7 @@ SMALL_TRACK_VENUES = {"01", "02", "03", "06", "10"}
 
 
 def get_venue_stats_batch(
-    conn, kettonums: list[str], entries: list[dict] = None
+    conn, kettonums: list[str], entries: list[dict] | None = None
 ) -> dict[str, dict]:
     """Batch fetch venue-specific performance stats (data leak prevention version).
 
@@ -117,7 +118,7 @@ def get_venue_stats_batch(
 
 
 def get_zenso_batch(
-    conn, kettonums: list[str], race_codes: list[str], entries: list[dict] = None
+    conn, kettonums: list[str], race_codes: list[str], entries: list[dict] | None = None
 ) -> dict[str, dict]:
     """Batch fetch previous race (zenso) information (data leak prevention version).
 
@@ -243,7 +244,7 @@ def get_zenso_batch(
         cur.close()
 
         # Group by horse
-        horse_races = {}
+        horse_races: dict[str, list[dict[str, Any]]] = {}
         for row in rows:
             kettonum = row[0]
             if kettonum not in horse_races:

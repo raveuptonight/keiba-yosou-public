@@ -88,7 +88,8 @@ class PredictionResultsDB:
                         llm_model,
                     ),
                 )
-                prediction_id = cur.fetchone()[0]
+                result = cur.fetchone()
+                prediction_id = int(result[0]) if result else 0
                 conn.commit()
                 return prediction_id
         finally:
@@ -145,7 +146,8 @@ class PredictionResultsDB:
                         Json(reflection_result),
                     ),
                 )
-                result_id = cur.fetchone()[0]
+                result = cur.fetchone()
+                result_id = int(result[0]) if result else 0
                 conn.commit()
                 return result_id
         finally:
@@ -171,7 +173,8 @@ class PredictionResultsDB:
                     """,
                     (race_id,),
                 )
-                return cur.fetchone()
+                result = cur.fetchone()
+                return dict(result) if result else None
         finally:
             conn.close()
 
@@ -195,7 +198,8 @@ class PredictionResultsDB:
                     """,
                     (limit,),
                 )
-                return cur.fetchall()
+                results = cur.fetchall()
+                return [dict(row) for row in results]
         finally:
             conn.close()
 
@@ -221,7 +225,8 @@ class PredictionResultsDB:
                     """,
                     (period,),
                 )
-                return cur.fetchone()
+                result = cur.fetchone()
+                return dict(result) if result else None
         finally:
             conn.close()
 

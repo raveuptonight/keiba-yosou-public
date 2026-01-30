@@ -11,6 +11,7 @@ Contains training and saving functions for the XGBoost ensemble model:
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -81,7 +82,7 @@ def train_model(df: pd.DataFrame, use_gpu: bool = True) -> tuple[dict, dict]:
     logger.info(f"Train: {len(X_train)}, Calib: {len(X_calib)}, Test: {len(X_test)}")
 
     # Common parameters
-    base_params = {
+    base_params: dict[str, Any] = {
         "n_estimators": 800,
         "max_depth": 7,
         "learning_rate": 0.03,

@@ -92,7 +92,10 @@ class KeibaBot(commands.Bot):
         """
         Handler for bot startup completion.
         """
-        logger.info(f"Bot login successful: {self.user.name} (ID: {self.user.id})")
+        if self.user:
+            logger.info(f"Bot login successful: {self.user.name} (ID: {self.user.id})")
+        else:
+            logger.warning("Bot ready but user not set")
         logger.info(f"Connected servers: {len(self.guilds)}")
 
         try:
@@ -123,7 +126,7 @@ class KeibaBot(commands.Bot):
         except Exception as e:
             logger.error(f"Error in on_ready handler: {e}")
 
-    async def send_notification(self, message: str, embed: discord.Embed = None):
+    async def send_notification(self, message: str, embed: discord.Embed | None = None):
         """
         Send message to notification channel (for bot auto-notifications).
 
@@ -140,14 +143,16 @@ class KeibaBot(commands.Bot):
 
         try:
             channel = self.get_channel(self.notification_channel_id)
-            if channel:
+            if channel and isinstance(channel, discord.TextChannel):
                 if embed:
                     await channel.send(content=message, embed=embed)
                 else:
                     await channel.send(message)
                 logger.info(f"Notification sent: channel_id={self.notification_channel_id}")
             else:
-                logger.error(f"Channel not found: channel_id={self.notification_channel_id}")
+                logger.error(
+                    f"Channel not found or invalid type: channel_id={self.notification_channel_id}"
+                )
                 raise BotError(f"Channel not found: ID={self.notification_channel_id}")
         except discord.errors.HTTPException as e:
             logger.error(f"Discord API notification error: {e}")

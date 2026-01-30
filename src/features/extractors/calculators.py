@@ -94,7 +94,7 @@ def calc_speed_index_avg(past_races: list[dict], n: int = 5) -> float:
             speed_index = 100 - (total_seconds - 90) * 2
             times.append(max(50, min(120, speed_index)))
 
-    return np.mean(times) if times else 80.0
+    return float(np.mean(times)) if times else 80.0
 
 
 def calc_speed_index_max(past_races: list[dict], n: int = 5) -> float:
@@ -163,7 +163,7 @@ def calc_last3f_avg(past_races: list[dict], n: int = 5) -> float:
         if l3f and l3f.isdigit():
             times.append(int(l3f) / 10.0)
 
-    return np.mean(times) if times else 35.0
+    return float(np.mean(times)) if times else 35.0
 
 
 def calc_last3f_rank_avg(past_races: list[dict], n: int = 5) -> float:
@@ -237,7 +237,7 @@ def calc_corner_avg(past_races: list[dict], corner_col: str) -> float:
         if pos > 0:
             positions.append(pos)
 
-    return np.mean(positions) if positions else 8.0
+    return float(np.mean(positions)) if positions else 8.0
 
 
 # ===== Win/place rate calculations =====
@@ -522,7 +522,7 @@ def calc_avg_time_diff(past_races: list[dict]) -> float:
         estimated_diff = (chakujun - 1) * 0.2
         diffs.append(min(estimated_diff, 5.0))
 
-    return np.mean(diffs) if diffs else 1.0
+    return float(np.mean(diffs)) if diffs else 1.0
 
 
 def get_best_finish(past_races: list[dict]) -> int:

@@ -305,14 +305,15 @@ def search_races_by_name(
             days_after = 0
 
         # 新しいAPI エンドポイントを使用（1回のリクエストで全検索）
+        params: dict[str, Any] = {
+            "query": race_name,
+            "days_before": max(0, days_before),
+            "days_after": max(0, days_after),
+            "limit": 50,
+        }
         response = requests.get(
             f"{api_base_url}/api/races/search/name",
-            params={
-                "query": race_name,
-                "days_before": max(0, days_before),
-                "days_after": max(0, days_after),
-                "limit": 50,
-            },
+            params=params,
             timeout=10,
         )
 

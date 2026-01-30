@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def get_surface_stats_batch(
-    conn, kettonums: list[str], entries: list[dict] = None
+    conn, kettonums: list[str], entries: list[dict] | None = None
 ) -> dict[str, dict]:
     """Batch fetch turf/dirt performance stats (data leak prevention version).
 
@@ -239,7 +239,7 @@ def get_turn_rates_batch(conn, kettonums: list[str]) -> dict[str, dict]:
 
 
 def get_baba_stats_batch(
-    conn, kettonums: list[str], races: list[dict], entries: list[dict] = None
+    conn, kettonums: list[str], races: list[dict], entries: list[dict] | None = None
 ) -> dict[str, dict]:
     """Batch fetch track condition (baba) performance stats (data leak prevention version).
 
@@ -374,7 +374,7 @@ def get_baba_stats_batch(
 
 
 def get_interval_stats_batch(
-    conn, kettonums: list[str], entries: list[dict] = None
+    conn, kettonums: list[str], entries: list[dict] | None = None
 ) -> dict[str, dict]:
     """Batch fetch rest interval performance stats (data leak prevention version).
 

@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def compare_results(predictions: dict, results: list[dict], payouts: dict = None) -> dict:
+def compare_results(predictions: dict, results: list[dict], payouts: dict | None = None) -> dict:
     """
     Compare predictions with actual results (EV recommendation and axis horse format).
 

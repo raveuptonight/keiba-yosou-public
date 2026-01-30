@@ -10,6 +10,7 @@ SHAP分析モジュール
 import json
 import logging
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import joblib
 import numpy as np
@@ -34,10 +35,10 @@ class ShapAnalyzer:
 
     def __init__(self, model_path: str = "/app/models/ensemble_model_latest.pkl"):
         self.model_path = model_path
-        self.xgb_model = None
-        self.lgb_model = None
-        self.feature_names = None
-        self.explainer = None
+        self.xgb_model: Any = None
+        self.lgb_model: Any = None
+        self.feature_names: list[str] = []
+        self.explainer: Any = None
         self._load_model()
 
     def _load_model(self):
@@ -165,7 +166,7 @@ class ShapAnalyzer:
                 (kaisai_nen, kaisai_gappi),
             )
 
-            results = {}
+            results: dict[str, dict[str, Any]] = {}
             for row in cur.fetchall():
                 race_code = row[0]
                 if race_code not in results:
@@ -296,7 +297,7 @@ class ShapAnalyzer:
         finally:
             conn.close()
 
-    def calculate_shap_values(self, X: pd.DataFrame) -> np.ndarray:
+    def calculate_shap_values(self, X: pd.DataFrame) -> np.ndarray | None:
         """SHAP値を計算"""
         if not SHAP_AVAILABLE:
             logger.warning("SHAPライブラリが利用できません")
@@ -353,7 +354,7 @@ class ShapAnalyzer:
         # 軸馬の分析
         axis_umaban = str(axis_horse.get("horse_number", "")).zfill(2) if axis_horse else None
         axis_analysis = None
-        if axis_umaban:
+        if axis_umaban and axis_horse:
             horse_row = df[df["umaban"].astype(str).str.zfill(2) == axis_umaban]
             if not horse_row.empty:
                 actual_chakujun = int(horse_row["actual_chakujun"].iloc[0])
@@ -560,7 +561,7 @@ class ShapAnalyzer:
         return adjustments
 
     def save_adjustments_to_db(
-        self, adjustments: dict[str, float], analysis_date: date = None
+        self, adjustments: dict[str, float], analysis_date: date | None = None
     ) -> bool:
         """特徴量調整係数をDBに保存"""
         if not adjustments:
@@ -657,7 +658,7 @@ class ShapAnalyzer:
         if not analyses:
             return {}
 
-        aggregated = {}
+        aggregated: dict[str, list[float]] = {}
         for analysis in analyses:
             for fname, value in analysis.get("feature_contributions", {}).items():
                 if fname not in aggregated:
@@ -665,7 +666,7 @@ class ShapAnalyzer:
                 aggregated[fname].append(value)
 
         # 平均を計算
-        return {fname: np.mean(values) for fname, values in aggregated.items()}
+        return {fname: float(np.mean(values)) for fname, values in aggregated.items()}
 
     def generate_report(self, analysis: dict) -> str:
         """分析レポートを生成（EV推奨・軸馬形式）"""

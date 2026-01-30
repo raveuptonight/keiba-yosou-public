@@ -141,9 +141,9 @@ def cache_delete(key: str) -> bool:
         return False
 
     try:
-        result = client.delete(key)
+        result: int = client.delete(key)  # type: ignore[union-attr]
         logger.debug(f"Cache delete: {key} (deleted: {result})")
-        return result > 0
+        return bool(result > 0)
     except Exception as e:
         logger.warning(f"Cache delete error: {key}, {e}")
         return False
@@ -166,9 +166,9 @@ def cache_delete_pattern(pattern: str) -> int:
     try:
         keys = list(client.scan_iter(match=pattern))
         if keys:
-            deleted = client.delete(*keys)
+            deleted: int = client.delete(*keys)  # type: ignore[union-attr]
             logger.info(f"Cache pattern delete: {pattern} (deleted: {deleted})")
-            return deleted
+            return int(deleted)
         return 0
     except Exception as e:
         logger.warning(f"Cache pattern delete error: {pattern}, {e}")

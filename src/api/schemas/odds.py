@@ -17,7 +17,7 @@ class SingleOdds(BaseModel):
 class CombinationOdds(BaseModel):
     """複数馬番組み合わせオッズ（馬連・3連複等）"""
 
-    numbers: list[int] = Field(..., min_items=2, description="馬番リスト")
+    numbers: list[int] = Field(..., min_length=2, description="馬番リスト")
     odds: float = Field(..., ge=0.1, description="オッズ")
 
 

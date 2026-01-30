@@ -62,7 +62,7 @@ async def get_odds(
                 logger.warning(f"Race not found: {race_id}")
                 raise RaceNotFoundException(race_id)
 
-            odds_data = []
+            odds_data: list[SingleOdds | CombinationOdds] = []
 
             # 券種に応じてオッズを取得
             if ticket_type == "win":

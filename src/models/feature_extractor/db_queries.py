@@ -77,7 +77,9 @@ def get_all_entries(conn, race_codes: list[str]) -> list[dict]:
     return [dict(zip(cols, row)) for row in rows]
 
 
-def get_past_stats_batch(conn, kettonums: list[str], entries: list[dict] = None) -> dict[str, dict]:
+def get_past_stats_batch(
+    conn, kettonums: list[str], entries: list[dict] | None = None
+) -> dict[str, dict]:
     """Batch fetch past performance stats (data leak prevention version).
 
     Retrieves last 10 races for each horse, excluding the current race to prevent data leakage.

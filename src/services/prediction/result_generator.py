@@ -42,7 +42,7 @@ def generate_mock_prediction(race_id: str, is_final: bool) -> PredictionResponse
     logger.info(f"[MOCK] Generating mock prediction for race_id={race_id}")
 
     # Mock ranking data
-    mock_horses = [
+    mock_horses: list[dict[str, int | float | str]] = [
         {"rank": 1, "horse_number": 1, "horse_name": "MockHorse1", "win_prob": 0.25},
         {"rank": 2, "horse_number": 5, "horse_name": "MockHorse5", "win_prob": 0.18},
         {"rank": 3, "horse_number": 3, "horse_name": "MockHorse3", "win_prob": 0.12},
@@ -52,26 +52,32 @@ def generate_mock_prediction(race_id: str, is_final: bool) -> PredictionResponse
 
     ranked_horses = [
         HorseRankingEntry(
-            rank=h["rank"],
-            horse_number=h["horse_number"],
-            horse_name=h["horse_name"],
-            win_probability=h["win_prob"],
-            quinella_probability=min(h["win_prob"] * 1.8, 0.5),
-            place_probability=min(h["win_prob"] * 2.5, 0.6),
+            rank=int(h["rank"]),
+            horse_number=int(h["horse_number"]),
+            horse_name=str(h["horse_name"]),
+            horse_sex=None,
+            horse_age=None,
+            jockey_name=None,
+            win_probability=float(h["win_prob"]),
+            quinella_probability=min(float(h["win_prob"]) * 1.8, 0.5),
+            place_probability=min(float(h["win_prob"]) * 2.5, 0.6),
             position_distribution=PositionDistribution(
-                first=h["win_prob"],
-                second=h["win_prob"] * 0.8,
-                third=h["win_prob"] * 0.6,
-                out_of_place=max(0, 1.0 - h["win_prob"] * 2.4),
+                first=float(h["win_prob"]),
+                second=float(h["win_prob"]) * 0.8,
+                third=float(h["win_prob"]) * 0.6,
+                out_of_place=max(0, 1.0 - float(h["win_prob"]) * 2.4),
             ),
             rank_score=float(h["rank"]),
-            confidence=0.7 - h["rank"] * 0.05,
+            confidence=0.7 - float(h["rank"]) * 0.05,
         )
         for h in mock_horses
     ]
 
     prediction_result = PredictionResult(
         ranked_horses=ranked_horses,
+        quinella_ranking=None,
+        place_ranking=None,
+        dark_horses=None,
         prediction_confidence=0.72,
         model_info="mock_model",
     )

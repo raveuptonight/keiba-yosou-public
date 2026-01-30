@@ -297,7 +297,7 @@ class DailyBiasAnalyzer:
         finally:
             conn.close()
 
-    def save_bias(self, bias_result: DailyBiasResult, output_path: str = None) -> bool:
+    def save_bias(self, bias_result: DailyBiasResult, output_path: str | None = None) -> bool:
         """Save bias result to database."""
         conn = self.db.get_connection()
         if not conn:

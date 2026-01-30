@@ -79,7 +79,7 @@ async def get_race_payoffs(conn: Connection, race_id: str) -> dict[str, Any]:
         if not row:
             return {}
 
-        result = {}
+        result: dict[str, Any] = {}
 
         # 単勝
         if row["tansho1_umaban"]:

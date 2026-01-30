@@ -6,6 +6,7 @@ Functions for comparing and evaluating ensemble models.
 
 import logging
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -158,6 +159,9 @@ def evaluate_model(
     xgb_reg = models.get("xgb_regressor") or model_data.get("xgb_model")
     lgb_reg = models.get("lgb_regressor") or model_data.get("lgb_model")
     cb_reg = models.get("cb_regressor") or model_data.get("cb_model")
+
+    if xgb_reg is None or lgb_reg is None:
+        raise ValueError("XGBoost and LightGBM regressors are required")
 
     if cb_reg is not None and weights is not None:
         # 3-model ensemble
@@ -327,7 +331,7 @@ def get_payouts_for_year(conn, year: int) -> dict:
             (year,),
         )
 
-        payouts = {}
+        payouts: dict[str, Any] = {}
         for row in cur.fetchall():
             race_code = row["race_code"]
 

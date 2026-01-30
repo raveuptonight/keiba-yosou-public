@@ -66,9 +66,9 @@ router = APIRouter()
 
 def _get_race_name_with_fallback(
     race_name: str,
-    grade_code: str = None,
-    kyoso_joken_code: str = None,
-    kyoso_shubetsu_code: str = None,
+    grade_code: str | None = None,
+    kyoso_joken_code: str | None = None,
+    kyoso_shubetsu_code: str | None = None,
 ) -> str:
     """レース名が空の場合にフォールバック値を返す"""
     if race_name and race_name.strip():
@@ -105,7 +105,7 @@ def _get_venue_name(venue_code: str) -> str:
     return venue_map.get(venue_code, "不明")
 
 
-def _get_grade_display(grade_code: str) -> str | None:
+def _get_grade_display(grade_code: str | None) -> str | None:
     """グレードコードから表示名を取得"""
     if not grade_code:
         return None

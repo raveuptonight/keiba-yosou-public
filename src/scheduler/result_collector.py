@@ -107,15 +107,15 @@ class ResultCollector:
         saturday: date,
         sunday: date,
         stats: dict,
-        ranking_stats: dict = None,
-        return_rates: dict = None,
-        popularity_stats: dict = None,
-        confidence_stats: dict = None,
-        by_track: dict = None,
-        daily_data: dict = None,
+        ranking_stats: dict | None = None,
+        return_rates: dict | None = None,
+        popularity_stats: dict | None = None,
+        confidence_stats: dict | None = None,
+        by_track: dict | None = None,
+        daily_data: dict | None = None,
         cumulative: dict | None = None,
-        ev_stats: dict = None,
-        axis_stats: dict = None,
+        ev_stats: dict | None = None,
+        axis_stats: dict | None = None,
     ):
         """Send weekend total Discord notification (EV recommendation and axis horse format)."""
         send_weekend_notification(

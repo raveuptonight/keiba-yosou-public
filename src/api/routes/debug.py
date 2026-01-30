@@ -3,6 +3,7 @@
 """
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -42,6 +43,7 @@ async def get_table_schema(table_name: str):
             )
 
         # Get sample data
+        sample_data: dict[str, Any] | str | None = None
         try:
             sample = await conn.fetchrow(f"SELECT * FROM {table_name} LIMIT 1")
             sample_data = dict(sample) if sample else None

@@ -225,8 +225,13 @@ async def validate_prediction_data(data: dict[str, Any]) -> dict[str, Any]:
             "missing_data": Dict[str, List[str]]
         }
     """
-    warnings = []
-    missing_data = {"histories": [], "pedigrees": [], "training": [], "statistics": []}
+    warnings: list[str] = []
+    missing_data: dict[str, list[str]] = {
+        "histories": [],
+        "pedigrees": [],
+        "training": [],
+        "statistics": [],
+    }
 
     from src.db.table_names import COL_BAMEI, COL_KETTONUM
 

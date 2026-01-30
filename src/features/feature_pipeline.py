@@ -11,14 +11,14 @@ import pandas as pd
 class FeatureExtractor:
     """JRA-VANデータから特徴量を抽出"""
 
-    def __init__(self, db_connection=None):
+    def __init__(self, db_connection: object | None = None):
         """
         Args:
             db_connection: PostgreSQL接続（オプション、現在はモックデータ使用）
         """
         self.db_connection = db_connection
 
-    def extract_features(self, race_id: str, horse_number: int) -> dict:
+    def extract_features(self, race_id: str, horse_number: int) -> dict[str, float | int]:
         """
         各馬の特徴量を抽出
 
@@ -29,7 +29,7 @@ class FeatureExtractor:
         Returns:
             dict: 特徴量辞書
         """
-        features = {}
+        features: dict[str, float | int] = {}
 
         # TODO: 実際のDB接続実装後に置き換え
         # 現在はモックデータを返す

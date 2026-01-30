@@ -94,7 +94,6 @@ COL_RACE_NAME_SHORT: Final[str] = "kyosomei_ryakusho_10"  # レース名（略�
 COL_GRADE_CD: Final[str] = "grade_code"  # グレードコード
 COL_TRACK_CD: Final[str] = "track_code"  # トラックコード
 COL_KYORI: Final[str] = "kyori"  # 距離
-COL_RACE_NUM: Final[str] = "race_bango"  # レース番号
 COL_TENKO_CD: Final[str] = "tenko_code"  # 天候コード
 COL_SHIBA_BABA_CD: Final[str] = "shiba_babajotai_code"  # 芝馬場状態コード
 COL_DIRT_BABA_CD: Final[str] = "dirt_babajotai_code"  # ダート馬場状態コード

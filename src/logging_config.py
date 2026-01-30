@@ -19,13 +19,17 @@ Usage:
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any
 
+HAS_JSON_LOGGER = False
 try:
     from pythonjsonlogger import jsonlogger
 
     HAS_JSON_LOGGER = True
 except ImportError:
-    HAS_JSON_LOGGER = False
+    # Create a stub class for type checking
+    if TYPE_CHECKING:
+        from pythonjsonlogger import jsonlogger
 
 # Japan Standard Time
 JST = timezone(timedelta(hours=9))
@@ -41,7 +45,10 @@ class JSTFormatter(logging.Formatter):
         return ct.isoformat()
 
 
-class CustomJsonFormatter(jsonlogger.JsonFormatter if HAS_JSON_LOGGER else object):
+_JsonFormatterBase: Any = jsonlogger.JsonFormatter if HAS_JSON_LOGGER else object
+
+
+class CustomJsonFormatter(_JsonFormatterBase):  # type: ignore[misc]
     """
     Custom JSON formatter with JST timezone and additional fields.
 

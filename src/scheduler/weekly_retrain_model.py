@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class WeeklyRetrain:
     """Weekly retraining class for ensemble model."""
 
-    def __init__(self, model_dir: str = None, backup_dir: str = None):
+    def __init__(self, model_dir: str | None = None, backup_dir: str | None = None):
         """
         Initialize retrainer.
 

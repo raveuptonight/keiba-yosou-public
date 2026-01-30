@@ -6,11 +6,14 @@ Functions for retrieving race, horse, jockey, and training data from the databas
 
 import logging
 from datetime import date
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
 
-def get_race_entries(conn, race_code: str, data_kubun: str, cache: dict = None) -> list[dict]:
+def get_race_entries(
+    conn, race_code: str, data_kubun: str, cache: dict | None = None
+) -> list[dict]:
     """
     Get list of race entries.
 
@@ -129,7 +132,7 @@ def get_past_races(
 
     cache_key = f"past_{kettonum}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(list[dict[Any, Any]], cache[cache_key])
 
     sql = """
         SELECT
@@ -188,7 +191,7 @@ def get_jockey_stats(conn, jockey_code: str, cache: dict) -> dict:
 
     cache_key = f"jockey_{jockey_code}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Aggregate results from past year
     sql = """
@@ -243,7 +246,7 @@ def get_trainer_stats(conn, trainer_code: str, cache: dict) -> dict:
 
     cache_key = f"trainer_{trainer_code}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     sql = """
         SELECT
@@ -298,7 +301,7 @@ def get_jockey_horse_combo(conn, jockey_code: str, kettonum: str, cache: dict) -
 
     cache_key = f"combo_{jockey_code}_{kettonum}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     sql = """
         SELECT
@@ -343,7 +346,7 @@ def get_training_data(conn, kettonum: str, race_code: str, cache: dict) -> dict:
 
     cache_key = f"training_{kettonum}_{race_code[:8]}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Get training data within 2 weeks before the race (simplified version)
     sql = """
@@ -399,7 +402,7 @@ def get_distance_stats(
 
     cache_key = f"dist_stats_{kettonum}_{distance}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Determine distance category
     is_turf = track_code.startswith("1") if track_code else True
@@ -487,7 +490,7 @@ def get_baba_stats(
 
     cache_key = f"baba_stats_{kettonum}_{baba_code}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Determine track condition
     is_turf = track_code.startswith("1") if track_code else True
@@ -555,7 +558,7 @@ def get_detailed_training(conn, kettonum: str, race_code: str, cache: dict) -> d
 
     cache_key = f"detailed_training_{kettonum}_{race_code[:8]}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Get race date and search for training before that
     race_code[4:12] if len(race_code) >= 12 else ""
@@ -612,7 +615,7 @@ def get_interval_stats(conn, kettonum: str, interval_cat: str, cache: dict) -> d
 
     cache_key = f"interval_{kettonum}_{interval_cat}"
     if cache_key in cache:
-        return cache[cache_key]
+        return cast(dict[Any, Any], cache[cache_key])
 
     # Interval category day ranges
     interval_ranges = {

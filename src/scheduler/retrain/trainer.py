@@ -7,6 +7,7 @@ Functions for training ensemble models (XGBoost + LightGBM + CatBoost).
 import logging
 from datetime import date, datetime
 from pathlib import Path
+from typing import Any
 
 import joblib
 import numpy as np
@@ -208,7 +209,7 @@ def train_new_model(model_dir: Path, years: int = 3) -> dict:
         logger.info(f"Train: {len(X_train)}, Calib: {len(X_calib)}, Test: {len(X_test)}")
 
         # Common parameters
-        base_params = {
+        base_params: dict[str, Any] = {
             "n_estimators": 500,
             "max_depth": 7,
             "learning_rate": 0.05,
@@ -219,7 +220,7 @@ def train_new_model(model_dir: Path, years: int = 3) -> dict:
         }
 
         # CatBoost parameters
-        cb_params = {
+        cb_params: dict[str, Any] = {
             "iterations": 500,
             "depth": 7,
             "learning_rate": 0.05,

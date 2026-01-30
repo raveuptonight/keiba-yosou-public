@@ -127,11 +127,11 @@ class RealFeatureExtractor:
         entry: dict,
         race_info: dict,
         all_entries: list[dict],
-        pace_info: dict = None,
-        running_styles: dict[str, int] = None,
+        pace_info: dict | None = None,
+        running_styles: dict[str, int] | None = None,
     ) -> dict[str, Any]:
         """Extract features for a single horse."""
-        features = {}
+        features: dict[str, Any] = {}
         kettonum = entry.get("ketto_toroku_bango", "")
 
         if running_styles is None:
@@ -318,7 +318,8 @@ class RealFeatureExtractor:
         # ===== Enhanced features (v2) =====
         try:
             # Current popularity (unknown at prediction time)
-            current_ninki = safe_int(entry.get("tansho_ninkijun"), None)
+            raw_ninki = entry.get("tansho_ninkijun")
+            current_ninki: int | None = int(raw_ninki) if raw_ninki else None
 
             enhanced_features = self._enhanced_extractor.extract_all_enhanced_features(
                 entry=entry,

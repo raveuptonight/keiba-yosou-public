@@ -8,6 +8,7 @@ and saving analysis results.
 import json
 import logging
 from datetime import date, timedelta
+from typing import Any
 
 from src.db.connection import get_db
 
@@ -226,7 +227,7 @@ def load_predictions_from_db(target_date: date) -> dict | None:
             logger.warning(f"No prediction data found: {target_date}")
             return None
 
-        predictions = {"date": str(target_date), "races": []}
+        predictions: dict[str, Any] = {"date": str(target_date), "races": []}
 
         for row in rows:
             prediction_id = row[0]

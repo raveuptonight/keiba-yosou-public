@@ -178,14 +178,14 @@ class FastFeatureExtractor:
         logger.info(f"  Jockey maiden stats: {len(jockey_maiden_stats)}")
 
         # 6. Group entries by race and calculate pace predictions
-        entries_by_race = {}
+        entries_by_race: dict[str, list[dict[str, Any]]] = {}
         for entry in entries:
             rc = entry["race_code"]
             if rc not in entries_by_race:
                 entries_by_race[rc] = []
             entries_by_race[rc].append(entry)
 
-        pace_predictions = {}
+        pace_predictions: dict[str, dict[str, Any]] = {}
         for rc, race_entries in entries_by_race.items():
             pace_predictions[rc] = self._calc_pace_prediction(race_entries, past_stats)
 
@@ -243,7 +243,7 @@ class FastFeatureExtractor:
         return db_queries.get_all_entries(self.conn, race_codes)
 
     def _get_past_stats_batch(
-        self, kettonums: list[str], entries: list[dict] = None
+        self, kettonums: list[str], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch past performance stats."""
         return db_queries.get_past_stats_batch(self.conn, kettonums, entries)
@@ -257,7 +257,7 @@ class FastFeatureExtractor:
         return db_queries.get_training_stats_batch(self.conn, kettonums)
 
     def _get_surface_stats_batch(
-        self, kettonums: list[str], entries: list[dict] = None
+        self, kettonums: list[str], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch turf/dirt stats."""
         return performance.get_surface_stats_batch(self.conn, kettonums, entries)
@@ -267,13 +267,13 @@ class FastFeatureExtractor:
         return performance.get_turn_rates_batch(self.conn, kettonums)
 
     def _get_baba_stats_batch(
-        self, kettonums: list[str], races: list[dict], entries: list[dict] = None
+        self, kettonums: list[str], races: list[dict], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch track condition stats."""
         return performance.get_baba_stats_batch(self.conn, kettonums, races, entries)
 
     def _get_interval_stats_batch(
-        self, kettonums: list[str], entries: list[dict] = None
+        self, kettonums: list[str], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch interval stats."""
         return performance.get_interval_stats_batch(self.conn, kettonums, entries)
@@ -293,13 +293,13 @@ class FastFeatureExtractor:
         return pedigree.get_sire_maiden_stats_batch(self.conn, sire_ids, year)
 
     def _get_venue_stats_batch(
-        self, kettonums: list[str], entries: list[dict] = None
+        self, kettonums: list[str], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch venue stats."""
         return venue.get_venue_stats_batch(self.conn, kettonums, entries)
 
     def _get_zenso_batch(
-        self, kettonums: list[str], race_codes: list[str], entries: list[dict] = None
+        self, kettonums: list[str], race_codes: list[str], entries: list[dict] | None = None
     ) -> dict[str, dict]:
         """Batch fetch zenso info."""
         return venue.get_zenso_batch(self.conn, kettonums, race_codes, entries)
@@ -417,23 +417,23 @@ class FastFeatureExtractor:
         entry: dict,
         races: list[dict],
         past_stats: dict[str, dict],
-        jockey_horse_stats: dict[str, dict] = None,
-        distance_stats: dict[str, dict] = None,
-        baba_stats: dict[str, dict] = None,
-        training_stats: dict[str, dict] = None,
-        interval_stats: dict[str, dict] = None,
-        pace_predictions: dict[str, dict] = None,
-        entries_by_race: dict[str, list[dict]] = None,
+        jockey_horse_stats: dict[str, dict] | None = None,
+        distance_stats: dict[str, dict] | None = None,
+        baba_stats: dict[str, dict] | None = None,
+        training_stats: dict[str, dict] | None = None,
+        interval_stats: dict[str, dict] | None = None,
+        pace_predictions: dict[str, dict] | None = None,
+        entries_by_race: dict[str, list[dict]] | None = None,
         # Extended feature data
-        pedigree_info: dict[str, dict] = None,
-        venue_stats: dict[str, dict] = None,
-        zenso_info: dict[str, dict] = None,
-        jockey_recent: dict[str, dict] = None,
-        sire_stats_turf: dict[str, dict] = None,
-        sire_stats_dirt: dict[str, dict] = None,
-        sire_maiden_stats: dict[str, dict] = None,
-        jockey_maiden_stats: dict[str, dict] = None,
-        year: int = None,
+        pedigree_info: dict[str, dict] | None = None,
+        venue_stats: dict[str, dict] | None = None,
+        zenso_info: dict[str, dict] | None = None,
+        jockey_recent: dict[str, dict] | None = None,
+        sire_stats_turf: dict[str, dict] | None = None,
+        sire_stats_dirt: dict[str, dict] | None = None,
+        sire_maiden_stats: dict[str, dict] | None = None,
+        jockey_maiden_stats: dict[str, dict] | None = None,
+        year: int | None = None,
     ) -> dict | None:
         """Build feature vector for a single entry.
 
