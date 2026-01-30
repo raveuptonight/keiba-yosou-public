@@ -129,6 +129,10 @@ services:
       - DISCORD_NOTIFICATION_CHANNEL_ID=${DISCORD_NOTIFICATION_CHANNEL_ID}
       - API_BASE_URL=http://api:8000
       - NVIDIA_VISIBLE_DEVICES=all
+      # Git credentials for model version control
+      - GIT_USER_NAME=${GIT_USER_NAME:-keiba-bot}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-bot@example.com}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
     depends_on:
       api:
         condition: service_healthy
@@ -137,6 +141,7 @@ services:
       - ./models:/app/models
       - ./logs:/app/logs
       - ./backtest_results:/app/backtest_results
+      - ./.git:/app/.git  # Git repository for model version control
     extra_hosts:
       - "host.docker.internal:host-gateway"
     deploy:

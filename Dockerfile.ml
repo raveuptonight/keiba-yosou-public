@@ -3,12 +3,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# システム依存パッケージ（ML用に追加）
+# システム依存パッケージ（ML用 + git）
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    git \
+    git-lfs \
+    && rm -rf /var/lib/apt/lists/* \
+    && git lfs install
 
 # Python依存パッケージ
 COPY requirements.txt .

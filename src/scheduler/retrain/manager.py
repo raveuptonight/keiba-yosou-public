@@ -74,12 +74,17 @@ def git_commit_and_push_model(
     Returns:
         True if successful, False otherwise
     """
+    import os
+
     try:
         # Find repository root
         repo_root = _find_git_root(model_path)
         if not repo_root:
             logger.error("Git repository not found")
             return False
+
+        # Configure git credentials from environment variables
+        _configure_git_credentials(repo_root)
 
         # Get relative path from repo root
         rel_path = model_path.resolve().relative_to(repo_root)
@@ -169,3 +174,58 @@ def _find_git_root(path: Path) -> Path | None:
         current = current.parent
 
     return None
+
+
+def _configure_git_credentials(repo_root: Path) -> None:
+    """
+    Configure git credentials from environment variables.
+
+    Sets up git user.name, user.email, and HTTPS credentials for GitHub.
+
+    Args:
+        repo_root: Path to the git repository root
+    """
+    import os
+
+    # Configure user name and email
+    git_user_name = os.getenv("GIT_USER_NAME", "keiba-bot")
+    git_user_email = os.getenv("GIT_USER_EMAIL", "bot@example.com")
+
+    subprocess.run(
+        ["git", "config", "user.name", git_user_name],
+        cwd=repo_root,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", git_user_email],
+        cwd=repo_root,
+        capture_output=True,
+    )
+
+    # Configure GitHub token for HTTPS authentication
+    github_token = os.getenv("GITHUB_TOKEN")
+    if github_token:
+        # Get current remote URL
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            remote_url = result.stdout.strip()
+            # Convert to authenticated URL if it's a GitHub HTTPS URL
+            if "github.com" in remote_url and not "@" in remote_url:
+                if remote_url.startswith("https://github.com"):
+                    auth_url = remote_url.replace(
+                        "https://github.com",
+                        f"https://{git_user_name}:{github_token}@github.com",
+                    )
+                    subprocess.run(
+                        ["git", "remote", "set-url", "origin", auth_url],
+                        cwd=repo_root,
+                        capture_output=True,
+                    )
+                    logger.info("Git credentials configured for GitHub")
+    else:
+        logger.warning("GITHUB_TOKEN not set, push may fail if authentication required")

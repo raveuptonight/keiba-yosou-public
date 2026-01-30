@@ -3,7 +3,7 @@ FROM nvidia/cuda:12.2.2-runtime-ubuntu22.04
 
 WORKDIR /app
 
-# Python 3.11をインストール
+# Python 3.11 + git/git-lfs をインストール
 RUN apt-get update && apt-get install -y \
     python3.11 \
     python3.11-venv \
@@ -11,9 +11,12 @@ RUN apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     curl \
+    git \
+    git-lfs \
     && rm -rf /var/lib/apt/lists/* \
     && ln -sf /usr/bin/python3.11 /usr/bin/python \
-    && ln -sf /usr/bin/python3.11 /usr/bin/python3
+    && ln -sf /usr/bin/python3.11 /usr/bin/python3 \
+    && git lfs install
 
 # pipをアップグレード
 RUN python -m pip install --upgrade pip
