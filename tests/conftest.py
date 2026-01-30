@@ -45,12 +45,23 @@ def mock_async_db_connection():
 
 @pytest.fixture
 def api_client():
-    """FastAPI test client."""
+    """FastAPI test client with mocked database."""
     from fastapi.testclient import TestClient
-    from src.api.main import app
 
-    with TestClient(app) as client:
-        yield client
+    # Mock async database functions before importing app
+    with patch("src.db.async_connection.init_db_pool", new_callable=AsyncMock), \
+         patch("src.db.async_connection.close_db_pool", new_callable=AsyncMock), \
+         patch("src.db.async_connection.get_connection") as mock_get_conn:
+
+        # Setup mock connection context manager
+        mock_conn = AsyncMock()
+        mock_get_conn.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_get_conn.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        from src.api.main import app
+
+        with TestClient(app) as client:
+            yield client
 
 
 @pytest.fixture

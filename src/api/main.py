@@ -53,8 +53,19 @@ except Exception as e:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifecycle management."""
+    # Check for mock mode (skip DB initialization in tests)
+    db_mode = os.getenv("DB_MODE", "").lower()
+    is_mock_mode = db_mode == "mock"
+
     # Startup
     logger.info("Starting FastAPI application...")
+
+    if is_mock_mode:
+        logger.info("Running in mock mode - skipping database initialization")
+        yield
+        logger.info("Shutting down FastAPI application (mock mode)...")
+        return
+
     try:
         await init_db_pool()
         logger.info("Database pool initialized")
