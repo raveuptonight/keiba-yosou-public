@@ -138,17 +138,34 @@ def apply_bias_to_scores(
         new_rank_score = score_data.get("rank_score", 999) - adjustment
 
         # Adjust probability (positive adjustment increases probability)
-        old_prob = score_data.get("win_probability", 0)
-        new_prob = old_prob * (1 + adjustment * 2)
-        new_prob = max(0.001, min(0.99, new_prob))  # Clamp to range
+        factor = 1 + adjustment * 2
+        new_prob = max(0.001, min(0.99, score_data.get("win_probability", 0) * factor))
 
-        adjusted_scores[umaban_str] = {
+        new_score = {
             "rank_score": new_rank_score,
             "win_probability": new_prob,
             "bias_adjustment": adjustment,
         }
 
-    # Normalize probabilities
+        # Preserve and adjust quinella/place probabilities with same factor
+        if "quinella_probability" in score_data:
+            new_score["quinella_probability"] = max(
+                0.001, min(0.99, score_data["quinella_probability"] * factor)
+            )
+        if "place_probability" in score_data:
+            new_score["place_probability"] = max(
+                0.001, min(0.99, score_data["place_probability"] * factor)
+            )
+
+        # Preserve CI fields
+        if "win_ci_lower" in score_data:
+            new_score["win_ci_lower"] = max(0, score_data["win_ci_lower"] * factor)
+        if "win_ci_upper" in score_data:
+            new_score["win_ci_upper"] = min(1, score_data["win_ci_upper"] * factor)
+
+        adjusted_scores[umaban_str] = new_score
+
+    # Normalize win probabilities (don't normalize quinella/place - they're independent)
     total_prob = sum(s.get("win_probability", 0) for s in adjusted_scores.values())
     if total_prob > 0:
         for umaban_str in adjusted_scores:

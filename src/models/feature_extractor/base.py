@@ -68,7 +68,9 @@ class FastFeatureExtractor:
         self._pedigree_cache = {}
         self._sire_stats_cache = {}
 
-    def extract_year_data(self, year: int, max_races: int = 5000) -> pd.DataFrame:
+    def extract_year_data(
+        self, year: int, max_races: int = 5000, surface: str | None = None
+    ) -> pd.DataFrame:
         """Extract one year of training data in batch mode.
 
         Orchestrates the entire feature extraction pipeline:
@@ -80,14 +82,15 @@ class FastFeatureExtractor:
         Args:
             year: Target year
             max_races: Maximum number of races to process
+            surface: Surface filter ("turf", "dirt", or None for all)
 
         Returns:
             DataFrame with features and target (finishing position)
         """
-        logger.info(f"Fetching data for year {year}...")
+        logger.info(f"Fetching data for year {year}..." + (f" (surface={surface})" if surface else ""))
 
         # 1. Get race list
-        races = db_queries.get_races(self.conn, year, max_races)
+        races = db_queries.get_races(self.conn, year, max_races, surface=surface)
         logger.info(f"  Target races: {len(races)}")
 
         if not races:
@@ -177,6 +180,12 @@ class FastFeatureExtractor:
         jockey_maiden_stats = venue.get_jockey_maiden_stats_batch(self.conn, jockey_codes, year)
         logger.info(f"  Jockey maiden stats: {len(jockey_maiden_stats)}")
 
+        # Detailed stats (distance category, course direction)
+        detailed_stats = db_queries.get_detailed_stats_batch(self.conn, kettonums, entries=entries)
+
+        # Lap time stats (previous race pace)
+        lap_stats = db_queries.get_race_lap_stats_batch(self.conn, kettonums, entries=entries)
+
         # 6. Group entries by race and calculate pace predictions
         entries_by_race: dict[str, list[dict[str, Any]]] = {}
         for entry in entries:
@@ -212,12 +221,29 @@ class FastFeatureExtractor:
                 sire_stats_dirt=sire_stats_dirt,
                 sire_maiden_stats=sire_maiden_stats,
                 jockey_maiden_stats=jockey_maiden_stats,
+                detailed_stats=detailed_stats,
+                lap_stats=lap_stats,
                 year=year,
             )
             if features:
                 features_list.append(features)
 
         df = pd.DataFrame(features_list)
+
+        # 8. Race-level relative features (horse value - race field average)
+        if "race_code" in df.columns and len(df) > 0:
+            relative_pairs = [
+                ("speed_index_avg", "speed_vs_field"),
+                ("win_rate", "winrate_vs_field"),
+                ("weighted_avg_rank", "rank_vs_field"),
+                ("jockey_win_rate", "jockey_vs_field"),
+                ("consistency_score", "consistency_vs_field"),
+            ]
+            for col, new_col in relative_pairs:
+                if col in df.columns:
+                    race_means = df.groupby("race_code")[col].transform("mean")
+                    df[new_col] = df[col] - race_means
+
         logger.info(f"  Feature generation complete: {len(df)} samples")
 
         return df
@@ -433,6 +459,8 @@ class FastFeatureExtractor:
         sire_stats_dirt: dict[str, dict] | None = None,
         sire_maiden_stats: dict[str, dict] | None = None,
         jockey_maiden_stats: dict[str, dict] | None = None,
+        detailed_stats: dict[str, dict] | None = None,
+        lap_stats: dict[str, dict] | None = None,
         year: int | None = None,
     ) -> dict | None:
         """Build feature vector for a single entry.
@@ -488,6 +516,8 @@ class FastFeatureExtractor:
             sire_stats_dirt=sire_stats_dirt,
             sire_maiden_stats=sire_maiden_stats,
             jockey_maiden_stats=jockey_maiden_stats,
+            detailed_stats=detailed_stats,
+            lap_stats=lap_stats,
             year=year,
             small_track_venues=self.SMALL_TRACK_VENUES,
         )

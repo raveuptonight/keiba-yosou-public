@@ -16,6 +16,7 @@ from src.scheduler.result.analyzer import (
 from src.scheduler.result.db_operations import (
     KEIBAJO_NAMES,
     get_cumulative_stats,
+    get_final_odds,
     get_payouts,
     get_race_results,
     get_recent_race_dates,
@@ -78,8 +79,11 @@ class ResultCollector:
         # Get payout data
         payouts = get_payouts(target_date)
 
-        # Compare (including payout data)
-        comparison = compare_results(predictions, results, payouts)
+        # Get final odds for place EV calculation
+        final_odds = get_final_odds(target_date)
+
+        # Compare (including payout and odds data)
+        comparison = compare_results(predictions, results, payouts, final_odds)
 
         # Calculate accuracy
         accuracy = calculate_accuracy(comparison)
@@ -116,6 +120,8 @@ class ResultCollector:
         cumulative: dict | None = None,
         ev_stats: dict | None = None,
         axis_stats: dict | None = None,
+        by_venue: dict | None = None,
+        failure_analysis: dict | None = None,
     ):
         """Send weekend total Discord notification (EV recommendation and axis horse format)."""
         send_weekend_notification(
@@ -131,13 +137,73 @@ class ResultCollector:
             cumulative,
             ev_stats,
             axis_stats,
+            by_venue,
+            failure_analysis,
         )
 
 
+def check_races_today(target_date: date | None = None) -> bool:
+    """
+    Check if there were races on the specified date.
+
+    Args:
+        target_date: Date to check (defaults to today)
+
+    Returns:
+        True if races exist, False otherwise
+    """
+    from src.db.connection import get_db
+
+    if target_date is None:
+        target_date = date.today()
+
+    kaisai_nen = str(target_date.year)
+    kaisai_gappi = target_date.strftime("%m%d")
+
+    try:
+        db = get_db()
+        conn = db.get_connection()
+        cur = conn.cursor()
+
+        # Check for confirmed or preliminary data
+        cur.execute(
+            """
+            SELECT COUNT(*) FROM race_shosai
+            WHERE kaisai_nen = %s
+              AND kaisai_gappi = %s
+              AND data_kubun IN ('6', '7')
+        """,
+            (kaisai_nen, kaisai_gappi),
+        )
+
+        count = cur.fetchone()[0]
+        cur.close()
+        conn.close()
+
+        logger.info(f"Race check for {target_date}: {count} races found")
+        return count > 0
+
+    except Exception as e:
+        logger.error(f"Race check error: {e}")
+        return False
+
+
 def collect_today_results():
-    """Collect today's race results."""
-    collector = ResultCollector()
+    """Collect today's race results (only if races were held)."""
     today = date.today()
+    weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+    weekday = weekday_names[today.weekday()]
+
+    logger.info(f"=== Daily Result Collection: {today} ({weekday}) ===")
+
+    # Check if there were races today
+    if not check_races_today(today):
+        logger.info(f"No races on {today} - skipping analysis")
+        print(f"No races on {today} ({weekday}) - skipping")
+        return
+
+    logger.info(f"Races found on {today} - starting analysis")
+    collector = ResultCollector()
 
     analysis = collector.collect_and_analyze(today)
 
@@ -207,10 +273,13 @@ def collect_weekend_results():
         "芝": {"races": 0, "top1_hit": 0, "top1_in_top3": 0, "top3_cover": 0},
         "ダ": {"races": 0, "top1_hit": 0, "top1_in_top3": 0, "top3_cover": 0},
     }
-    # EV recommendation stats aggregation
+    # By venue aggregation
+    total_venue: dict[str, dict] = {}
+    # EV recommendation stats aggregation (separate for win/place)
     total_ev = {
         "ev_rec_races": 0,
-        "ev_rec_count": 0,
+        "ev_rec_count": 0,  # Win EV count
+        "ev_rec_fukusho_count": 0,  # Place EV count
         "ev_rec_tansho_hit": 0,
         "ev_rec_fukusho_hit": 0,
         "ev_tansho_investment": 0,
@@ -222,9 +291,23 @@ def collect_weekend_results():
     total_axis = {
         "axis_races": 0,
         "axis_tansho_hit": 0,
+        "axis_2nd_hit": 0,
+        "axis_3rd_hit": 0,
         "axis_fukusho_hit": 0,
+        "axis_tansho_investment": 0,
+        "axis_tansho_return": 0,
         "axis_fukusho_investment": 0,
         "axis_fukusho_return": 0,
+    }
+
+    # Failure analysis aggregation
+    total_failure: dict = {
+        "total_misses": 0,
+        "upset": 0,
+        "close_call": 0,
+        "blind_spot": 0,
+        "blind_spot_details": [],
+        "weaknesses": [],
     }
 
     # Daily data (for interaction)
@@ -294,10 +377,41 @@ def collect_weekend_results():
                         round(t.get("cover_rate", 0) * races / 100)
                     )
 
-            # Aggregate EV recommendation stats
+            # Aggregate by venue stats (convert % back to counts)
+            by_venue = acc.get("by_venue", {})
+            for venue, v in by_venue.items():
+                if venue not in total_venue:
+                    total_venue[venue] = {
+                        "races": 0,
+                        "top1_hit": 0,
+                        "top1_in_top3": 0,
+                        "top3_cover": 0,
+                        "tansho_investment": 0,
+                        "tansho_return": 0,
+                        "fukusho_investment": 0,
+                        "fukusho_return": 0,
+                    }
+                races = v.get("races", 0)
+                total_venue[venue]["races"] += races
+                total_venue[venue]["top1_hit"] += int(
+                    round(v.get("top1_rate", 0) * races / 100)
+                )
+                total_venue[venue]["top1_in_top3"] += int(
+                    round(v.get("top3_rate", 0) * races / 100)
+                )
+                total_venue[venue]["top3_cover"] += int(
+                    round(v.get("cover_rate", 0) * races / 100)
+                )
+                total_venue[venue]["tansho_investment"] += v.get("tansho_investment", 0)
+                total_venue[venue]["tansho_return"] += v.get("tansho_return", 0)
+                total_venue[venue]["fukusho_investment"] += v.get("fukusho_investment", 0)
+                total_venue[venue]["fukusho_return"] += v.get("fukusho_return", 0)
+
+            # Aggregate EV recommendation stats (separate for win/place)
             ev_stats = acc.get("ev_stats", {})
             total_ev["ev_rec_races"] += ev_stats.get("ev_rec_races", 0)
             total_ev["ev_rec_count"] += ev_stats.get("ev_rec_count", 0)
+            total_ev["ev_rec_fukusho_count"] += ev_stats.get("ev_rec_fukusho_count", 0)
             total_ev["ev_rec_tansho_hit"] += ev_stats.get("ev_rec_tansho_hit", 0)
             total_ev["ev_rec_fukusho_hit"] += ev_stats.get("ev_rec_fukusho_hit", 0)
             total_ev["ev_tansho_investment"] += ev_stats.get("ev_tansho_investment", 0)
@@ -309,9 +423,23 @@ def collect_weekend_results():
             axis_stats = acc.get("axis_stats", {})
             total_axis["axis_races"] += axis_stats.get("axis_races", 0)
             total_axis["axis_tansho_hit"] += axis_stats.get("axis_tansho_hit", 0)
+            total_axis["axis_2nd_hit"] += axis_stats.get("axis_2nd_hit", 0)
+            total_axis["axis_3rd_hit"] += axis_stats.get("axis_3rd_hit", 0)
             total_axis["axis_fukusho_hit"] += axis_stats.get("axis_fukusho_hit", 0)
+            total_axis["axis_tansho_investment"] += axis_stats.get("axis_tansho_investment", 0)
+            total_axis["axis_tansho_return"] += axis_stats.get("axis_tansho_return", 0)
             total_axis["axis_fukusho_investment"] += axis_stats.get("axis_fukusho_investment", 0)
             total_axis["axis_fukusho_return"] += axis_stats.get("axis_fukusho_return", 0)
+
+            # Aggregate failure analysis
+            fa = acc.get("failure_analysis", {})
+            if fa:
+                total_failure["total_misses"] += fa.get("total_misses", 0)
+                total_failure["upset"] += fa.get("upset", 0)
+                total_failure["close_call"] += fa.get("close_call", 0)
+                total_failure["blind_spot"] += fa.get("blind_spot", 0)
+                total_failure["blind_spot_details"].extend(fa.get("blind_spot_details", []))
+                total_failure["weaknesses"].extend(fa.get("weaknesses", []))
 
             # Save daily data (for interaction)
             daily_data[str(target_date)] = {
@@ -321,6 +449,7 @@ def collect_weekend_results():
                 "popularity_stats": acc.get("popularity_stats", {}),
                 "confidence_stats": acc.get("confidence_stats", {}),
                 "by_track": acc.get("by_track", {}),
+                "by_venue": acc.get("by_venue", {}),
                 "ev_stats": acc.get("ev_stats", {}),
                 "axis_stats": acc.get("axis_stats", {}),
             }
@@ -417,19 +546,53 @@ def collect_weekend_results():
                     "cover_rate": data["top3_cover"] / races * 100,
                 }
 
-        # Format EV recommendation stats
+        # Format by venue stats
+        weekend_venue = {}
+        for venue, data in total_venue.items():
+            races = data["races"]
+            if races > 0:
+                tansho_inv = data["tansho_investment"]
+                fukusho_inv = data["fukusho_investment"]
+                weekend_venue[venue] = {
+                    "races": races,
+                    "top1_rate": data["top1_hit"] / races * 100,
+                    "top3_rate": data["top1_in_top3"] / races * 100,
+                    "cover_rate": data["top3_cover"] / races * 100,
+                    "tansho_roi": (
+                        (data["tansho_return"] / tansho_inv * 100) if tansho_inv > 0 else 0
+                    ),
+                    "fukusho_roi": (
+                        (data["fukusho_return"] / fukusho_inv * 100) if fukusho_inv > 0 else 0
+                    ),
+                    "tansho_investment": tansho_inv,
+                    "tansho_return": data["tansho_return"],
+                    "fukusho_investment": fukusho_inv,
+                    "fukusho_return": data["fukusho_return"],
+                }
+
+        # Format EV recommendation stats (separate for win/place)
         weekend_ev = {}
-        ev_count = total_ev["ev_rec_count"]
+        ev_tansho_count = total_ev["ev_rec_count"]  # Win EV count
+        ev_fukusho_count = total_ev["ev_rec_fukusho_count"]  # Place EV count
         ev_tansho_inv = total_ev["ev_tansho_investment"]
         ev_fukusho_inv = total_ev["ev_fukusho_investment"]
-        if ev_count > 0:
+        if ev_tansho_count > 0 or ev_fukusho_count > 0:
             weekend_ev = {
                 "ev_rec_races": total_ev["ev_rec_races"],
-                "ev_rec_count": ev_count,
+                "ev_rec_count": ev_tansho_count,
+                "ev_rec_fukusho_count": ev_fukusho_count,
                 "ev_rec_tansho_hit": total_ev["ev_rec_tansho_hit"],
                 "ev_rec_fukusho_hit": total_ev["ev_rec_fukusho_hit"],
-                "ev_tansho_rate": total_ev["ev_rec_tansho_hit"] / ev_count * 100,
-                "ev_fukusho_rate": total_ev["ev_rec_fukusho_hit"] / ev_count * 100,
+                "ev_tansho_rate": (
+                    (total_ev["ev_rec_tansho_hit"] / ev_tansho_count * 100)
+                    if ev_tansho_count > 0
+                    else 0
+                ),
+                "ev_fukusho_rate": (
+                    (total_ev["ev_rec_fukusho_hit"] / ev_fukusho_count * 100)
+                    if ev_fukusho_count > 0
+                    else 0
+                ),
                 "ev_tansho_roi": (
                     (total_ev["ev_tansho_return"] / ev_tansho_inv * 100) if ev_tansho_inv > 0 else 0
                 ),
@@ -447,19 +610,31 @@ def collect_weekend_results():
         # Format axis horse stats
         weekend_axis = {}
         axis_races = total_axis["axis_races"]
+        axis_tansho_inv = total_axis["axis_tansho_investment"]
         axis_fukusho_inv = total_axis["axis_fukusho_investment"]
         if axis_races > 0:
             weekend_axis = {
                 "axis_races": axis_races,
                 "axis_tansho_hit": total_axis["axis_tansho_hit"],
+                "axis_2nd_hit": total_axis["axis_2nd_hit"],
+                "axis_3rd_hit": total_axis["axis_3rd_hit"],
                 "axis_fukusho_hit": total_axis["axis_fukusho_hit"],
                 "axis_tansho_rate": total_axis["axis_tansho_hit"] / axis_races * 100,
+                "axis_2nd_rate": total_axis["axis_2nd_hit"] / axis_races * 100,
+                "axis_3rd_rate": total_axis["axis_3rd_hit"] / axis_races * 100,
                 "axis_fukusho_rate": total_axis["axis_fukusho_hit"] / axis_races * 100,
+                "axis_tansho_roi": (
+                    (total_axis["axis_tansho_return"] / axis_tansho_inv * 100)
+                    if axis_tansho_inv > 0
+                    else 0
+                ),
                 "axis_fukusho_roi": (
                     (total_axis["axis_fukusho_return"] / axis_fukusho_inv * 100)
                     if axis_fukusho_inv > 0
                     else 0
                 ),
+                "axis_tansho_investment": axis_tansho_inv,
+                "axis_tansho_return": total_axis["axis_tansho_return"],
                 "axis_fukusho_investment": axis_fukusho_inv,
                 "axis_fukusho_return": total_axis["axis_fukusho_return"],
             }
@@ -490,6 +665,13 @@ def collect_weekend_results():
                 f"  Place: {weekend_axis['axis_fukusho_hit']} hits ({weekend_axis['axis_fukusho_rate']:.1f}%) ROI {weekend_axis['axis_fukusho_roi']:.0f}%"
             )
 
+        # Trim blind_spot_details to top 3 worst
+        total_failure["blind_spot_details"] = sorted(
+            total_failure["blind_spot_details"],
+            key=lambda x: x.get("predicted_rank", 0),
+            reverse=True,
+        )[:3]
+
         # Discord notification (weekend total + detailed analysis + date select menu)
         collector.send_weekend_notification(
             first_date,
@@ -504,6 +686,8 @@ def collect_weekend_results():
             cumulative,
             ev_stats=weekend_ev,
             axis_stats=weekend_axis,
+            by_venue=weekend_venue,
+            failure_analysis=total_failure if total_failure["total_misses"] > 0 else None,
         )
 
         # Execute SHAP analysis (optional)

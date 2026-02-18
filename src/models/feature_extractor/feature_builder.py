@@ -43,6 +43,8 @@ def build_features(
     sire_stats_dirt: dict[str, dict] | None = None,
     sire_maiden_stats: dict[str, dict] | None = None,
     jockey_maiden_stats: dict[str, dict] | None = None,
+    detailed_stats: dict[str, dict] | None = None,
+    lap_stats: dict[str, dict] | None = None,
     year: int | None = None,
     small_track_venues: set[str] | None = None,
 ) -> dict | None:
@@ -130,6 +132,19 @@ def build_features(
     features["win_rate"] = past.get("win_rate", 0.0)
     features["place_rate"] = past.get("place_rate", 0.0)
     features["win_count"] = past.get("win_count", 0)
+
+    # Temporal decay weighted features (recent races weighted more, decay=0.85)
+    features["weighted_avg_rank"] = past.get("weighted_avg_rank", 8.0)
+    features["weighted_win_rate"] = past.get("weighted_win_rate", 0.0)
+    features["weighted_place_rate"] = past.get("weighted_place_rate", 0.0)
+    features["weighted_last3f_avg"] = past.get("weighted_avg_last3f", 35.0)
+
+    # Performance stability (lower stddev = more consistent)
+    features["rank_stddev"] = past.get("rank_stddev", 5.0)
+    features["time_stddev"] = past.get("time_stddev", 50.0)
+    features["last3f_stddev"] = past.get("last3f_stddev", 2.0)
+    rank_std = features["rank_stddev"]
+    features["consistency_score"] = max(0, 1.0 - rank_std / 5.0)
 
     # Rest days (improved)
     features["days_since_last_race"] = calc_days_since_last(
@@ -249,6 +264,25 @@ def build_features(
 
     # Track condition encoding (1=Good, 2=Slightly Heavy, 3=Heavy, 4=Bad)
     features["baba_condition"] = safe_int(baba_code, 1)
+
+    # Baba aptitude: compare current-condition performance vs overall
+    overall_win = past.get("win_rate", 0.0)
+    overall_place = past.get("place_rate", 0.0)
+    features["baba_win_rate_diff"] = features["baba_win_rate"] - overall_win
+    features["baba_place_rate_diff"] = features["baba_place_rate"] - overall_place
+
+    # Wet track experience & aptitude (conditions 2-4: yayaomo/omo/furyo)
+    wet_runs = 0
+    wet_places = 0
+    if baba_stats:
+        for cond_suffix in ["yayaomo", "omo", "furyo"]:
+            wet_key = f"{kettonum}_{baba_name}_{cond_suffix}"
+            wet_s = baba_stats.get(wet_key, {})
+            r = wet_s.get("runs", 0)
+            wet_runs += r
+            wet_places += int(r * wet_s.get("place_rate", 0.0))
+    features["wet_experience"] = min(wet_runs, 20)
+    features["wet_place_rate"] = wet_places / wet_runs if wet_runs >= 2 else overall_place
 
     # ===== Training Details =====
     features["training_time_3f"] = train.get("time_3f", 38.0)
@@ -425,6 +459,28 @@ def build_features(
     features["zenso_chakujun_trend"] = zenso.get("zenso_chakujun_trend", 0)
     features["zenso_agari_trend"] = zenso.get("zenso_agari_trend", 0)
 
+    # Continuous rank trend (slope of recent 3 races)
+    z1 = features.get("zenso1_chakujun", 8)
+    z2 = features.get("zenso2_chakujun", 8)
+    z3 = features.get("zenso3_chakujun", 8)
+    features["rank_trend_slope"] = (z3 - z1) / 2.0  # positive=worsening, negative=improving
+
+    # Races since best finish
+    best = past.get("best_finish", 8)
+    if best <= 3 and z1 <= best:
+        features["races_since_best"] = 0
+    elif best <= 3 and z2 <= best:
+        features["races_since_best"] = 1
+    elif best <= 3 and z3 <= best:
+        features["races_since_best"] = 2
+    else:
+        features["races_since_best"] = 5
+
+    # Performance momentum: recent 2 races vs overall average
+    recent_avg = (z1 + z2) / 2.0 if z2 < 18 else float(z1)
+    overall_avg = past.get("avg_rank", 8.0)
+    features["performance_momentum"] = overall_avg - recent_avg  # positive=recent better
+
     # New: Final 3F ranking features
     features["zenso1_agari_rank"] = zenso.get("zenso1_agari_rank", 9)
     features["zenso2_agari_rank"] = zenso.get("zenso2_agari_rank", 9)
@@ -437,6 +493,13 @@ def build_features(
     features["zenso1_early_position_avg"] = zenso.get("zenso1_early_position_avg", 8.0)
     features["zenso1_late_position_avg"] = zenso.get("zenso1_late_position_avg", 8.0)
     features["late_push_tendency"] = zenso.get("late_push_tendency", 0.0)
+
+    # Historical corner progression (across all past races, not just zenso1)
+    features["avg_position_change_3to4"] = past.get("avg_position_change_3to4", 0.0)
+    features["std_position_change_3to4"] = past.get("std_position_change_3to4", 0.0)
+    closing_change = features["avg_position_change_3to4"]
+    closing_std = features["std_position_change_3to4"]
+    features["closing_ability"] = closing_change - 0.5 * closing_std
 
     # Distance difference (current - previous)
     current_distance = safe_int(race_info.get("kyori"), 1600)
@@ -471,6 +534,33 @@ def build_features(
     features["track_type_fit"] = (
         features["small_track_rate"] if is_small_track else features["large_track_rate"]
     )
+
+    # --- Distance category & course direction aptitude ---
+    ds = detailed_stats.get(kettonum, {}) if detailed_stats else {}
+    current_kyori = safe_int(race_info.get("kyori"), 1600)
+    if current_kyori <= 1400:
+        features["distance_cat_aptitude"] = ds.get("short_places", 0) / max(ds.get("short_runs", 0), 1)
+        features["distance_cat_experience"] = min(ds.get("short_runs", 0), 20)
+    elif current_kyori <= 2000:
+        features["distance_cat_aptitude"] = ds.get("middle_places", 0) / max(ds.get("middle_runs", 0), 1)
+        features["distance_cat_experience"] = min(ds.get("middle_runs", 0), 20)
+    else:
+        features["distance_cat_aptitude"] = ds.get("long_places", 0) / max(ds.get("long_runs", 0), 1)
+        features["distance_cat_experience"] = min(ds.get("long_runs", 0), 20)
+
+    # Course direction: right=11,12,21,22  left=13,14,23,24
+    tc = safe_int(track_code, 0)
+    is_right_turn = tc in (11, 12, 21, 22)
+    if is_right_turn:
+        features["direction_aptitude"] = ds.get("right_places", 0) / max(ds.get("right_runs", 0), 1)
+        features["direction_experience"] = min(ds.get("right_runs", 0), 20)
+    else:
+        features["direction_aptitude"] = ds.get("left_places", 0) / max(ds.get("left_runs", 0), 1)
+        features["direction_experience"] = min(ds.get("left_runs", 0), 20)
+
+    overall_place = past.get("place_rate", 0.0)
+    features["distance_aptitude_diff"] = features["distance_cat_aptitude"] - overall_place
+    features["direction_aptitude_diff"] = features["direction_aptitude"] - overall_place
 
     # --- 4. Pace Enhancement Features ---
     umaban = safe_int(entry.get("umaban"), 0)
@@ -576,6 +666,30 @@ def build_features(
 
     # Winter flag
     features["is_winter"] = 1 if month in (12, 1, 2) else 0
+
+    # ===== Previous race pace features (from lap times) =====
+    lp = lap_stats.get(kettonum, {}) if lap_stats else {}
+    pr = lp.get("pace_ratio", 1.0)
+    features["zenso1_pace_ratio"] = pr
+    z1_chaku = features.get("zenso1_chakujun", 8)
+    # High pace performance: good result in fast-start race
+    features["high_pace_performance"] = max(0, 6 - z1_chaku) if pr < 0.95 else 0
+    # Slow pace performance: good result in slow-start race
+    features["slow_pace_performance"] = max(0, 6 - z1_chaku) if pr > 1.05 else 0
+
+    # ===== Interaction features =====
+    features["jockey_trainer_synergy"] = (
+        features.get("jockey_win_rate", 0) * features.get("trainer_win_rate", 0)
+    )
+    features["distance_baba_cross"] = (
+        features.get("distance_cat_aptitude", 0.25) * features.get("baba_place_rate", 0.25)
+    )
+    waku = features.get("wakuban", 4)
+    style = features.get("running_style", 2)
+    features["waku_style_interaction"] = (4.5 - waku) * (2.5 - style)
+    features["weight_rest_interaction"] = (
+        features.get("weight_diff", 0) * features.get("days_since_last_race", 30) / 100.0
+    )
 
     # ===== Target =====
     features["target"] = chakujun

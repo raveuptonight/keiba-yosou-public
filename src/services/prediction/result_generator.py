@@ -155,12 +155,45 @@ def generate_ml_only_prediction(
                 "place_probability": score_data.get(
                     "place_probability"
                 ),  # Place prob from model (if any)
+                "win_ci_lower": score_data.get("win_ci_lower"),
+                "win_ci_upper": score_data.get("win_ci_upper"),
             }
         )
 
-    # Sort by win probability (higher = better)
-    # Note: Use win_probability instead of rank_score so displayed probability matches ranking
-    scored_horses.sort(key=lambda x: x["win_probability"], reverse=True)
+    # Fix win-place probability inconsistency
+    # When place_prob >> win_prob, the win calibrator likely compressed the probability
+    # Correct win_prob upward to maintain logical consistency
+    for h in scored_horses:
+        wp = h["win_probability"]
+        pp = h.get("place_probability")
+        if pp is not None and pp > 0 and wp > 0:
+            # place_prob should be at most ~3x win_prob for reasonable distributions
+            # If ratio exceeds 20x, it's a calibrator artifact — correct win_prob
+            ratio = pp / wp
+            if ratio > 20:
+                # Set win_prob to at least place_prob / 5 (conservative floor)
+                corrected = pp / 5.0
+                logger.warning(
+                    f"Win-place inconsistency: horse {h['horse_number']} "
+                    f"win={wp:.4f} place={pp:.4f} (ratio={ratio:.0f}x) "
+                    f"-> corrected win={corrected:.4f}"
+                )
+                h["win_probability"] = corrected
+
+    # Sort by composite score (win_prob dominant, but place_prob rescues calibrator failures)
+    # rank_score: lower is better, so we invert it
+    max_rank_score = max((h["rank_score"] for h in scored_horses), default=1)
+    min_rank_score = min((h["rank_score"] for h in scored_horses), default=0)
+    rank_range = max(max_rank_score - min_rank_score, 0.001)
+
+    def composite_score(h):
+        wp = h["win_probability"]
+        pp = h.get("place_probability") or wp
+        # Normalize rank_score to 0-1 (higher = better)
+        rs_norm = 1.0 - (h["rank_score"] - min_rank_score) / rank_range
+        return wp * 0.5 + pp * 0.3 + rs_norm * 0.2
+
+    scored_horses.sort(key=composite_score, reverse=True)
 
     def calc_position_distribution(
         win_prob: float, quinella_prob: float | None, place_prob: float | None, rank: int, n: int
@@ -206,10 +239,7 @@ def generate_ml_only_prediction(
         }
 
     # Generate ranking entries
-    # Note: Probabilities are already predicted and normalized by model
-    # - Win probability: sum to 1.0
-    # - Quinella probability: sum to 2.0
-    # - Place probability: sum to 3.0
+    # Note: Probabilities are calibrator output (not normalized to fixed sums)
     ranked_horses = []
     for i, h in enumerate(scored_horses):
         rank = i + 1
@@ -234,6 +264,12 @@ def generate_ml_only_prediction(
         else:
             place_prob = min(1.0, pos_dist["first"] + pos_dist["second"] + pos_dist["third"])
 
+        # Enforce constraint: win <= quinella <= place
+        if quinella_prob < win_prob:
+            quinella_prob = win_prob
+        if place_prob < quinella_prob:
+            place_prob = quinella_prob
+
         # Individual confidence (based on data completeness and probability separation)
         # Evaluate confidence by gap to next horse
         if i < len(scored_horses) - 1:
@@ -257,6 +293,8 @@ def generate_ml_only_prediction(
                 "position_distribution": pos_dist,
                 "rank_score": round(h["rank_score"], 4),
                 "confidence": round(confidence, 4),
+                "win_ci_lower": round(h["win_ci_lower"], 4) if h.get("win_ci_lower") is not None else None,
+                "win_ci_upper": round(h["win_ci_upper"], 4) if h.get("win_ci_upper") is not None else None,
             }
         )
 
@@ -394,6 +432,8 @@ def convert_to_prediction_response(
             position_distribution=PositionDistribution(**h["position_distribution"]),
             rank_score=h["rank_score"],
             confidence=h["confidence"],
+            win_ci_lower=h.get("win_ci_lower"),
+            win_ci_upper=h.get("win_ci_upper"),
         )
         for h in ranked_horses_data
     ]

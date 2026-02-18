@@ -33,6 +33,8 @@ class HorseRankingEntry(BaseModel):
     position_distribution: PositionDistribution = Field(..., description="順位分布予測")
     rank_score: float = Field(..., description="MLモデル予測スコア（小さいほど上位）")
     confidence: float = Field(..., ge=0.0, le=1.0, description="この馬の予測信頼度")
+    win_ci_lower: float | None = Field(None, description="勝率95%信頼区間下限")
+    win_ci_upper: float | None = Field(None, description="勝率95%信頼区間上限")
 
 
 class QuinellaRankingEntry(BaseModel):
@@ -59,6 +61,30 @@ class DarkHorseEntry(BaseModel):
     place_prob: float
 
 
+class EVRecommendationEntry(BaseModel):
+    """EV recommendation entry."""
+
+    horse_number: int = Field(..., description="馬番")
+    horse_name: str = Field(..., description="馬名")
+    bet_type: str = Field(..., description="推奨券種（win/place）")
+    probability: float = Field(..., ge=0.0, le=1.0, description="予測確率")
+    odds: float = Field(..., description="オッズ")
+    expected_value: float = Field(..., description="期待値")
+
+
+class EVRecommendations(BaseModel):
+    """EV recommendations container."""
+
+    win_recommendations: list[EVRecommendationEntry] = Field(
+        default_factory=list, description="単勝EV推奨馬（EV >= 1.5）"
+    )
+    place_recommendations: list[EVRecommendationEntry] = Field(
+        default_factory=list, description="複勝EV推奨馬（EV >= 1.5）"
+    )
+    odds_source: str = Field(default="realtime", description="オッズソース")
+    odds_time: str | None = Field(None, description="オッズ取得時刻")
+
+
 class PredictionResult(BaseModel):
     """Prediction result body (probability-based ranking format)."""
 
@@ -74,6 +100,7 @@ class PredictionResult(BaseModel):
     dark_horses: list[DarkHorseEntry] | None = Field(
         None, description="穴馬候補（複勝率高い＆勝率低い）"
     )
+    ev_recommendations: EVRecommendations | None = Field(None, description="EV推奨馬（EV >= 1.5）")
     prediction_confidence: float = Field(..., ge=0.0, le=1.0, description="予測全体の信頼度スコア")
     model_info: str = Field(..., description="使用モデル情報")
 

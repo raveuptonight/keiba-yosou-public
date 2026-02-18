@@ -6,6 +6,7 @@ and sending notifications.
 """
 
 from src.scheduler.result.analyzer import (
+    analyze_failures,
     calculate_accuracy,
     compare_results,
 )
@@ -35,6 +36,7 @@ __all__ = [
     # Analyzer
     "compare_results",
     "calculate_accuracy",
+    "analyze_failures",
     # Notifier
     "send_discord_notification",
     "send_weekend_notification",

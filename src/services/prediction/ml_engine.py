@@ -12,15 +12,42 @@ from typing import Any
 
 import numpy as np
 
+from src.models.surface_utils import get_model_path_for_surface, get_surface_type
+from src.services.prediction.ensemble import ensemble_predict, ensemble_proba, ensemble_proba_with_ci
+
 logger = logging.getLogger(__name__)
 
-# ML model path (ensemble_model only)
-ML_MODEL_PATH = Path("/app/models/ensemble_model_latest.pkl")
-if not ML_MODEL_PATH.exists():
-    # Local development path
-    ML_MODEL_PATH = (
-        Path(__file__).parent.parent.parent.parent / "models" / "ensemble_model_latest.pkl"
-    )
+# ML model directory
+ML_MODEL_DIR = Path("/app/models")
+if not ML_MODEL_DIR.exists():
+    ML_MODEL_DIR = Path(__file__).parent.parent.parent.parent / "models"
+
+# Default mixed model path (backward compatibility)
+ML_MODEL_PATH = ML_MODEL_DIR / "ensemble_model_latest.pkl"
+
+# Model cache: {path_str: {"mtime": float, "data": dict}}
+_model_cache: dict[str, dict] = {}
+
+
+def _load_model_cached(model_path: Path) -> dict:
+    """Load model with file mtime-based caching.
+
+    Reloads only when the file has been updated on disk.
+    """
+    import joblib
+
+    path_str = str(model_path)
+    current_mtime = model_path.stat().st_mtime
+
+    cached = _model_cache.get(path_str)
+    if cached and cached["mtime"] == current_mtime:
+        logger.debug(f"Model cache hit: {model_path.name}")
+        return cached["data"]
+
+    logger.info(f"Loading model from disk: {model_path.name}")
+    data = joblib.load(model_path)
+    _model_cache[path_str] = {"mtime": current_mtime, "data": data}
+    return data
 
 
 def extract_future_race_features(conn, race_id: str, extractor, year: int):
@@ -127,7 +154,17 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     # Venue stats (for prediction, use all data - don't pass entries)
     venue_stats = extractor._get_venue_stats_batch(kettonums)
 
-    # 5.5 Get pedigree/sire/jockey maiden stats
+    # 5.5 Get detailed stats and lap stats
+    from src.models.feature_extractor import db_queries
+
+    detailed_stats = db_queries.get_detailed_stats_batch(
+        extractor.conn, kettonums, entries=entries
+    )
+    lap_stats = db_queries.get_race_lap_stats_batch(
+        extractor.conn, kettonums, entries=entries
+    )
+
+    # 5.6 Get pedigree/sire/jockey maiden stats
     pedigree_info = extractor._get_pedigree_batch(kettonums)
     race_codes = [e["race_code"] for e in entries]
     zenso_info = extractor._get_zenso_batch(kettonums, race_codes, entries)
@@ -164,6 +201,8 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
             sire_stats_dirt=sire_stats_dirt,
             sire_maiden_stats=sire_maiden_stats,
             jockey_maiden_stats=jockey_maiden_stats,
+            detailed_stats=detailed_stats,
+            lap_stats=lap_stats,
             year=year,
         )
         if features:
@@ -175,7 +214,23 @@ def extract_future_race_features(conn, race_id: str, extractor, year: int):
     if not features_list:
         return pd.DataFrame()
 
-    return pd.DataFrame(features_list)
+    df = pd.DataFrame(features_list)
+
+    # Race-level relative features (same as extract_year_data post-processing)
+    if "race_code" in df.columns and len(df) > 0:
+        relative_pairs = [
+            ("speed_index_avg", "speed_vs_field"),
+            ("win_rate", "winrate_vs_field"),
+            ("weighted_avg_rank", "rank_vs_field"),
+            ("jockey_win_rate", "jockey_vs_field"),
+            ("consistency_score", "consistency_vs_field"),
+        ]
+        for col, new_col in relative_pairs:
+            if col in df.columns:
+                race_means = df.groupby("race_code")[col].transform("mean")
+                df[new_col] = df[col] - race_means
+
+    return df
 
 
 def compute_ml_predictions(
@@ -196,7 +251,6 @@ def compute_ml_predictions(
     logger.info(f"Computing ML predictions: race_id={race_id}, horses={len(horses)}")
 
     try:
-        import joblib
         import pandas as pd
 
         from src.db.connection import get_db
@@ -211,65 +265,7 @@ def compute_ml_predictions(
             get_horse_baba_performance,
         )
 
-        # Load model
-        if not ML_MODEL_PATH.exists():
-            logger.warning(f"ML model not found: {ML_MODEL_PATH}")
-            return {}
-
-        model_data = joblib.load(ML_MODEL_PATH)
-
-        # Get ensemble_model keys (multiple formats supported)
-        # Format 1: v2_enhanced_ensemble (new: classification model + calibration)
-        # Format 2: xgb_model, lgb_model (weekly retrain format)
-        # Format 3: models.xgboost, models.lightgbm (legacy)
-        models_dict = model_data.get("models", {})
-        model_data.get("version", "")
-
-        # Get regression models
-        if "xgb_regressor" in models_dict:
-            xgb_model = models_dict["xgb_regressor"]
-            lgb_model = models_dict.get("lgb_regressor")
-        elif "xgb_model" in model_data:
-            xgb_model = model_data["xgb_model"]
-            lgb_model = model_data.get("lgb_model")
-        elif "xgboost" in models_dict:
-            xgb_model = models_dict.get("xgboost")
-            lgb_model = models_dict.get("lightgbm")
-        else:
-            logger.error("Invalid model format: ensemble_model required")
-            return {}
-
-        # Get classification models and calibrators (new format only)
-        xgb_win = models_dict.get("xgb_win")
-        lgb_win = models_dict.get("lgb_win")
-        xgb_quinella = models_dict.get("xgb_quinella")
-        lgb_quinella = models_dict.get("lgb_quinella")
-        xgb_place = models_dict.get("xgb_place")
-        lgb_place = models_dict.get("lgb_place")
-        win_calibrator = models_dict.get("win_calibrator")
-        quinella_calibrator = models_dict.get("quinella_calibrator")
-        place_calibrator = models_dict.get("place_calibrator")
-
-        # Get CatBoost models (v5+)
-        cb_model = models_dict.get("cb_regressor")
-        cb_win = models_dict.get("cb_win")
-        cb_quinella = models_dict.get("cb_quinella")
-        cb_place = models_dict.get("cb_place")
-        has_catboost = cb_model is not None
-
-        # Ensemble weights (default: XGB+LGB equal)
-        ensemble_weights = model_data.get("ensemble_weights", {"xgb": 0.5, "lgb": 0.5, "cb": 0.0})
-
-        has_classifiers = xgb_win is not None and lgb_win is not None
-        has_quinella = xgb_quinella is not None and lgb_quinella is not None
-
-        feature_names = model_data.get("feature_names", [])
-        logger.info(
-            f"Ensemble model loaded: {ML_MODEL_PATH}, features={len(feature_names)}, "
-            f"CatBoost={'yes' if has_catboost else 'no'}"
-        )
-
-        # Get DB connection
+        # Get DB connection first (used for both track_code lookup and feature extraction)
         db = get_db()
         conn = db.get_connection()
 
@@ -278,6 +274,80 @@ def compute_ml_predictions(
             return {}
 
         try:
+            # Get track_code from DB to determine surface type
+            track_code = None
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT track_code FROM race_shosai WHERE race_code = %s LIMIT 1",
+                    (race_id,),
+                )
+                row = cur.fetchone()
+                track_code = row[0] if row else None
+                cur.close()
+            except Exception as e:
+                logger.warning(f"Failed to get track_code: {e}")
+
+            # Select and load model based on surface type (cached)
+            surface = get_surface_type(track_code)
+            model_path = get_model_path_for_surface(ML_MODEL_DIR, surface)
+            logger.info(f"Surface: {surface}, model: {model_path.name}")
+
+            if not model_path.exists():
+                logger.warning(f"ML model not found: {model_path}")
+                return {}
+
+            model_data = _load_model_cached(model_path)
+
+            # Get ensemble_model keys (multiple formats supported)
+            models_dict = model_data.get("models", {})
+
+            # Get regression models
+            if "xgb_regressor" in models_dict:
+                xgb_model = models_dict["xgb_regressor"]
+                lgb_model = models_dict.get("lgb_regressor")
+            elif "xgb_model" in model_data:
+                xgb_model = model_data["xgb_model"]
+                lgb_model = model_data.get("lgb_model")
+            elif "xgboost" in models_dict:
+                xgb_model = models_dict.get("xgboost")
+                lgb_model = models_dict.get("lightgbm")
+            else:
+                logger.error("Invalid model format: ensemble_model required")
+                return {}
+
+            # Get classification models and calibrators (new format only)
+            xgb_win = models_dict.get("xgb_win")
+            lgb_win = models_dict.get("lgb_win")
+            xgb_quinella = models_dict.get("xgb_quinella")
+            lgb_quinella = models_dict.get("lgb_quinella")
+            xgb_place = models_dict.get("xgb_place")
+            lgb_place = models_dict.get("lgb_place")
+            win_calibrator = models_dict.get("win_calibrator")
+            quinella_calibrator = models_dict.get("quinella_calibrator")
+            place_calibrator = models_dict.get("place_calibrator")
+
+            # Get CatBoost models (v5+)
+            cb_model = models_dict.get("cb_regressor")
+            cb_win = models_dict.get("cb_win")
+            cb_quinella = models_dict.get("cb_quinella")
+            cb_place = models_dict.get("cb_place")
+            has_catboost = cb_model is not None
+
+            # Ensemble weights (default: XGB+LGB equal)
+            ensemble_weights = model_data.get(
+                "ensemble_weights", {"xgb": 0.5, "lgb": 0.5, "cb": 0.0}
+            )
+
+            has_classifiers = xgb_win is not None and lgb_win is not None
+            has_quinella = xgb_quinella is not None and lgb_quinella is not None
+
+            feature_names = model_data.get("feature_names", [])
+            logger.info(
+                f"Ensemble model: {model_path.name}, features={len(feature_names)}, "
+                f"CatBoost={'yes' if has_catboost else 'no'}"
+            )
+
             # Feature extraction (using same FastFeatureExtractor as training)
             extractor = FastFeatureExtractor(conn)
             year = int(race_id[:4])
@@ -299,7 +369,6 @@ def compute_ml_predictions(
             logger.info(f"Found {len(race_df)} horses for race {race_id}")
 
             # Extract only features expected by model
-            [f for f in feature_names if f in race_df.columns]
             missing_features = [f for f in feature_names if f not in race_df.columns]
             if missing_features:
                 logger.warning(f"Missing features: {missing_features[:5]}...")
@@ -315,121 +384,61 @@ def compute_ml_predictions(
                 return {}
 
             # Regression prediction (rank scores)
-            xgb_pred = xgb_model.predict(X)
-            lgb_pred = lgb_model.predict(X)
+            rank_scores = ensemble_predict(
+                xgb_model, lgb_model, X, ensemble_weights,
+                cb_model=cb_model if has_catboost else None,
+            )
 
-            # 3-model ensemble if CatBoost available
-            if has_catboost:
-                cb_pred = cb_model.predict(X)
-                w = ensemble_weights
-                rank_scores = xgb_pred * w["xgb"] + lgb_pred * w["lgb"] + cb_pred * w["cb"]
-            else:
-                # Backward compatibility: XGB+LGB only
-                w = ensemble_weights
-                xgb_w = w.get("xgb", 0.5)
-                lgb_w = w.get("lgb", 0.5)
-                total = xgb_w + lgb_w
-                rank_scores = (xgb_pred * xgb_w + lgb_pred * lgb_w) / total
+            # Detect model type (ranker vs regressor)
+            is_ranker = model_data.get("model_type") == "ranker"
 
             # If classification models exist, predict probabilities directly
             if has_classifiers:
                 logger.info("Using classification models for probability prediction")
                 n_horses = len(X)
 
-                # Win probability
-                xgb_win_prob = xgb_win.predict_proba(X)[:, 1]
-                lgb_win_prob = lgb_win.predict_proba(X)[:, 1]
+                # Win probability (with confidence interval)
+                win_probs, win_std = ensemble_proba_with_ci(
+                    xgb_win, lgb_win, X, ensemble_weights,
+                    cb_clf=cb_win if has_catboost else None,
+                    calibrator=win_calibrator,
+                )
+                if win_calibrator is not None:
+                    logger.info("Applied win_calibrator")
 
-                if has_catboost and cb_win is not None:
-                    cb_win_prob = cb_win.predict_proba(X)[:, 1]
-                    w = ensemble_weights
-                    win_probs = (
-                        xgb_win_prob * w["xgb"] + lgb_win_prob * w["lgb"] + cb_win_prob * w["cb"]
-                    )
-                else:
-                    w = ensemble_weights
-                    xgb_w = w.get("xgb", 0.5)
-                    lgb_w = w.get("lgb", 0.5)
-                    total = xgb_w + lgb_w
-                    win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
-
-                # Quinella probability (use if available, otherwise estimate)
+                # Quinella probability
                 if has_quinella:
-                    xgb_quinella_prob = xgb_quinella.predict_proba(X)[:, 1]
-                    lgb_quinella_prob = lgb_quinella.predict_proba(X)[:, 1]
-
-                    if has_catboost and cb_quinella is not None:
-                        cb_quinella_prob = cb_quinella.predict_proba(X)[:, 1]
-                        w = ensemble_weights
-                        quinella_probs = (
-                            xgb_quinella_prob * w["xgb"]
-                            + lgb_quinella_prob * w["lgb"]
-                            + cb_quinella_prob * w["cb"]
-                        )
-                    else:
-                        w = ensemble_weights
-                        xgb_w = w.get("xgb", 0.5)
-                        lgb_w = w.get("lgb", 0.5)
-                        total = xgb_w + lgb_w
-                        quinella_probs = (
-                            xgb_quinella_prob * xgb_w + lgb_quinella_prob * lgb_w
-                        ) / total
+                    quinella_probs = ensemble_proba(
+                        xgb_quinella, lgb_quinella, X, ensemble_weights,
+                        cb_clf=cb_quinella if has_catboost else None,
+                        calibrator=quinella_calibrator,
+                    )
+                    if quinella_calibrator is not None:
+                        logger.info("Applied quinella_calibrator")
                 else:
-                    # Legacy compatibility: estimate from win and place rates
                     quinella_probs = None
 
                 # Place probability
-                xgb_place_prob = xgb_place.predict_proba(X)[:, 1]
-                lgb_place_prob = lgb_place.predict_proba(X)[:, 1]
-
-                if has_catboost and cb_place is not None:
-                    cb_place_prob = cb_place.predict_proba(X)[:, 1]
-                    w = ensemble_weights
-                    place_probs = (
-                        xgb_place_prob * w["xgb"]
-                        + lgb_place_prob * w["lgb"]
-                        + cb_place_prob * w["cb"]
-                    )
-                else:
-                    w = ensemble_weights
-                    xgb_w = w.get("xgb", 0.5)
-                    lgb_w = w.get("lgb", 0.5)
-                    total = xgb_w + lgb_w
-                    place_probs = (xgb_place_prob * xgb_w + lgb_place_prob * lgb_w) / total
-
-                # Apply calibration (built-in model calibrators)
-                if win_calibrator is not None:
-                    win_probs = win_calibrator.predict(win_probs)
-                    logger.info("Applied win_calibrator")
-                if quinella_calibrator is not None and quinella_probs is not None:
-                    quinella_probs = quinella_calibrator.predict(quinella_probs)
-                    logger.info("Applied quinella_calibrator")
+                place_probs = ensemble_proba(
+                    xgb_place, lgb_place, X, ensemble_weights,
+                    cb_clf=cb_place if has_catboost else None,
+                    calibrator=place_calibrator,
+                )
                 if place_calibrator is not None:
-                    place_probs = place_calibrator.predict(place_probs)
                     logger.info("Applied place_calibrator")
 
-                # Normalize probabilities (each independently)
-                # Win probability: sum to 1.0 (only one winner)
-                win_sum = win_probs.sum()
-                if win_sum > 0:
-                    win_probs = win_probs / win_sum
-
-                # Quinella probability: sum to 2.0 (2 horses in top 2)
-                if quinella_probs is not None:
-                    expected_quinella_sum = min(2.0, n_horses)
-                    quinella_sum = quinella_probs.sum()
-                    if quinella_sum > 0:
-                        quinella_probs = quinella_probs * expected_quinella_sum / quinella_sum
-
-                # Place probability: sum to 3.0 (3 horses in top 3)
-                expected_place_sum = min(3.0, n_horses)
-                place_sum = place_probs.sum()
-                if place_sum > 0:
-                    place_probs = place_probs * expected_place_sum / place_sum
+                # Use calibrator output directly (no normalization)
+                # Calibrator probabilities reflect true estimated probabilities
+                # and should not be rescaled to sum to 1.0
             else:
                 # Legacy format: convert scores to probabilities (softmax-style)
                 logger.info("Using regression scores for probability (legacy mode)")
-                scores_exp = np.exp(-rank_scores)
+                if is_ranker:
+                    # Ranker: higher score = better → use exp(score) for softmax
+                    scores_exp = np.exp(rank_scores - rank_scores.max())
+                else:
+                    # Regressor: lower score = better → use exp(-score) for softmax
+                    scores_exp = np.exp(-rank_scores)
                 win_probs = scores_exp / scores_exp.sum()
                 quinella_probs = None
                 place_probs = None
@@ -440,14 +449,16 @@ def compute_ml_predictions(
                 horse_num = features.get("umaban", i + 1)
                 score_data = {
                     "rank_score": float(rank_scores[i]),
-                    "win_probability": float(min(1.0, win_probs[i])),  # Clip
+                    "win_probability": float(min(1.0, win_probs[i])),
                 }
                 if quinella_probs is not None:
-                    # Clip individual probability to not exceed 1.0
                     score_data["quinella_probability"] = float(min(1.0, quinella_probs[i]))
                 if place_probs is not None:
-                    # Clip individual probability to not exceed 1.0
                     score_data["place_probability"] = float(min(1.0, place_probs[i]))
+                # Confidence interval (95% CI from model disagreement)
+                if has_classifiers:
+                    score_data["win_ci_lower"] = float(max(0, win_probs[i] - 1.96 * win_std[i]))
+                    score_data["win_ci_upper"] = float(min(1, win_probs[i] + 1.96 * win_std[i]))
                 ml_scores[str(horse_num)] = score_data
 
             logger.info(f"ML predictions computed: {len(ml_scores)} horses")
@@ -460,17 +471,11 @@ def compute_ml_predictions(
                 )
 
             # Apply bias
-            # Priority:
-            # 1. Use bias_date parameter if provided
-            # 2. Use KEIBA_BIAS_DATE environment variable if set
-            # 3. Auto-detect: for Sunday races, use previous Saturday's bias
             from datetime import date, timedelta
 
-            # Determine bias date from parameter or environment
             bias_date_str = bias_date or os.environ.get("KEIBA_BIAS_DATE")
 
             if bias_date_str:
-                # Use specified bias
                 bias_data = load_bias_for_date(bias_date_str)
                 if bias_data:
                     logger.info(f"Applying bias: {bias_date_str}")
@@ -478,7 +483,6 @@ def compute_ml_predictions(
                 else:
                     logger.warning(f"Bias file not found: {bias_date_str}")
             else:
-                # Auto-detect mode (Sunday race uses previous Saturday)
                 race_year = int(race_id[:4])
                 race_month = int(race_id[6:8])
                 race_day = int(race_id[8:10])
@@ -489,7 +493,9 @@ def compute_ml_predictions(
                         bias_data = load_bias_for_date(saturday_date.isoformat())
                         if bias_data:
                             logger.info(f"Auto-detected bias applied: {saturday_date}")
-                            ml_scores = apply_bias_to_scores(ml_scores, race_id, horses, bias_data)
+                            ml_scores = apply_bias_to_scores(
+                                ml_scores, race_id, horses, bias_data
+                            )
                 except (ValueError, IndexError) as e:
                     logger.warning(f"Bias application skipped: {e}")
 
@@ -498,7 +504,6 @@ def compute_ml_predictions(
                 logger.info("Final prediction: applying track condition adjustment")
                 track_condition = get_current_track_condition(conn, race_id)
                 if track_condition and track_condition.get("condition", 0) > 0:
-                    # Get horse registration numbers
                     kettonums = [
                         h.get("ketto_toroku_bango", "")
                         for h in horses
