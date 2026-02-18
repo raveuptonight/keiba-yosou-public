@@ -331,4 +331,16 @@ def apply_track_condition_adjustment(
             if "place_probability" in adjusted_scores[umaban_str]:
                 adjusted_scores[umaban_str]["place_probability"] *= expected_place / place_sum
 
+    # Enforce probability constraint: win <= quinella <= place
+    for umaban_str, s in adjusted_scores.items():
+        wp = s.get("win_probability", 0)
+        qp = s.get("quinella_probability")
+        pp = s.get("place_probability")
+        if qp is not None and qp < wp:
+            s["quinella_probability"] = wp
+        if pp is not None:
+            qp_val = s.get("quinella_probability", wp)
+            if pp < qp_val:
+                s["place_probability"] = qp_val
+
     return adjusted_scores

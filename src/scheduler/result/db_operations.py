@@ -66,10 +66,10 @@ def get_race_results(target_date: date) -> list[dict]:
         for row in cur.fetchall():
             race_code = row[0]
 
-            # Get finishing position and popularity for each race
+            # Get finishing position, popularity, and odds for each race
             cur.execute(
                 """
-                SELECT umaban, kakutei_chakujun, bamei, tansho_ninkijun
+                SELECT umaban, kakutei_chakujun, bamei, tansho_ninkijun, tansho_odds
                 FROM umagoto_race_joho
                 WHERE race_code = %s
                   AND data_kubun IN ('6', '7')
@@ -86,12 +86,20 @@ def get_race_results(target_date: date) -> list[dict]:
                         ninki = int(r[3])
                     except Exception:
                         pass
+                # Parse odds (stored as 4-digit string, e.g. "0772" = 77.2x)
+                odds = None
+                if r[4] and r[4].strip():
+                    try:
+                        odds = int(r[4]) / 10.0
+                    except Exception:
+                        pass
                 results.append(
                     {
                         "umaban": r[0],
                         "chakujun": int(r[1]) if r[1] else 99,
                         "bamei": r[2],
                         "ninki": ninki,  # Win popularity rank
+                        "odds": odds,  # Win odds
                     }
                 )
 
@@ -187,6 +195,96 @@ def get_payouts(target_date: date) -> dict[str, dict]:
         conn.close()
 
 
+def get_final_odds(target_date: date) -> dict[str, dict]:
+    """
+    Get final win and place odds for races on a specific date.
+
+    Args:
+        target_date: Target date
+
+    Returns:
+        Dict mapping race_code to odds dict {umaban: {'tansho': x, 'fukusho': y}}
+    """
+    db = get_db()
+    conn = db.get_connection()
+
+    try:
+        cur = conn.cursor()
+        kaisai_gappi = target_date.strftime("%m%d")
+        kaisai_nen = str(target_date.year)
+
+        # Get race codes for the date
+        cur.execute(
+            """
+            SELECT DISTINCT race_code
+            FROM race_shosai
+            WHERE kaisai_nen = %s AND kaisai_gappi = %s
+              AND data_kubun IN ('6', '7')
+        """,
+            (kaisai_nen, kaisai_gappi),
+        )
+        race_codes = [row[0] for row in cur.fetchall()]
+
+        if not race_codes:
+            cur.close()
+            return {}
+
+        all_odds: dict[str, dict] = {}
+
+        for race_code in race_codes:
+            race_odds: dict[str, dict[str, float]] = {}
+
+            # Get win odds from odds1_tansho
+            cur.execute(
+                """
+                SELECT umaban, odds
+                FROM odds1_tansho
+                WHERE race_code = %s
+            """,
+                (race_code,),
+            )
+            for row in cur.fetchall():
+                umaban = str(row[0]).strip()
+                try:
+                    odds = float(row[1]) / 10 if row[1] else 0
+                except (ValueError, TypeError):
+                    odds = 0
+                if umaban not in race_odds:
+                    race_odds[umaban] = {}
+                race_odds[umaban]["tansho"] = odds
+
+            # Get place odds from odds1_fukusho (use minimum odds)
+            cur.execute(
+                """
+                SELECT umaban, odds_saitei
+                FROM odds1_fukusho
+                WHERE race_code = %s
+            """,
+                (race_code,),
+            )
+            for row in cur.fetchall():
+                umaban = str(row[0]).strip()
+                try:
+                    odds = float(row[1]) / 10 if row[1] else 0
+                except (ValueError, TypeError):
+                    odds = 0
+                if umaban not in race_odds:
+                    race_odds[umaban] = {}
+                race_odds[umaban]["fukusho"] = odds
+
+            all_odds[race_code] = race_odds
+
+        cur.close()
+        logger.info(f"Final odds retrieved: {len(all_odds)} races")
+        return all_odds
+
+    except Exception as e:
+        logger.error(f"Error retrieving final odds: {e}")
+        return {}
+    finally:
+        conn.close()
+
+
 def load_predictions_from_db(target_date: date) -> dict | None:
     """
     Load prediction results from database.
@@ -255,6 +353,9 @@ def load_predictions_from_db(target_date: date) -> dict | None:
                     }
                 )
 
+            # Extract EV recommendations if available
+            ev_recommendations = prediction_result.get("ev_recommendations")
+
             predictions["races"].append(
                 {
                     "prediction_id": prediction_id,
@@ -262,6 +363,7 @@ def load_predictions_from_db(target_date: date) -> dict | None:
                     "is_final": is_final,
                     "top3": top3,
                     "all_horses": ranked_horses,
+                    "ev_recommendations": ev_recommendations,
                 }
             )
 
@@ -303,6 +405,8 @@ def save_analysis_to_db(analysis: dict) -> bool:
         analysis_date = acc.get("date")
         raw_stats = acc.get("raw_stats", {})
         accuracy = acc.get("accuracy", {})
+        return_rates = acc.get("return_rates", {})
+        axis_stats = acc.get("axis_stats", {})
 
         # UPSERT (ON CONFLICT UPDATE)
         cur.execute(
@@ -311,8 +415,10 @@ def save_analysis_to_db(analysis: dict) -> bool:
                 analysis_date, total_races, analyzed_races,
                 tansho_hit, fukusho_hit, umaren_hit, sanrenpuku_hit, top3_cover,
                 tansho_rate, fukusho_rate, umaren_rate, sanrenpuku_rate, top3_cover_rate, mrr,
+                tansho_roi, fukusho_roi, axis_fukusho_roi,
+                tansho_investment, tansho_return, fukusho_investment, fukusho_return,
                 detail_data
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (analysis_date) DO UPDATE SET
                 total_races = EXCLUDED.total_races,
                 analyzed_races = EXCLUDED.analyzed_races,
@@ -327,6 +433,13 @@ def save_analysis_to_db(analysis: dict) -> bool:
                 sanrenpuku_rate = EXCLUDED.sanrenpuku_rate,
                 top3_cover_rate = EXCLUDED.top3_cover_rate,
                 mrr = EXCLUDED.mrr,
+                tansho_roi = EXCLUDED.tansho_roi,
+                fukusho_roi = EXCLUDED.fukusho_roi,
+                axis_fukusho_roi = EXCLUDED.axis_fukusho_roi,
+                tansho_investment = EXCLUDED.tansho_investment,
+                tansho_return = EXCLUDED.tansho_return,
+                fukusho_investment = EXCLUDED.fukusho_investment,
+                fukusho_return = EXCLUDED.fukusho_return,
                 detail_data = EXCLUDED.detail_data,
                 analyzed_at = CURRENT_TIMESTAMP
         """,
@@ -345,6 +458,13 @@ def save_analysis_to_db(analysis: dict) -> bool:
                 accuracy.get("sanrenpuku_hit_rate"),
                 accuracy.get("top3_cover_rate"),
                 accuracy.get("mrr"),
+                return_rates.get("tansho_roi"),
+                return_rates.get("fukusho_roi"),
+                axis_stats.get("axis_fukusho_roi"),
+                return_rates.get("tansho_investment", 0),
+                return_rates.get("tansho_return", 0),
+                return_rates.get("fukusho_investment", 0),
+                return_rates.get("fukusho_return", 0),
                 json.dumps(
                     {
                         "by_venue": acc.get("by_venue", {}),
@@ -352,6 +472,9 @@ def save_analysis_to_db(analysis: dict) -> bool:
                         "by_track": acc.get("by_track", {}),
                         "calibration": acc.get("calibration", {}),
                         "misses": acc.get("misses", []),
+                        "ev_stats": acc.get("ev_stats", {}),
+                        "axis_stats": acc.get("axis_stats", {}),
+                        "return_rates": acc.get("return_rates", {}),
                     },
                     ensure_ascii=False,
                 ),

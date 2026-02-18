@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 def send_discord_notification(analysis: dict):
     """
-    Send Discord notification (EV recommendation and axis horse format).
+    Send Discord notification with EV recommendation and axis horse stats.
 
     Args:
         analysis: Analysis result dictionary
@@ -36,61 +36,107 @@ def send_discord_notification(analysis: dict):
     n = acc.get("analyzed_races", 0)
     ev_stats = acc.get("ev_stats", {})
     axis_stats = acc.get("axis_stats", {})
-    by_track = acc.get("by_track", {})
+    by_venue = acc.get("by_venue", {})
 
-    # Basic message (EV recommendation and axis horse focused)
+    # Basic message header
     lines = [
         f"📊 **{date_str} 予想結果レポート**",
         f"分析レース数: {n}R",
         "",
     ]
 
-    # EV recommendation stats
-    ev_rec_races = ev_stats.get("ev_rec_races", 0)
-    ev_rec_count = ev_stats.get("ev_rec_count", 0)
-    if ev_rec_count > 0:
-        lines.append("**【単複推奨】** (EV >= 1.5)")
-        lines.append(f"  推奨レース: {ev_rec_races}R / 推奨頭数: {ev_rec_count}")
-        lines.append(
-            f"  単勝: {ev_stats.get('ev_rec_tansho_hit', 0)}的中 ({ev_stats.get('ev_tansho_rate', 0):.1f}%)"
-        )
-        lines.append(
-            f"  複勝: {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)"
-        )
-        lines.append(
-            f"  単勝回収: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**"
-        )
-        lines.append(
-            f"  複勝回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**"
-        )
+    # EV recommendation stats (separate for win/place)
+    ev_tansho_count = ev_stats.get("ev_rec_count", 0)  # Win EV count
+    ev_fukusho_count = ev_stats.get("ev_rec_fukusho_count", 0)  # Place EV count
+
+    if ev_tansho_count > 0 or ev_fukusho_count > 0:
+        lines.append("**【EV推奨】** (EV >= 1.5)")
+        # Win EV recommendations
+        if ev_tansho_count > 0:
+            lines.append(f"  **単勝**: {ev_tansho_count}頭")
+            lines.append(
+                f"    {ev_stats.get('ev_rec_tansho_hit', 0)}的中 "
+                f"({ev_stats.get('ev_tansho_rate', 0):.0f}%) "
+                f"ROI {ev_stats.get('ev_tansho_roi', 0):.0f}%"
+            )
+            lines.append(
+                f"    回収: {ev_stats.get('ev_tansho_return', 0):,}円 / "
+                f"{ev_stats.get('ev_tansho_investment', 0):,}円"
+            )
+        else:
+            lines.append("  **単勝**: 推奨なし")
+        # Place EV recommendations
+        if ev_fukusho_count > 0:
+            lines.append(f"  **複勝**: {ev_fukusho_count}頭")
+            lines.append(
+                f"    {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 "
+                f"({ev_stats.get('ev_fukusho_rate', 0):.0f}%) "
+                f"ROI {ev_stats.get('ev_fukusho_roi', 0):.0f}%"
+            )
+            lines.append(
+                f"    回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / "
+                f"{ev_stats.get('ev_fukusho_investment', 0):,}円"
+            )
+        else:
+            lines.append("  **複勝**: 推奨なし")
     else:
-        lines.append("**【単複推奨】**")
-        lines.append("  EV推奨なし")
+        lines.append("**【EV推奨】** (EV >= 1.5)")
+        lines.append("  推奨なし")
 
     # Axis horse stats
     lines.append("")
     axis_races = axis_stats.get("axis_races", 0)
     if axis_races > 0:
         lines.append("**【軸馬成績】** (複勝率最高馬)")
-        lines.append(f"  レース数: {axis_races}R")
         lines.append(
-            f"  単勝: {axis_stats.get('axis_tansho_hit', 0)}的中 ({axis_stats.get('axis_tansho_rate', 0):.1f}%)"
+            f"  着順: 1着 {axis_stats.get('axis_tansho_hit', 0)}回({axis_stats.get('axis_tansho_rate', 0):.0f}%) / "
+            f"2着 {axis_stats.get('axis_2nd_hit', 0)}回({axis_stats.get('axis_2nd_rate', 0):.0f}%) / "
+            f"3着 {axis_stats.get('axis_3rd_hit', 0)}回({axis_stats.get('axis_3rd_rate', 0):.0f}%) "
+            f"**着内率 {axis_stats.get('axis_fukusho_rate', 0):.0f}%**"
         )
         lines.append(
-            f"  複勝: {axis_stats.get('axis_fukusho_hit', 0)}的中 (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)"
+            f"  単勝: ROI {axis_stats.get('axis_tansho_roi', 0):.0f}% "
+            f"(回収 {axis_stats.get('axis_tansho_return', 0):,}円 / "
+            f"{axis_stats.get('axis_tansho_investment', 0):,}円)"
         )
         lines.append(
-            f"  複勝回収: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%"
+            f"  複勝: ROI {axis_stats.get('axis_fukusho_roi', 0):.0f}% "
+            f"(回収 {axis_stats.get('axis_fukusho_return', 0):,}円 / "
+            f"{axis_stats.get('axis_fukusho_investment', 0):,}円)"
         )
 
-    # Turf/Dirt (axis horse place rate)
-    if by_track:
+    # By venue stats
+    if by_venue:
         lines.append("")
-        lines.append("**【芝・ダート別】** (軸馬複勝率)")
-        for track in ["芝", "ダ"]:
-            if track in by_track:
-                t = by_track[track]
-                lines.append(f"  {track}: {t['races']}R → {t['top3_rate']:.0f}%")
+        lines.append("**【競馬場別】**")
+        for venue, data in sorted(by_venue.items(), key=lambda x: -x[1].get("races", 0)):
+            r = data.get("races", 0)
+            lines.append(
+                f"  {venue} {r}R: "
+                f"単勝{data.get('top1_rate', 0):.0f}% ROI {data.get('tansho_roi', 0):.0f}% / "
+                f"複勝{data.get('top3_rate', 0):.0f}% ROI {data.get('fukusho_roi', 0):.0f}%"
+            )
+
+    # Failure analysis section
+    failure = acc.get("failure_analysis", {})
+    if failure and failure.get("total_misses", 0) > 0:
+        lines.append("")
+        lines.append("**【的外し分析】**")
+        lines.append(
+            f"  大穴: {failure.get('upset', 0)}件 / "
+            f"惜しい: {failure.get('close_call', 0)}件 / "
+            f"見落とし: {failure.get('blind_spot', 0)}件"
+        )
+        for bs in failure.get("blind_spot_details", []):
+            lines.append(
+                f"    → {bs['winner_name']}({bs['winner_ninki']}人気) "
+                f"予測{bs['predicted_rank']}位 勝率{bs['win_prob']:.1%}"
+            )
+        for w in failure.get("weaknesses", []):
+            lines.append(
+                f"  ⚠ {w['category']}:{w['value']} "
+                f"Top3率{w['cover_rate']:.0%} (平均{w['avg_cover_rate']:.0%})"
+            )
 
     message = "\n".join(lines)
 
@@ -120,9 +166,11 @@ def send_weekend_notification(
     cumulative: dict | None = None,
     ev_stats: dict | None = None,
     axis_stats: dict | None = None,
+    by_venue: dict | None = None,
+    failure_analysis: dict | None = None,
 ):
     """
-    Send weekend total Discord notification (EV recommendation and axis horse format).
+    Send weekend total Discord notification with EV recommendation and axis horse stats.
 
     Args:
         saturday: Saturday date
@@ -155,51 +203,99 @@ def send_weekend_notification(
         "",
     ]
 
-    # EV recommendation stats
-    ev_rec_count = ev_stats.get("ev_rec_count", 0)
-    if ev_rec_count > 0:
-        lines.append("**【単複推奨】** (EV >= 1.5)")
-        lines.append(f"  推奨レース: {ev_stats.get('ev_rec_races', 0)}R / 推奨頭数: {ev_rec_count}")
-        lines.append(
-            f"  単勝: {ev_stats.get('ev_rec_tansho_hit', 0)}的中 ({ev_stats.get('ev_tansho_rate', 0):.1f}%)"
-        )
-        lines.append(
-            f"  複勝: {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 ({ev_stats.get('ev_fukusho_rate', 0):.1f}%)"
-        )
-        lines.append(
-            f"  単勝回収: {ev_stats.get('ev_tansho_return', 0):,}円 / {ev_stats.get('ev_tansho_investment', 0):,}円 = **{ev_stats.get('ev_tansho_roi', 0):.0f}%**"
-        )
-        lines.append(
-            f"  複勝回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / {ev_stats.get('ev_fukusho_investment', 0):,}円 = **{ev_stats.get('ev_fukusho_roi', 0):.0f}%**"
-        )
+    # EV recommendation stats (separate for win/place)
+    ev_tansho_count = ev_stats.get("ev_rec_count", 0)  # Win EV count
+    ev_fukusho_count = ev_stats.get("ev_rec_fukusho_count", 0)  # Place EV count
+
+    if ev_tansho_count > 0 or ev_fukusho_count > 0:
+        lines.append("**【EV推奨】** (EV >= 1.5)")
+        # Win EV recommendations
+        if ev_tansho_count > 0:
+            lines.append(f"  **単勝**: {ev_tansho_count}頭")
+            lines.append(
+                f"    {ev_stats.get('ev_rec_tansho_hit', 0)}的中 "
+                f"({ev_stats.get('ev_tansho_rate', 0):.0f}%) "
+                f"ROI {ev_stats.get('ev_tansho_roi', 0):.0f}%"
+            )
+            lines.append(
+                f"    回収: {ev_stats.get('ev_tansho_return', 0):,}円 / "
+                f"{ev_stats.get('ev_tansho_investment', 0):,}円"
+            )
+        else:
+            lines.append("  **単勝**: 推奨なし")
+        # Place EV recommendations
+        if ev_fukusho_count > 0:
+            lines.append(f"  **複勝**: {ev_fukusho_count}頭")
+            lines.append(
+                f"    {ev_stats.get('ev_rec_fukusho_hit', 0)}的中 "
+                f"({ev_stats.get('ev_fukusho_rate', 0):.0f}%) "
+                f"ROI {ev_stats.get('ev_fukusho_roi', 0):.0f}%"
+            )
+            lines.append(
+                f"    回収: {ev_stats.get('ev_fukusho_return', 0):,}円 / "
+                f"{ev_stats.get('ev_fukusho_investment', 0):,}円"
+            )
+        else:
+            lines.append("  **複勝**: 推奨なし")
     else:
-        lines.append("**【単複推奨】**")
-        lines.append("  EV推奨なし")
+        lines.append("**【EV推奨】** (EV >= 1.5)")
+        lines.append("  推奨なし")
 
     # Axis horse stats
     lines.append("")
     axis_races = axis_stats.get("axis_races", 0)
     if axis_races > 0:
         lines.append("**【軸馬成績】** (複勝率最高馬)")
-        lines.append(f"  レース数: {axis_races}R")
         lines.append(
-            f"  単勝: {axis_stats.get('axis_tansho_hit', 0)}的中 ({axis_stats.get('axis_tansho_rate', 0):.1f}%)"
+            f"  着順: 1着 {axis_stats.get('axis_tansho_hit', 0)}回({axis_stats.get('axis_tansho_rate', 0):.0f}%) / "
+            f"2着 {axis_stats.get('axis_2nd_hit', 0)}回({axis_stats.get('axis_2nd_rate', 0):.0f}%) / "
+            f"3着 {axis_stats.get('axis_3rd_hit', 0)}回({axis_stats.get('axis_3rd_rate', 0):.0f}%) "
+            f"**着内率 {axis_stats.get('axis_fukusho_rate', 0):.0f}%**"
         )
         lines.append(
-            f"  複勝: {axis_stats.get('axis_fukusho_hit', 0)}的中 (**{axis_stats.get('axis_fukusho_rate', 0):.1f}%**)"
+            f"  単勝: ROI {axis_stats.get('axis_tansho_roi', 0):.0f}% "
+            f"(回収 {axis_stats.get('axis_tansho_return', 0):,}円 / "
+            f"{axis_stats.get('axis_tansho_investment', 0):,}円)"
         )
         lines.append(
-            f"  複勝回収: {axis_stats.get('axis_fukusho_return', 0):,}円 / {axis_stats.get('axis_fukusho_investment', 0):,}円 = {axis_stats.get('axis_fukusho_roi', 0):.0f}%"
+            f"  複勝: ROI {axis_stats.get('axis_fukusho_roi', 0):.0f}% "
+            f"(回収 {axis_stats.get('axis_fukusho_return', 0):,}円 / "
+            f"{axis_stats.get('axis_fukusho_investment', 0):,}円)"
         )
 
-    # Turf/Dirt
-    if by_track:
+    # By venue stats
+    by_venue = by_venue or {}
+    if by_venue:
         lines.append("")
-        lines.append("**【芝・ダート別】** (軸馬複勝率)")
-        for track in ["芝", "ダ"]:
-            if track in by_track:
-                t = by_track[track]
-                lines.append(f"  {track}: {t['races']}R → {t['top3_rate']:.0f}%")
+        lines.append("**【競馬場別】**")
+        for venue, data in sorted(by_venue.items(), key=lambda x: -x[1].get("races", 0)):
+            r = data.get("races", 0)
+            lines.append(
+                f"  {venue} {r}R: "
+                f"単勝{data.get('top1_rate', 0):.0f}% ROI {data.get('tansho_roi', 0):.0f}% / "
+                f"複勝{data.get('top3_rate', 0):.0f}% ROI {data.get('fukusho_roi', 0):.0f}%"
+            )
+
+    # Failure analysis section
+    failure_analysis = failure_analysis or {}
+    if failure_analysis and failure_analysis.get("total_misses", 0) > 0:
+        lines.append("")
+        lines.append("**【的外し分析】**")
+        lines.append(
+            f"  大穴: {failure_analysis.get('upset', 0)}件 / "
+            f"惜しい: {failure_analysis.get('close_call', 0)}件 / "
+            f"見落とし: {failure_analysis.get('blind_spot', 0)}件"
+        )
+        for bs in failure_analysis.get("blind_spot_details", []):
+            lines.append(
+                f"    → {bs['winner_name']}({bs['winner_ninki']}人気) "
+                f"予測{bs['predicted_rank']}位 勝率{bs['win_prob']:.1%}"
+            )
+        for w in failure_analysis.get("weaknesses", []):
+            lines.append(
+                f"  ⚠ {w['category']}:{w['value']} "
+                f"Top3率{w['cover_rate']:.0%} (平均{w['avg_cover_rate']:.0%})"
+            )
 
     # Add guide if date select menu is available
     if daily_data:
@@ -220,6 +316,7 @@ def send_weekend_notification(
         for date_str in sorted(daily_data.keys()):
             data = daily_data[date_str]
             n = data.get("analyzed_races", 0)
+            # Use axis stats for description
             axis_rate = data.get("axis_stats", {}).get("axis_fukusho_rate", 0)
             options.append(
                 {

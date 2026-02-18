@@ -10,7 +10,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def compare_results(predictions: dict, results: list[dict], payouts: dict | None = None) -> dict:
+def compare_results(
+    predictions: dict,
+    results: list[dict],
+    payouts: dict | None = None,
+    final_odds: dict | None = None,
+) -> dict:
     """
     Compare predictions with actual results (EV recommendation and axis horse format).
 
@@ -18,10 +23,12 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
         predictions: Prediction data dictionary
         results: List of race results
         payouts: Optional payout data
+        final_odds: Optional final odds data {race_code: {umaban: {'tansho': x, 'fukusho': y}}}
 
     Returns:
         Comparison result dictionary
     """
+    final_odds = final_odds or {}
     comparison = {
         "date": predictions["date"],
         "total_races": 0,
@@ -37,10 +44,11 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
             "sanrenpuku_hit": 0,  # Trio hit
             "mrr_sum": 0.0,  # MRR calculation
         },
-        # EV recommendation stats (EV >= 1.5 horses)
+        # EV recommendation stats (EV >= 1.5 horses, separate for win/place)
         "ev_stats": {
             "ev_rec_races": 0,  # Races with EV recommendations
-            "ev_rec_count": 0,  # Total EV recommended horses
+            "ev_rec_count": 0,  # Win EV recommended horses count
+            "ev_rec_fukusho_count": 0,  # Place EV recommended horses count
             "ev_rec_tansho_hit": 0,  # Win hits
             "ev_rec_fukusho_hit": 0,  # Place hits
             "ev_tansho_investment": 0,  # Win investment
@@ -51,8 +59,12 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
         # Axis horse stats (horse with highest place probability)
         "axis_stats": {
             "axis_races": 0,  # Axis horse races
-            "axis_tansho_hit": 0,  # Win hits
+            "axis_tansho_hit": 0,  # Win hits (1st)
+            "axis_2nd_hit": 0,  # 2nd place hits
+            "axis_3rd_hit": 0,  # 3rd place hits
             "axis_fukusho_hit": 0,  # Place hits (top 3)
+            "axis_tansho_investment": 0,  # Win investment
+            "axis_tansho_return": 0,  # Win return
             "axis_fukusho_investment": 0,  # Place investment
             "axis_fukusho_return": 0,  # Place return
         },
@@ -163,15 +175,26 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
             "winner_rank": None,  # Winner's predicted rank
         }
 
-        # Calculate winner's predicted rank (for MRR)
+        # Calculate winner's predicted rank (for MRR) and record winner details
         if winner_umaban and all_horses:
             for idx, h in enumerate(all_horses):
                 h_umaban = str(h.get("horse_number", ""))
                 if h_umaban == winner_umaban:
                     winner_rank = idx + 1
                     race_result["winner_rank"] = winner_rank
+                    race_result["winner_predicted_prob"] = h.get("win_probability", 0)
                     comparison["stats"]["mrr_sum"] += 1.0 / winner_rank
                     break
+
+        # Record winner info from actual results
+        if actual_results:
+            winner_res = actual_results[0]
+            race_result["winner"] = {
+                "bamei": winner_res.get("bamei", ""),
+                "umaban": winner_umaban or "",
+                "odds": float(winner_res.get("tansho_odds", 0) or winner_res.get("odds", 0) or 0),
+                "ninki": int(winner_res.get("ninki", 0) or 0),
+            }
 
         # Top 1 prediction wins
         if pred_top3_umaban and actual_top3:
@@ -236,47 +259,104 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
 
         # EV recommendation stats (EV >= 1.5 horses)
         race_payout = payouts.get(race_code, {})
-        ev_recommended = []
-        for h in all_horses:
-            win_prob = h.get("win_probability", 0)
-            odds = h.get("predicted_odds", 0)
-            if odds > 0 and win_prob > 0:
-                win_ev = win_prob * odds
-                if win_ev >= 1.5:
-                    ev_recommended.append(h)
 
-        if ev_recommended:
-            comparison["ev_stats"]["ev_rec_races"] += 1
-            comparison["ev_stats"]["ev_rec_count"] += len(ev_recommended)
+        # Use saved EV recommendations if available (from prediction time)
+        saved_ev_recs = pred_race.get("ev_recommendations")
+        tansho_ev_recommended = []  # Win EV >= 1.5
+        fukusho_ev_recommended = []  # Place EV >= 1.5
 
-            for h in ev_recommended:
+        if saved_ev_recs:
+            # Use saved recommendations from prediction time
+            for rec in saved_ev_recs.get("win_recommendations", []):
+                h_num = rec.get("horse_number")
+                # Find horse in all_horses
+                for h in all_horses:
+                    if h.get("horse_number") == h_num:
+                        tansho_ev_recommended.append(h)
+                        break
+            for rec in saved_ev_recs.get("place_recommendations", []):
+                h_num = rec.get("horse_number")
+                for h in all_horses:
+                    if h.get("horse_number") == h_num:
+                        fukusho_ev_recommended.append(h)
+                        break
+        else:
+            # Fallback: recalculate with final odds (for old predictions without ev_recommendations)
+            # Build odds map from actual results (win odds from umagoto_race_joho)
+            odds_map = {}
+            for r in actual_results:
+                r_umaban = str(int(r["umaban"])) if r.get("umaban") else None
+                if r_umaban and r.get("odds"):
+                    odds_map[r_umaban] = r["odds"]
+
+            # Also build fukusho odds map from final_odds if available
+            fukusho_odds_map = {}
+            if final_odds and race_code in final_odds:
+                for umaban, odds_data in final_odds[race_code].items():
+                    fukusho_odds_map[str(int(umaban))] = odds_data.get("fukusho", 0)
+
+            for h in all_horses:
                 h_umaban = str(int(h.get("horse_number", 0)))
-                # Win investment
-                comparison["ev_stats"]["ev_tansho_investment"] += 100
-                comparison["ev_stats"]["ev_fukusho_investment"] += 100
+                win_prob = h.get("win_probability", 0)
+                place_prob = h.get("place_probability", 0)
+                tansho_odds = odds_map.get(h_umaban, 0)
+                fukusho_odds = fukusho_odds_map.get(h_umaban, 0)
 
-                # Hit check
-                if h_umaban in actual_results_map:
-                    actual_pos = actual_results_map[h_umaban]
-                    if actual_pos == 1:
-                        comparison["ev_stats"]["ev_rec_tansho_hit"] += 1
-                        # Win payout
-                        if race_payout:
-                            tansho_payout = race_payout.get("tansho_payout", 0)
-                            comparison["ev_stats"]["ev_tansho_return"] += tansho_payout
-                    if actual_pos <= 3:
-                        comparison["ev_stats"]["ev_rec_fukusho_hit"] += 1
-                        # Place payout
-                        if race_payout:
-                            for fk in race_payout.get("fukusho", []):
-                                fk_umaban = fk.get("umaban", "")
-                                if fk_umaban and str(int(fk_umaban)) == h_umaban:
-                                    comparison["ev_stats"]["ev_fukusho_return"] += fk.get(
-                                        "payout", 0
-                                    )
-                                    break
+                # Win EV check
+                if tansho_odds > 0 and win_prob > 0:
+                    win_ev = win_prob * tansho_odds
+                    if win_ev >= 1.5:
+                        tansho_ev_recommended.append(h)
 
-        race_result["ev_recommended"] = [str(int(h.get("horse_number", 0))) for h in ev_recommended]
+                # Place EV check
+                if fukusho_odds > 0 and place_prob > 0:
+                    place_ev = place_prob * fukusho_odds
+                    if place_ev >= 1.5:
+                        fukusho_ev_recommended.append(h)
+
+        # Count races with any EV recommendation
+        if tansho_ev_recommended or fukusho_ev_recommended:
+            comparison["ev_stats"]["ev_rec_races"] += 1
+
+        # Win EV recommendations
+        comparison["ev_stats"]["ev_rec_count"] += len(tansho_ev_recommended)
+        for h in tansho_ev_recommended:
+            h_umaban = str(int(h.get("horse_number", 0)))
+            comparison["ev_stats"]["ev_tansho_investment"] += 100
+
+            if h_umaban in actual_results_map:
+                actual_pos = actual_results_map[h_umaban]
+                if actual_pos == 1:
+                    comparison["ev_stats"]["ev_rec_tansho_hit"] += 1
+                    if race_payout:
+                        tansho_payout = race_payout.get("tansho_payout", 0)
+                        comparison["ev_stats"]["ev_tansho_return"] += tansho_payout
+
+        # Place EV recommendations
+        comparison["ev_stats"]["ev_rec_fukusho_count"] = comparison["ev_stats"].get(
+            "ev_rec_fukusho_count", 0
+        ) + len(fukusho_ev_recommended)
+        for h in fukusho_ev_recommended:
+            h_umaban = str(int(h.get("horse_number", 0)))
+            comparison["ev_stats"]["ev_fukusho_investment"] += 100
+
+            if h_umaban in actual_results_map:
+                actual_pos = actual_results_map[h_umaban]
+                if actual_pos <= 3:
+                    comparison["ev_stats"]["ev_rec_fukusho_hit"] += 1
+                    if race_payout:
+                        for fk in race_payout.get("fukusho", []):
+                            fk_umaban = fk.get("umaban", "")
+                            if fk_umaban and str(int(fk_umaban)) == h_umaban:
+                                comparison["ev_stats"]["ev_fukusho_return"] += fk.get("payout", 0)
+                                break
+
+        race_result["ev_recommended_tansho"] = [
+            str(int(h.get("horse_number", 0))) for h in tansho_ev_recommended
+        ]
+        race_result["ev_recommended_fukusho"] = [
+            str(int(h.get("horse_number", 0))) for h in fukusho_ev_recommended
+        ]
 
         # Axis horse stats (horse with highest place probability)
         axis_horse = (
@@ -285,12 +365,22 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
         if axis_horse:
             comparison["axis_stats"]["axis_races"] += 1
             axis_umaban = str(int(axis_horse.get("horse_number", 0)))
+            comparison["axis_stats"]["axis_tansho_investment"] += 100
             comparison["axis_stats"]["axis_fukusho_investment"] += 100
 
             if axis_umaban in actual_results_map:
                 actual_pos = actual_results_map[axis_umaban]
                 if actual_pos == 1:
                     comparison["axis_stats"]["axis_tansho_hit"] += 1
+                    # Win payout
+                    if race_payout:
+                        comparison["axis_stats"]["axis_tansho_return"] += race_payout.get(
+                            "tansho_payout", 0
+                        )
+                elif actual_pos == 2:
+                    comparison["axis_stats"]["axis_2nd_hit"] += 1
+                elif actual_pos == 3:
+                    comparison["axis_stats"]["axis_3rd_hit"] += 1
                 if actual_pos <= 3:
                     comparison["axis_stats"]["axis_fukusho_hit"] += 1
                     # Place payout
@@ -380,6 +470,21 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
 
         comparison["races"].append(race_result)
 
+        # Per-race return for category aggregation
+        race_tansho_payout = 0
+        race_fukusho_payout = 0
+        has_race_payout = bool(race_payout and all_horses)
+        if has_race_payout:
+            cat_pred_1st = str(int(all_horses[0].get("horse_number", 0)))
+            if race_result["hits"].get("tansho"):
+                race_tansho_payout = race_payout.get("tansho_payout", 0)
+            if race_result["hits"].get("fukusho"):
+                for fk in race_payout.get("fukusho", []):
+                    fk_umaban = fk.get("umaban", "")
+                    if fk_umaban and str(int(fk_umaban)).strip() == cat_pred_1st:
+                        race_fukusho_payout = fk.get("payout", 0)
+                        break
+
         # Category-based aggregation
         for cat_name, _cat_key, cat_val in [
             ("by_venue", keibajo, keibajo),
@@ -393,6 +498,10 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
                     "top1_hit": 0,
                     "top1_in_top3": 0,
                     "top3_cover": 0,
+                    "tansho_investment": 0,
+                    "tansho_return": 0,
+                    "fukusho_investment": 0,
+                    "fukusho_return": 0,
                 }
             comparison[cat_name][cat_val]["races"] += 1
             if race_result["hits"].get("tansho"):
@@ -401,6 +510,11 @@ def compare_results(predictions: dict, results: list[dict], payouts: dict | None
                 comparison[cat_name][cat_val]["top1_in_top3"] += 1
             if race_result["hits"].get("top3_cover"):
                 comparison[cat_name][cat_val]["top3_cover"] += 1
+            if has_race_payout:
+                comparison[cat_name][cat_val]["tansho_investment"] += 100
+                comparison[cat_name][cat_val]["tansho_return"] += race_tansho_payout
+                comparison[cat_name][cat_val]["fukusho_investment"] += 100
+                comparison[cat_name][cat_val]["fukusho_return"] += race_fukusho_payout
 
         # Calibration data collection
         if pred_top3 and len(pred_top3) > 0:
@@ -441,12 +555,23 @@ def calculate_accuracy(comparison: dict) -> dict:
         for key, vals in data.items():
             races = vals["races"]
             if races > 0:
-                result[key] = {
+                entry = {
                     "races": races,
                     "top1_rate": vals["top1_hit"] / races * 100,
                     "top3_rate": vals["top1_in_top3"] / races * 100,
                     "cover_rate": vals["top3_cover"] / races * 100,
                 }
+                tansho_inv = vals.get("tansho_investment", 0)
+                fukusho_inv = vals.get("fukusho_investment", 0)
+                if tansho_inv > 0:
+                    entry["tansho_roi"] = vals["tansho_return"] / tansho_inv * 100
+                    entry["tansho_investment"] = tansho_inv
+                    entry["tansho_return"] = vals["tansho_return"]
+                if fukusho_inv > 0:
+                    entry["fukusho_roi"] = vals["fukusho_return"] / fukusho_inv * 100
+                    entry["fukusho_investment"] = fukusho_inv
+                    entry["fukusho_return"] = vals["fukusho_return"]
+                result[key] = entry
         return result
 
     # Calibration calculation
@@ -492,21 +617,27 @@ def calculate_accuracy(comparison: dict) -> dict:
         "fukusho_return": return_stats.get("fukusho_return", 0),
     }
 
-    # Format EV recommendation stats
+    # Format EV recommendation stats (separate for win/place)
     ev_stats = comparison.get("ev_stats", {})
-    ev_rec_count = ev_stats.get("ev_rec_count", 0)
+    ev_tansho_count = ev_stats.get("ev_rec_count", 0)  # Win EV recommended count
+    ev_fukusho_count = ev_stats.get("ev_rec_fukusho_count", 0)  # Place EV recommended count
     ev_tansho_inv = ev_stats.get("ev_tansho_investment", 0)
     ev_fukusho_inv = ev_stats.get("ev_fukusho_investment", 0)
     ev_formatted = {
         "ev_rec_races": ev_stats.get("ev_rec_races", 0),
-        "ev_rec_count": ev_rec_count,
+        "ev_rec_count": ev_tansho_count,  # Win EV count
+        "ev_rec_fukusho_count": ev_fukusho_count,  # Place EV count
         "ev_rec_tansho_hit": ev_stats.get("ev_rec_tansho_hit", 0),
         "ev_rec_fukusho_hit": ev_stats.get("ev_rec_fukusho_hit", 0),
         "ev_tansho_rate": (
-            (ev_stats.get("ev_rec_tansho_hit", 0) / ev_rec_count * 100) if ev_rec_count > 0 else 0
+            (ev_stats.get("ev_rec_tansho_hit", 0) / ev_tansho_count * 100)
+            if ev_tansho_count > 0
+            else 0
         ),
         "ev_fukusho_rate": (
-            (ev_stats.get("ev_rec_fukusho_hit", 0) / ev_rec_count * 100) if ev_rec_count > 0 else 0
+            (ev_stats.get("ev_rec_fukusho_hit", 0) / ev_fukusho_count * 100)
+            if ev_fukusho_count > 0
+            else 0
         ),
         "ev_tansho_roi": (
             (ev_stats.get("ev_tansho_return", 0) / ev_tansho_inv * 100) if ev_tansho_inv > 0 else 0
@@ -525,22 +656,38 @@ def calculate_accuracy(comparison: dict) -> dict:
     # Format axis horse stats
     axis_stats = comparison.get("axis_stats", {})
     axis_races = axis_stats.get("axis_races", 0)
+    axis_tansho_inv = axis_stats.get("axis_tansho_investment", 0)
     axis_fukusho_inv = axis_stats.get("axis_fukusho_investment", 0)
     axis_formatted = {
         "axis_races": axis_races,
         "axis_tansho_hit": axis_stats.get("axis_tansho_hit", 0),
+        "axis_2nd_hit": axis_stats.get("axis_2nd_hit", 0),
+        "axis_3rd_hit": axis_stats.get("axis_3rd_hit", 0),
         "axis_fukusho_hit": axis_stats.get("axis_fukusho_hit", 0),
         "axis_tansho_rate": (
             (axis_stats.get("axis_tansho_hit", 0) / axis_races * 100) if axis_races > 0 else 0
         ),
+        "axis_2nd_rate": (
+            (axis_stats.get("axis_2nd_hit", 0) / axis_races * 100) if axis_races > 0 else 0
+        ),
+        "axis_3rd_rate": (
+            (axis_stats.get("axis_3rd_hit", 0) / axis_races * 100) if axis_races > 0 else 0
+        ),
         "axis_fukusho_rate": (
             (axis_stats.get("axis_fukusho_hit", 0) / axis_races * 100) if axis_races > 0 else 0
+        ),
+        "axis_tansho_roi": (
+            (axis_stats.get("axis_tansho_return", 0) / axis_tansho_inv * 100)
+            if axis_tansho_inv > 0
+            else 0
         ),
         "axis_fukusho_roi": (
             (axis_stats.get("axis_fukusho_return", 0) / axis_fukusho_inv * 100)
             if axis_fukusho_inv > 0
             else 0
         ),
+        "axis_tansho_investment": axis_tansho_inv,
+        "axis_tansho_return": axis_stats.get("axis_tansho_return", 0),
         "axis_fukusho_investment": axis_fukusho_inv,
         "axis_fukusho_return": axis_stats.get("axis_fukusho_return", 0),
     }
@@ -599,5 +746,94 @@ def calculate_accuracy(comparison: dict) -> dict:
         "by_track": calc_rates(comparison.get("by_track", {})),
         "calibration": calibration,
         "misses": comparison.get("misses", []),
+        "failure_analysis": analyze_failures(comparison),
         "raw_stats": stats,
+    }
+
+
+def analyze_failures(comparison: dict) -> dict:
+    """Categorize prediction failures and detect systematic weaknesses.
+
+    Categories:
+      - upset: Winner had odds >= 10.0 (longshot upset, hard to predict)
+      - close_call: Winner was predicted rank 4-5 (narrowly missed top 3)
+      - blind_spot: Winner was predicted rank 6+ with odds < 10.0 (model weakness)
+
+    Args:
+        comparison: Raw comparison dict from compare_results()
+
+    Returns:
+        Failure analysis dict with counts, details, and systematic weaknesses
+    """
+    races = comparison.get("races", [])
+    n = comparison.get("analyzed_races", 0)
+    if n == 0:
+        return {}
+
+    failures = {"upset": [], "close_call": [], "blind_spot": []}
+    overall_cover = comparison["stats"]["top3_cover"]
+    overall_cover_rate = overall_cover / n if n > 0 else 0
+
+    for race in races:
+        # Skip races where we correctly predicted the winner in top 3
+        if race["hits"].get("top3_cover"):
+            continue
+
+        winner = race.get("winner", {})
+        odds = winner.get("odds", 0)
+        rank = race.get("winner_rank") or 99
+        win_prob = race.get("winner_predicted_prob", 0)
+
+        entry = {
+            "race_code": race.get("race_code", ""),
+            "keibajo": race.get("keibajo", ""),
+            "race_number": race.get("race_number", ""),
+            "winner_name": winner.get("bamei", ""),
+            "winner_ninki": winner.get("ninki", 0),
+            "winner_odds": odds,
+            "predicted_rank": rank,
+            "win_prob": win_prob,
+        }
+
+        if odds >= 10.0:
+            failures["upset"].append(entry)
+        elif rank <= 5:
+            failures["close_call"].append(entry)
+        else:
+            failures["blind_spot"].append(entry)
+
+    # Detect systematic weaknesses: category-level top3 coverage significantly below average
+    weaknesses = []
+    for cat_name, cat_key in [
+        ("競馬場", "by_venue"),
+        ("距離帯", "by_distance"),
+        ("コース", "by_track"),
+    ]:
+        cat_data = comparison.get(cat_key, {})
+        for key, data in cat_data.items():
+            r = data.get("races", 0)
+            if r < 3:
+                continue
+            cover = data.get("top3_cover", 0)
+            rate = cover / r
+            if rate < overall_cover_rate * 0.7:
+                weaknesses.append(
+                    {
+                        "category": cat_name,
+                        "value": key,
+                        "races": r,
+                        "cover_rate": rate,
+                        "avg_cover_rate": overall_cover_rate,
+                    }
+                )
+
+    return {
+        "total_misses": sum(len(v) for v in failures.values()),
+        "upset": len(failures["upset"]),
+        "close_call": len(failures["close_call"]),
+        "blind_spot": len(failures["blind_spot"]),
+        "blind_spot_details": sorted(
+            failures["blind_spot"], key=lambda x: x["predicted_rank"], reverse=True
+        )[:3],
+        "weaknesses": weaknesses,
     }

@@ -8,6 +8,7 @@ Recommends horses with EV > threshold as betting candidates.
 import logging
 from datetime import datetime, timedelta, timezone
 
+import numpy as np
 import psycopg2.extras
 
 from src.db.connection import get_db
@@ -24,6 +25,49 @@ DEFAULT_PLACE_EV_THRESHOLD = 1.5  # Place bet EV threshold
 # Loose thresholds (for candidates)
 LOOSE_WIN_EV_THRESHOLD = 1.2
 LOOSE_PLACE_EV_THRESHOLD = 1.2
+
+# Dynamic threshold adjustment
+CONFIDENCE_ALPHA = 0.5  # Max threshold adjustment range
+
+
+def _calculate_race_confidence(win_probs: list[float]) -> float:
+    """Calculate model confidence for a race based on prediction entropy.
+
+    Low entropy (one horse dominates) = high confidence.
+    High entropy (all horses similar) = low confidence.
+
+    Args:
+        win_probs: List of win probabilities for all horses in the race.
+
+    Returns:
+        Confidence score in [0, 1]. Higher = more confident.
+    """
+    if not win_probs or len(win_probs) < 2:
+        return 0.5
+
+    probs = np.array(win_probs, dtype=np.float64)
+    probs = probs[probs > 0]
+    if len(probs) < 2:
+        return 0.5
+
+    # Normalize to sum to 1
+    total = probs.sum()
+    if total <= 0:
+        return 0.5
+    probs = probs / total
+
+    # Shannon entropy
+    entropy = -np.sum(probs * np.log(probs))
+    # Maximum entropy for uniform distribution
+    max_entropy = np.log(len(probs))
+
+    if max_entropy <= 0:
+        return 0.5
+
+    # Normalized entropy: 0 = perfectly concentrated, 1 = uniform
+    norm_entropy = entropy / max_entropy
+    # Confidence = 1 - normalized entropy
+    return float(1.0 - norm_entropy)
 
 
 class EVRecommender:
@@ -92,11 +136,26 @@ class EVRecommender:
                     "error": "No odds data available",
                 }
 
+            # Dynamic threshold adjustment based on model confidence
+            win_probs = [h.get("win_probability", 0) for h in ranked_horses]
+            confidence = _calculate_race_confidence(win_probs)
+            # High confidence -> lower threshold, low confidence -> higher threshold
+            threshold_adj = CONFIDENCE_ALPHA * (1.0 - confidence)
+            effective_win_threshold = self.win_ev_threshold + threshold_adj
+            effective_place_threshold = self.place_ev_threshold + threshold_adj
+            effective_loose_win = LOOSE_WIN_EV_THRESHOLD + threshold_adj * 0.5
+            effective_loose_place = LOOSE_PLACE_EV_THRESHOLD + threshold_adj * 0.5
+
+            logger.debug(
+                f"Dynamic threshold: confidence={confidence:.3f}, "
+                f"win_ev_th={effective_win_threshold:.2f}, place_ev_th={effective_place_threshold:.2f}"
+            )
+
             # Calculate EV and generate recommendations
-            win_recommendations = []  # EV >= 1.5 (strong recommendation)
-            place_recommendations = []  # EV >= 1.5 (strong recommendation)
-            win_candidates = []  # EV >= 1.2 (candidate)
-            place_candidates = []  # EV >= 1.2 (candidate)
+            win_recommendations = []
+            place_recommendations = []
+            win_candidates = []
+            place_candidates = []
             top1_win_rec = None  # Rank 1 + EV condition
             top1_place_rec = None  # Rank 1 + EV condition
 
@@ -118,10 +177,11 @@ class EVRecommender:
                         "odds": tansho_odd,
                         "expected_value": win_ev,
                         "rank": rank,
+                        "confidence": confidence,
                     }
-                    if win_ev >= self.win_ev_threshold:
+                    if win_ev >= effective_win_threshold:
                         win_recommendations.append(rec)
-                    elif win_ev >= LOOSE_WIN_EV_THRESHOLD:
+                    elif win_ev >= effective_loose_win:
                         win_candidates.append(rec)
                     # Rank 1 + EV >= 1.0
                     if rank == 1 and win_ev >= 1.0 and top1_win_rec is None:
@@ -138,10 +198,11 @@ class EVRecommender:
                         "odds": fukusho_odd,
                         "expected_value": place_ev,
                         "rank": rank,
+                        "confidence": confidence,
                     }
-                    if place_ev >= self.place_ev_threshold:
+                    if place_ev >= effective_place_threshold:
                         place_recommendations.append(rec)
-                    elif place_ev >= LOOSE_PLACE_EV_THRESHOLD:
+                    elif place_ev >= effective_loose_place:
                         place_candidates.append(rec)
                     # Rank 1 + EV >= 1.0
                     if rank == 1 and place_ev >= 1.0 and top1_place_rec is None:
@@ -155,19 +216,24 @@ class EVRecommender:
 
             logger.info(
                 f"EV recommendations: race_code={race_code}, "
+                f"confidence={confidence:.3f}, "
+                f"thresholds=win:{effective_win_threshold:.2f}/place:{effective_place_threshold:.2f}, "
                 f"win={len(win_recommendations)}(candidates={len(win_candidates)}), "
                 f"place={len(place_recommendations)}(candidates={len(place_candidates)})"
             )
 
             return {
-                "win_recommendations": win_recommendations,  # EV >= 1.5
-                "place_recommendations": place_recommendations,  # EV >= 1.5
-                "win_candidates": win_candidates,  # 1.2 <= EV < 1.5
-                "place_candidates": place_candidates,  # 1.2 <= EV < 1.5
-                "top1_win": top1_win_rec,  # Rank 1 + EV >= 1.0
-                "top1_place": top1_place_rec,  # Rank 1 + EV >= 1.0
+                "win_recommendations": win_recommendations,
+                "place_recommendations": place_recommendations,
+                "win_candidates": win_candidates,
+                "place_candidates": place_candidates,
+                "top1_win": top1_win_rec,
+                "top1_place": top1_place_rec,
                 "odds_source": odds_source,
                 "odds_time": odds_time,
+                "confidence": confidence,
+                "effective_win_threshold": effective_win_threshold,
+                "effective_place_threshold": effective_place_threshold,
             }
 
         except Exception as e:

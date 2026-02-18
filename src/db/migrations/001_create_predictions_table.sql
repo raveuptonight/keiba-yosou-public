@@ -40,6 +40,15 @@ CREATE TABLE IF NOT EXISTS analysis_results (
     top3_cover_rate FLOAT,
     mrr FLOAT,
 
+    -- 回収率
+    tansho_roi FLOAT,
+    fukusho_roi FLOAT,
+    axis_fukusho_roi FLOAT,
+    tansho_investment INTEGER DEFAULT 0,
+    tansho_return INTEGER DEFAULT 0,
+    fukusho_investment INTEGER DEFAULT 0,
+    fukusho_return INTEGER DEFAULT 0,
+
     -- 詳細データ（JSONB）
     detail_data JSONB,
 

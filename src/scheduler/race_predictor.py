@@ -10,6 +10,7 @@ Automatically executes the day before race day:
 import argparse
 import logging
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import joblib
@@ -18,6 +19,8 @@ import pandas as pd
 
 from src.db.connection import get_db
 from src.models.feature_extractor import FastFeatureExtractor
+from src.models.surface_utils import get_model_path_for_surface, get_surface_type
+from src.services.prediction.ensemble import ensemble_predict, ensemble_proba
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,6 +35,7 @@ class RacePredictor:
         use_adjustments: bool = True,
     ):
         self.model_path = model_path
+        self.model_dir = Path(model_path).parent
         # Regression models
         self.xgb_model = None
         self.lgb_model = None
@@ -54,7 +58,10 @@ class RacePredictor:
         self.ensemble_weights: dict[str, float] | None = None
         # Feature adjustment coefficients
         self.feature_adjustments: dict[str, float] = {}
+        # Surface-specific models (loaded lazily on first use)
+        self._surface_models: dict[str, dict] = {}
         self._load_model()
+        self._load_surface_models()
         if use_adjustments:
             self._load_feature_adjustments()
 
@@ -112,6 +119,25 @@ class RacePredictor:
         except Exception as e:
             logger.error(f"Model loading failed: {e}")
             raise
+
+    def _load_surface_models(self):
+        """Load surface-specific models (turf/dirt) if available."""
+        for surface in ("turf", "dirt"):
+            path = self.model_dir / f"ensemble_model_{surface}_latest.pkl"
+            if path.exists():
+                try:
+                    self._surface_models[surface] = joblib.load(path)
+                    logger.info(f"Surface model loaded: {surface} ({path})")
+                except Exception as e:
+                    logger.warning(f"Surface model load failed ({surface}): {e}")
+
+    def _get_model_for_surface(self, track_code: str | None) -> dict | None:
+        """Return surface-specific model data, or None to use default mixed model."""
+        surface = get_surface_type(track_code)
+        if surface in self._surface_models:
+            logger.info(f"Using {surface} model for track_code={track_code}")
+            return self._surface_models[surface]
+        return None
 
     def _load_feature_adjustments(self):
         """Load feature adjustment coefficients from DB."""
@@ -243,8 +269,13 @@ class RacePredictor:
         finally:
             conn.close()
 
-    def predict_race(self, race_code: str) -> list[dict]:
-        """Execute race prediction."""
+    def predict_race(self, race_code: str, compute_shap: bool = False) -> list[dict]:
+        """Execute race prediction.
+
+        Args:
+            race_code: Race code (16 digits).
+            compute_shap: If True, compute SHAP values for each horse (for video export).
+        """
         db = get_db()
         conn = db.get_connection()
 
@@ -355,6 +386,9 @@ class RacePredictor:
                 )
                 if features:
                     features["bamei"] = entry.get("bamei", "")
+                    features["_wakuban"] = entry.get("wakuban", "0")
+                    features["_ketto_toroku_bango"] = entry.get("ketto_toroku_bango", "")
+                    features["_kishu_code"] = entry.get("kishu_code", "")
                     features_list.append(features)
 
             if not features_list:
@@ -362,100 +396,126 @@ class RacePredictor:
 
             # Prediction (ensemble: weighted average of XGBoost + LightGBM + CatBoost)
             df = pd.DataFrame(features_list)
-            X = df[self.feature_names].fillna(0)
+
+            # Select model based on surface type
+            track_code = race_row[5] if race_row else None
+            surface_model_data = self._get_model_for_surface(track_code)
+
+            if surface_model_data is not None:
+                # Use surface-specific model
+                m = surface_model_data.get("models", {})
+                m_feature_names = surface_model_data.get("feature_names", self.feature_names)
+                m_weights = surface_model_data.get(
+                    "ensemble_weights", {"xgb": 0.5, "lgb": 0.5, "cb": 0.0}
+                )
+                m_xgb = m.get("xgb_regressor") or surface_model_data.get("xgb_model")
+                m_lgb = m.get("lgb_regressor") or surface_model_data.get("lgb_model")
+                m_cb = m.get("cb_regressor") or surface_model_data.get("cb_model")
+                m_xgb_win = m.get("xgb_win")
+                m_lgb_win = m.get("lgb_win")
+                m_cb_win = m.get("cb_win")
+                m_xgb_place = m.get("xgb_place")
+                m_lgb_place = m.get("lgb_place")
+                m_cb_place = m.get("cb_place")
+                m_win_calibrator = m.get("win_calibrator")
+                m_place_calibrator = m.get("place_calibrator")
+                m_has_classifiers = m_xgb_win is not None and m_lgb_win is not None
+                m_has_catboost = m_cb is not None
+            else:
+                # Use default mixed model
+                m_feature_names = self.feature_names
+                m_weights = self.ensemble_weights
+                m_xgb = self.xgb_model
+                m_lgb = self.lgb_model
+                m_cb = self.cb_model
+                m_xgb_win = self.xgb_win
+                m_lgb_win = self.lgb_win
+                m_cb_win = self.cb_win
+                m_xgb_place = self.xgb_place
+                m_lgb_place = self.lgb_place
+                m_cb_place = self.cb_place
+                m_win_calibrator = self.win_calibrator
+                m_place_calibrator = self.place_calibrator
+                m_has_classifiers = self.has_classifiers
+                m_has_catboost = self.has_catboost
+
+            X = df[m_feature_names].fillna(0)
 
             # Apply feature adjustment coefficients
             X = self._apply_feature_adjustments(X)
 
             # Model availability assertions for type checking
-            assert self.xgb_model is not None, "XGBoost model not loaded"
-            assert self.lgb_model is not None, "LightGBM model not loaded"
-            assert self.ensemble_weights is not None, "Ensemble weights not loaded"
+            assert m_xgb is not None, "XGBoost model not loaded"
+            assert m_lgb is not None, "LightGBM model not loaded"
+            assert m_weights is not None, "Ensemble weights not loaded"
 
             # Regression prediction (finishing position score)
-            xgb_pred = self.xgb_model.predict(X)
-            lgb_pred = self.lgb_model.predict(X)
-
-            # 3-model ensemble if CatBoost is available
-            if self.has_catboost:
-                cb_pred = self.cb_model.predict(X)
-                w = self.ensemble_weights
-                rank_scores = xgb_pred * w["xgb"] + lgb_pred * w["lgb"] + cb_pred * w["cb"]
-            else:
-                # Backward compatibility: XGB+LGB only
-                w = self.ensemble_weights
-                xgb_w = w.get("xgb", 0.5)
-                lgb_w = w.get("lgb", 0.5)
-                total = xgb_w + lgb_w
-                rank_scores = (xgb_pred * xgb_w + lgb_pred * lgb_w) / total
+            rank_scores = ensemble_predict(
+                m_xgb, m_lgb, X, m_weights,
+                cb_model=m_cb if m_has_catboost else None,
+            )
 
             # Probability prediction using classification models
-            if self.has_classifiers:
-                assert self.xgb_win is not None, "XGBoost win classifier not loaded"
-                assert self.lgb_win is not None, "LightGBM win classifier not loaded"
-                # Win probability
-                xgb_win_prob = self.xgb_win.predict_proba(X)[:, 1]
-                lgb_win_prob = self.lgb_win.predict_proba(X)[:, 1]
-
-                if self.has_catboost and self.cb_win is not None:
-                    cb_win_prob = self.cb_win.predict_proba(X)[:, 1]
-                    w = self.ensemble_weights
-                    win_probs = (
-                        xgb_win_prob * w["xgb"] + lgb_win_prob * w["lgb"] + cb_win_prob * w["cb"]
-                    )
-                else:
-                    w = self.ensemble_weights
-                    xgb_w = w.get("xgb", 0.5)
-                    lgb_w = w.get("lgb", 0.5)
-                    total = xgb_w + lgb_w
-                    win_probs = (xgb_win_prob * xgb_w + lgb_win_prob * lgb_w) / total
-
-                # Place probability
-                assert self.xgb_place is not None, "XGBoost place classifier not loaded"
-                assert self.lgb_place is not None, "LightGBM place classifier not loaded"
-                xgb_place_prob = self.xgb_place.predict_proba(X)[:, 1]
-                lgb_place_prob = self.lgb_place.predict_proba(X)[:, 1]
-
-                if self.has_catboost and self.cb_place is not None:
-                    cb_place_prob = self.cb_place.predict_proba(X)[:, 1]
-                    w = self.ensemble_weights
-                    place_probs = (
-                        xgb_place_prob * w["xgb"]
-                        + lgb_place_prob * w["lgb"]
-                        + cb_place_prob * w["cb"]
-                    )
-                else:
-                    w = self.ensemble_weights
-                    xgb_w = w.get("xgb", 0.5)
-                    lgb_w = w.get("lgb", 0.5)
-                    total = xgb_w + lgb_w
-                    place_probs = (xgb_place_prob * xgb_w + lgb_place_prob * lgb_w) / total
-
-                # Apply calibration
-                if self.win_calibrator is not None:
-                    win_probs = self.win_calibrator.predict(win_probs)
-                if self.place_calibrator is not None:
-                    place_probs = self.place_calibrator.predict(place_probs)
-
-                # Normalize (sum of win probabilities to 1)
-                win_sum = win_probs.sum()
-                if win_sum > 0:
-                    win_probs = win_probs / win_sum
+            if m_has_classifiers:
+                win_probs = ensemble_proba(
+                    m_xgb_win, m_lgb_win, X, m_weights,
+                    cb_clf=m_cb_win if m_has_catboost else None,
+                    calibrator=m_win_calibrator,
+                )
+                place_probs = ensemble_proba(
+                    m_xgb_place, m_lgb_place, X, m_weights,
+                    cb_clf=m_cb_place if m_has_catboost else None,
+                    calibrator=m_place_calibrator,
+                )
             else:
                 # Old format: estimate probability from score
                 scores_exp = np.exp(-rank_scores)
                 win_probs = scores_exp / scores_exp.sum()
                 place_probs = None
 
+            # SHAP value computation (for video export, TOP horses)
+            shap_data: dict[str, list[dict]] = {}
+            if compute_shap:
+                try:
+                    import shap
+
+                    from src.services.prediction.feature_names import FEATURE_DISPLAY_NAMES
+
+                    explainer = shap.TreeExplainer(m_xgb)
+                    shap_values = explainer.shap_values(X)
+
+                    for i in range(len(features_list)):
+                        umaban = str(features_list[i]["umaban"])
+                        horse_shap = shap_values[i]
+                        top_indices = np.argsort(np.abs(horse_shap))[::-1][:10]
+                        shap_data[umaban] = [
+                            {
+                                "feature": m_feature_names[idx],
+                                "shap_value": round(float(abs(horse_shap[idx])), 4),
+                                "feature_value": round(float(X.iloc[i, idx]), 4),
+                                "direction": "positive" if horse_shap[idx] > 0 else "negative",
+                                "display_name": FEATURE_DISPLAY_NAMES.get(
+                                    m_feature_names[idx], m_feature_names[idx]
+                                ),
+                            }
+                            for idx in top_indices
+                        ]
+                except Exception as e:
+                    logger.warning(f"SHAP computation failed (skipped): {e}")
+
             # Format results
             results = []
             for i, score in enumerate(rank_scores):
                 result = {
                     "umaban": features_list[i]["umaban"],
+                    "wakuban": features_list[i].get("_wakuban", "0"),
                     "bamei": features_list[i].get("bamei", ""),
+                    "ketto_toroku_bango": features_list[i].get("_ketto_toroku_bango", ""),
+                    "kishu_code": features_list[i].get("_kishu_code", ""),
                     "pred_score": float(score),
                     "win_prob": float(win_probs[i]),
                     "pred_rank": 0,  # Set later
+                    "shap_top_features": shap_data.get(str(features_list[i]["umaban"]), []),
                 }
                 if place_probs is not None:
                     result["place_prob"] = float(place_probs[i])
@@ -465,6 +525,12 @@ class RacePredictor:
             results.sort(key=lambda x: x["pred_score"])
             for i, r in enumerate(results):
                 r["pred_rank"] = i + 1
+
+            # Assign marks
+            if compute_shap:
+                from src.services.prediction.feature_names import assign_marks
+
+                assign_marks(results)
 
             # Sort back by horse number
             results.sort(key=lambda x: int(x["umaban"]))

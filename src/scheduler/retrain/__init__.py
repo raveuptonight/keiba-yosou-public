@@ -8,7 +8,6 @@ from src.scheduler.retrain.evaluator import (
     calculate_composite_score,
     compare_models,
     evaluate_model,
-    get_ensemble_proba,
     get_payouts_for_year,
     simulate_returns,
 )
@@ -33,7 +32,6 @@ __all__ = [
     # Evaluator
     "compare_models",
     "evaluate_model",
-    "get_ensemble_proba",
     "get_payouts_for_year",
     "simulate_returns",
     "calculate_composite_score",

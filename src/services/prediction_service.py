@@ -9,12 +9,15 @@ import logging
 import os
 
 from src.api.schemas.prediction import (
+    EVRecommendationEntry,
+    EVRecommendations,
     PredictionResponse,
 )
 from src.exceptions import (
     MissingDataError,
     PredictionError,
 )
+from src.models.ev_recommender import EVRecommender
 from src.services.prediction.ml_engine import compute_ml_predictions
 from src.services.prediction.persistence import (
     get_prediction_by_id,
@@ -105,7 +108,63 @@ async def generate_prediction(
             race_data=race_data, ml_result=ml_result, is_final=is_final
         )
 
-        # 5. Save to DB
+        # 5. Calculate EV recommendations (using realtime odds for final predictions)
+        if is_final:
+            try:
+                ev_recommender = EVRecommender()
+                ranked_horses = [
+                    {
+                        "horse_number": h.horse_number,
+                        "horse_name": h.horse_name,
+                        "win_probability": h.win_probability,
+                        "place_probability": h.place_probability,
+                        "rank": h.rank,
+                    }
+                    for h in prediction_response.prediction_result.ranked_horses
+                ]
+                ev_recs = ev_recommender.get_recommendations(
+                    race_code=race_id,
+                    ranked_horses=ranked_horses,
+                    use_realtime_odds=True,
+                )
+
+                # Convert to schema format
+                win_recs = [
+                    EVRecommendationEntry(
+                        horse_number=r["horse_number"],
+                        horse_name=r["horse_name"],
+                        bet_type="win",
+                        probability=r["win_probability"],
+                        odds=r["odds"],
+                        expected_value=r["expected_value"],
+                    )
+                    for r in ev_recs.get("win_recommendations", [])
+                ]
+                place_recs = [
+                    EVRecommendationEntry(
+                        horse_number=r["horse_number"],
+                        horse_name=r["horse_name"],
+                        bet_type="place",
+                        probability=r["place_probability"],
+                        odds=r["odds"],
+                        expected_value=r["expected_value"],
+                    )
+                    for r in ev_recs.get("place_recommendations", [])
+                ]
+
+                prediction_response.prediction_result.ev_recommendations = EVRecommendations(
+                    win_recommendations=win_recs,
+                    place_recommendations=place_recs,
+                    odds_source=ev_recs.get("odds_source", "realtime"),
+                    odds_time=ev_recs.get("odds_time"),
+                )
+                logger.info(
+                    f"EV recommendations calculated: win={len(win_recs)}, place={len(place_recs)}"
+                )
+            except Exception as e:
+                logger.warning(f"EV recommendation calculation failed (skipped): {e}")
+
+        # 6. Save to DB
         prediction_id = await save_prediction(prediction_response)
         prediction_response.prediction_id = prediction_id
 

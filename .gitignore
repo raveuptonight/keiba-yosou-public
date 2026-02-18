@@ -227,3 +227,6 @@ logs/
 # Backup files (created during refactoring)
 *_backup.py
 *_backup_*.pkl
+
+# CatBoost training artifacts
+catboost_info/

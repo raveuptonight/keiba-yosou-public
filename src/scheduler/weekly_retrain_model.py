@@ -10,6 +10,7 @@ Executes weekly at Tuesday 23:00 to:
 
 import json
 import logging
+import shutil
 from datetime import date, datetime
 from pathlib import Path
 
@@ -122,7 +123,15 @@ class WeeklyRetrain:
             else:
                 logger.warning("Git push failed (model still deployed locally)")
 
-        # 3. Send notification
+        # 3. Train surface-specific models (turf + dirt)
+        result["surface_models"] = {}
+        for surface in ("turf", "dirt"):
+            surface_result = self._train_surface_model(
+                surface, years=years, force_deploy=force_deploy, git_push=git_push
+            )
+            result["surface_models"][surface] = surface_result
+
+        # 4. Send notification
         if notify:
             send_retrain_notification(result)
 
@@ -132,6 +141,74 @@ class WeeklyRetrain:
             json.dump(result, f, ensure_ascii=False, indent=2)
 
         return result
+
+
+    def _train_surface_model(
+        self, surface: str, years: int = 3, force_deploy: bool = False, git_push: bool = True
+    ) -> dict:
+        """Train and deploy a surface-specific model.
+
+        Args:
+            surface: 'turf' or 'dirt'
+            years: Number of years for training data
+            force_deploy: Deploy even without improvement
+            git_push: Commit and push model to git repository
+
+        Returns:
+            Surface training result dictionary
+        """
+        logger.info(f"--- Surface model training: {surface} ---")
+        surface_latest = self.model_dir / f"ensemble_model_{surface}_latest.pkl"
+        surface_result: dict = {"surface": surface, "deployed": False}
+
+        try:
+            training = train_new_model(self.model_dir, years=years, surface=surface)
+            surface_result["training"] = training
+
+            if training["status"] != "success":
+                logger.error(f"Surface training failed ({surface}): {training}")
+                return surface_result
+
+            new_path = training["model_path"]
+
+            if surface_latest.exists():
+                comparison = compare_models(
+                    surface_latest, new_path, surface=surface
+                )
+                surface_result["comparison"] = comparison
+
+                if comparison["status"] == "success":
+                    if comparison["improvement"] > 0 or force_deploy:
+                        deploy_new_model(new_path, surface_latest, self.backup_dir)
+                        surface_result["deployed"] = True
+                        logger.info(f"New {surface} model deployed")
+                    else:
+                        logger.info(f"No improvement for {surface}, keeping current")
+                        Path(new_path).unlink()
+                elif force_deploy:
+                    deploy_new_model(new_path, surface_latest, self.backup_dir)
+                    surface_result["deployed"] = True
+            else:
+                # Initial deployment
+                shutil.move(new_path, surface_latest)
+                surface_result["deployed"] = True
+                surface_result["comparison"] = {"note": "initial_deployment"}
+                logger.info(f"Initial {surface} model deployment")
+
+            # Git commit and push
+            if surface_result["deployed"] and git_push:
+                git_result = git_commit_and_push_model(
+                    surface_latest,
+                    metrics=training,
+                    push=True,
+                )
+                surface_result["git_pushed"] = git_result
+
+        except Exception as e:
+            logger.error(f"Surface model training error ({surface}): {e}", exc_info=True)
+            surface_result["error"] = str(e)
+
+        return surface_result
 
 
 def main():

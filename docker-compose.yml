@@ -153,10 +153,13 @@ services:
               capabilities: [gpu]
     labels:
       ofelia.enabled: "true"
-      # 毎週火曜18:00 - 結果収集（週末のレース結果を分析・DB保存）
       # Ofelia uses 6-field cron: second minute hour day month weekday
+      # 毎日21:00 - 当日結果分析・Discord通知（開催日のみ実行）
+      ofelia.job-exec.result-daily.schedule: "0 0 21 * * *"
+      ofelia.job-exec.result-daily.command: "python -m src.scheduler.result_collector --today"
+      # 毎週火曜18:00 - 週末サマリ（週末のレース結果を分析・DB保存）
       ofelia.job-exec.result-collect.schedule: "0 0 18 * * 2"
-      ofelia.job-exec.result-collect.command: "python -m src.scheduler.result_collector"
+      ofelia.job-exec.result-collect.command: "python -m src.scheduler.result_collector --weekend"
       # 毎週火曜23:00 - モデル再学習
       ofelia.job-exec.weekly-retrain.schedule: "0 0 23 * * 2"
       ofelia.job-exec.weekly-retrain.command: "python -m src.scheduler.weekly_retrain_model"

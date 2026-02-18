@@ -406,47 +406,6 @@ class PredictionScheduler(commands.Cog):
                             win_recs = ev_recs.get("win_recommendations", [])
                             place_recs = ev_recs.get("place_recommendations", [])
 
-                            # Consolidate recommendations (remove duplicates)
-                            recommended = {}
-                            for rec in win_recs:
-                                num = rec["horse_number"]
-                                if num not in recommended:
-                                    recommended[num] = {
-                                        "horse_number": num,
-                                        "horse_name": rec["horse_name"],
-                                        "win_ev": rec["expected_value"],
-                                        "win_odds": rec["odds"],
-                                        "place_ev": None,
-                                        "place_odds": None,
-                                    }
-                                else:
-                                    recommended[num]["win_ev"] = rec["expected_value"]
-                                    recommended[num]["win_odds"] = rec["odds"]
-
-                            for rec in place_recs:
-                                num = rec["horse_number"]
-                                if num not in recommended:
-                                    recommended[num] = {
-                                        "horse_number": num,
-                                        "horse_name": rec["horse_name"],
-                                        "win_ev": None,
-                                        "win_odds": None,
-                                        "place_ev": rec["expected_value"],
-                                        "place_odds": rec["odds"],
-                                    }
-                                else:
-                                    recommended[num]["place_ev"] = rec["expected_value"]
-                                    recommended[num]["place_odds"] = rec["odds"]
-
-                            # Sort by EV (max of win_ev and place_ev)
-                            rec_list = sorted(
-                                recommended.values(),
-                                key=lambda x: max(x.get("win_ev") or 0, x.get("place_ev") or 0),
-                                reverse=True,
-                            )[
-                                :3
-                            ]  # Max 3 horses
-
                             # === Axis horse recommendation (for wide/exacta bets) ===
                             # Axis horse = horse with highest place probability (most likely to finish top 3)
                             axis_horse = (
@@ -455,42 +414,72 @@ class PredictionScheduler(commands.Cog):
                                 else None
                             )
 
-                            # Build simple message
+                            # Build message with separate win/place sections
                             lines = [
-                                f"🔥 **{venue} {race_num_formatted} 確定予想**",
-                                f"{time_formatted}発走 {race_name}",
+                                f"🔥 **{venue} {race_num_formatted} {race_name}**",
+                                f"{time_formatted}発走",
                                 "",
                             ]
 
-                            if rec_list:
-                                lines.append("**単複推奨** (EV >= 1.5)")
-                                for rec in rec_list:
+                            # Build CI lookup from ranked horses
+                            ci_lookup = {}
+                            for h in ranked:
+                                ci_lower = h.get("win_ci_lower")
+                                ci_upper = h.get("win_ci_upper")
+                                if ci_lower is not None and ci_upper is not None:
+                                    ci_lookup[h["horse_number"]] = (ci_lower, ci_upper)
+
+                            # Win bet section
+                            lines.append("🎯 **推奨買い目: 単勝** (期待値ベース)")
+                            if win_recs:
+                                for rec in win_recs[:3]:
                                     num = rec["horse_number"]
                                     name = rec["horse_name"][:8]
-                                    ev_parts = []
-                                    if rec["win_ev"]:
-                                        ev_parts.append(f"単{rec['win_ev']:.2f}")
-                                    if rec["place_ev"]:
-                                        ev_parts.append(f"複{rec['place_ev']:.2f}")
-                                    ev_str = "/".join(ev_parts)
-                                    lines.append(f"  #{num} {name} (EV {ev_str})")
+                                    odds = rec.get("odds", 0)
+                                    prob = rec.get("win_probability", 0)
+                                    ci = ci_lookup.get(num)
+                                    if ci:
+                                        lines.append(
+                                            f"  #{num} {name}  {odds:.1f}倍 (勝率{prob:.1%} [{ci[0]:.1%}-{ci[1]:.1%}])"
+                                        )
+                                    else:
+                                        lines.append(
+                                            f"  #{num} {name}  {odds:.1f}倍 (勝率{prob:.1%})"
+                                        )
                             else:
-                                lines.append("**単複推奨なし** (EV >= 1.5 該当なし)")
+                                lines.append("  推奨なし")
+
+                            lines.append("")
+
+                            # Place bet section
+                            lines.append("🎯 **推奨買い目: 複勝** (期待値ベース)")
+                            if place_recs:
+                                for rec in place_recs[:3]:
+                                    num = rec["horse_number"]
+                                    name = rec["horse_name"][:8]
+                                    odds = rec.get("odds", 0)
+                                    prob = rec.get("place_probability", 0)
+                                    lines.append(
+                                        f"  #{num} {name}  {odds:.1f}倍 (複勝率{prob:.1%})"
+                                    )
+                            else:
+                                lines.append("  推奨なし")
 
                             lines.append("")
 
                             # Axis horse recommendation
                             if axis_horse:
-                                lines.append("**軸馬** (ワイド・馬連向け)")
+                                lines.append("📌 **軸馬** (ワイド・馬連)")
                                 ah_num = axis_horse.get("horse_number", "?")
                                 ah_name = axis_horse.get("horse_name", "?")[:8]
                                 ah_place = axis_horse.get("place_probability", 0)
-                                lines.append(f"  🎯 #{ah_num} {ah_name} (複勝率 {ah_place:.0%})")
+                                lines.append(f"  #{ah_num} {ah_name} (複勝率{ah_place:.1%})")
 
                             message = "\n".join(lines)
                             await channel.send(message)
                             logger.info(
-                                f"Final prediction sent: race_id={race_id}, recommended={len(rec_list)} horses"
+                                f"Final prediction sent: race_id={race_id}, "
+                                f"win_recs={len(win_recs)}, place_recs={len(place_recs)}"
                             )
                         else:
                             # Empty prediction result

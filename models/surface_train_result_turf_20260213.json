@@ -1,0 +1,56 @@
+{
+  "surface": "turf",
+  "years": 8,
+  "test_year": 2022,
+  "trained_at": "2026-02-13T09:28:32.922442",
+  "train_result": {
+    "status": "success",
+    "model_path": "models/ensemble_model_turf_new.pkl",
+    "rmse": 3.7299899741918625,
+    "win_accuracy": 0.7781852063358481,
+    "quinella_accuracy": 0.7416068047248354,
+    "place_accuracy": 0.734723933756124,
+    "win_auc": 0.8099270372885069,
+    "quinella_auc": 0.770021072564286,
+    "place_auc": 0.7768995287366713,
+    "win_brier": 0.05875479160813713,
+    "quinella_brier": 0.1096149986990761,
+    "top3_coverage": 0.5527303042934556,
+    "samples": 221808
+  },
+  "comparison": {
+    "status": "success",
+    "old_eval": {
+      "rmse": 3.6852546805100492,
+      "win_auc": 0.8321489459298502,
+      "quinella_auc": 0.7916906567630944,
+      "place_auc": 0.7990869351346626,
+      "top3_coverage": 0.5957356076759062,
+      "tansho_return": 0.6239232409381663,
+      "fukusho_return": 0.4534328358208955,
+      "tansho_bet": 234500,
+      "tansho_win": 146310,
+      "fukusho_bet": 234500,
+      "fukusho_win": 106330
+    },
+    "new_eval": {
+      "rmse": 3.6686087825927327,
+      "win_auc": 0.8392805936803984,
+      "quinella_auc": 0.7954472988824113,
+      "place_auc": 0.802357467516602,
+      "top3_coverage": 0.6093816631130063,
+      "tansho_return": 0.5743710021321962,
+      "fukusho_return": 0.45339019189765456,
+      "tansho_bet": 234500,
+      "tansho_win": 134690,
+      "fukusho_bet": 234500,
+      "fukusho_win": 106320
+    },
+    "old_score": 0.601386641792248,
+    "new_score": 0.6023527288920993,
+    "improvement": 0.0009660870998513538,
+    "test_samples": 32029,
+    "old_rmse": 3.6852546805100492,
+    "new_rmse": 3.6686087825927327
+  }
+}
